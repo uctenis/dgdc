@@ -9,6 +9,12 @@ import { SettingsModal } from './components/SettingsModal';
 
 import type { Proveedor, LicitacionProyecto, Cotizacion, ConfiguracionFirmas } from './types';
 import { storageService } from './services/storageService';
+import {
+  subscribeToProveedores,
+  addProveedor as fsAddProveedor,
+  updateProveedor as fsUpdateProveedor,
+  deleteProveedor as fsDeleteProveedor,
+} from './services/firestoreService';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<string>('licitaciones');
@@ -16,45 +22,49 @@ export function App() {
 
   // Core App State
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
+  const [firestoreLoading, setFirestoreLoading] = useState<boolean>(true);
   const [licitaciones, setLicitaciones] = useState<LicitacionProyecto[]>([]);
   const [cotizaciones, setCotizaciones] = useState<Cotizacion[]>([]);
   const [configFirmas, setConfigFirmas] = useState<ConfiguracionFirmas>(storageService.getConfigFirmas());
   const [licitacionSeleccionadaId, setLicitacionSeleccionadaId] = useState<string | null>(null);
 
-  // Initial Load from Storage
+  // Load licitaciones/cotizaciones from localStorage (working data)
   useEffect(() => {
     const l = storageService.getLicitaciones();
-    const p = storageService.getProveedores();
     const c = storageService.getCotizaciones();
     const cfg = storageService.getConfigFirmas();
-
     setLicitaciones(l);
-    setProveedores(p);
     setCotizaciones(c);
     setConfigFirmas(cfg);
-
     if (l.length > 0) {
       setLicitacionSeleccionadaId(l[0].id);
     }
   }, []);
 
+  // Real-time Firestore subscription for Proveedores
+  useEffect(() => {
+    const unsubscribe = subscribeToProveedores(provs => {
+      setProveedores(provs);
+      setFirestoreLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
   const licitacionActiva = licitaciones.find(l => l.id === licitacionSeleccionadaId) || null;
 
-  // Handlers for Proveedores
-  const handleAddProveedor = (newProv: Omit<Proveedor, 'id' | 'fechaRegistro'>) => {
-    storageService.addProveedor(newProv);
-    setProveedores(storageService.getProveedores());
+  // Handlers for Proveedores — now using Firestore
+  const handleAddProveedor = async (newProv: Omit<Proveedor, 'id' | 'fechaRegistro'>) => {
+    await fsAddProveedor(newProv);
+    // state update is handled by onSnapshot
   };
 
-  const handleUpdateProveedor = (id: string, updated: Partial<Proveedor>) => {
-    storageService.updateProveedor(id, updated);
-    setProveedores(storageService.getProveedores());
+  const handleUpdateProveedor = async (id: string, updated: Partial<Proveedor>) => {
+    await fsUpdateProveedor(id, updated);
   };
 
-  const handleDeleteProveedor = (id: string) => {
+  const handleDeleteProveedor = async (id: string) => {
     if (confirm('¿Confirma que desea eliminar este proveedor?')) {
-      storageService.deleteProveedor(id);
-      setProveedores(storageService.getProveedores());
+      await fsDeleteProveedor(id);
     }
   };
 
@@ -143,6 +153,7 @@ export function App() {
         {activeTab === 'proveedores' && (
           <SupplierManager
             proveedores={proveedores}
+            isLoading={firestoreLoading}
             onAddProveedor={handleAddProveedor}
             onUpdateProveedor={handleUpdateProveedor}
             onDeleteProveedor={handleDeleteProveedor}

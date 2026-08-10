@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import type { Proveedor } from '../types';
-import { Building2, Search, Plus, Leaf, Edit3, Trash2, Phone, Mail, MapPin } from 'lucide-react';
+import { Building2, Search, Plus, Leaf, Edit3, Trash2, Phone, Mail, MapPin, Wifi } from 'lucide-react';
 
 interface SupplierManagerProps {
   proveedores: Proveedor[];
+  isLoading?: boolean;
   onAddProveedor: (prov: Omit<Proveedor, 'id' | 'fechaRegistro'>) => void;
   onUpdateProveedor: (id: string, prov: Partial<Proveedor>) => void;
   onDeleteProveedor: (id: string) => void;
@@ -11,6 +12,7 @@ interface SupplierManagerProps {
 
 export const SupplierManager: React.FC<SupplierManagerProps> = ({
   proveedores,
+  isLoading = false,
   onAddProveedor,
   onUpdateProveedor,
   onDeleteProveedor,
@@ -122,6 +124,13 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
           <p className="text-xs text-slate-500 mt-1">
             Registro centralizado de contratistas, empresas de obras y prestadores de servicios de la Subdirección de Infraestructura.
           </p>
+          {/* Firebase sync indicator */}
+          <div className="flex items-center gap-1.5 mt-2">
+            <Wifi className={`w-3.5 h-3.5 ${isLoading ? 'text-amber-500 animate-pulse' : 'text-emerald-500'}`} />
+            <span className={`text-[10px] font-semibold ${isLoading ? 'text-amber-600' : 'text-emerald-600'}`}>
+              {isLoading ? 'Conectando con Firebase...' : `Firebase Firestore · ${proveedores.length} proveedores sincronizados`}
+            </span>
+          </div>
         </div>
 
         <button

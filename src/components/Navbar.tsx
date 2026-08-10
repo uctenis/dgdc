@@ -6,8 +6,8 @@ import {
   FileCheck2,
   FileText,
   Settings,
-  Sparkles,
   Download,
+  Flame,
 } from 'lucide-react';
 import { generarPlantillaCotizacionExcel } from '../services/templateGenerator';
 
@@ -19,58 +19,98 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, openSettings }) => {
   const tabs = [
-    { id: 'licitaciones', label: 'Proyectos & Licitaciones', icon: FolderKanban },
-    { id: 'proveedores', label: 'Base de Proveedores', icon: Building2 },
-    { id: 'cotizaciones', label: 'Cargar Cotizaciones', icon: FileSpreadsheet },
-    { id: 'evaluacion', label: 'Cuadro Comparativo & Evaluación', icon: FileCheck2 },
-    { id: 'documentos', label: 'Actas & Documentos SGC', icon: FileText },
+    { id: 'licitaciones', label: 'Proyectos', icon: FolderKanban },
+    { id: 'proveedores',  label: 'Proveedores', icon: Building2 },
+    { id: 'cotizaciones', label: 'Cotizaciones', icon: FileSpreadsheet },
+    { id: 'evaluacion',   label: 'Evaluación', icon: FileCheck2 },
+    { id: 'documentos',   label: 'Actas SGC', icon: FileText },
   ];
 
   return (
-    <header className="bg-slate-900 text-white shadow-xl border-b border-slate-800 sticky top-0 z-50">
+    <header
+      className="sticky top-0 z-50 text-white"
+      style={{
+        background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 60%, #1d4ed8 100%)',
+        boxShadow: '0 4px 24px -4px rgba(15,23,42,0.55)',
+      }}
+    >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-20">
-          {/* Logo & Institution Brand */}
-          <div className="flex items-center space-x-4">
-            <div className="w-12 h-12 bg-gradient-to-tr from-sky-500 to-blue-700 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/30 ring-2 ring-blue-400/20">
-              <Sparkles className="w-7 h-7 text-white" />
+        <div className="flex items-center justify-between h-[72px] gap-4">
+
+          {/* ── Brand ─────────────────────────────────────────────────── */}
+          <div className="flex items-center gap-4 shrink-0">
+            {/* Logo mark */}
+            <div
+              className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+              style={{
+                background: 'linear-gradient(135deg, #38bdf8 0%, #1d4ed8 100%)',
+                boxShadow: '0 0 0 2px rgba(56,189,248,0.25), 0 4px 12px -2px rgba(29,78,216,0.5)',
+              }}
+            >
+              <svg viewBox="0 0 40 40" width="24" height="24" fill="none">
+                <path d="M20 4L36 12V28L20 36L4 28V12L20 4Z" stroke="white" strokeWidth="2.5" strokeLinejoin="round"/>
+                <path d="M20 4V36M4 12L36 12M4 28L36 28" stroke="rgba(255,255,255,0.4)" strokeWidth="1.5"/>
+                <circle cx="20" cy="20" r="4" fill="white" opacity="0.9"/>
+              </svg>
             </div>
+
+            {/* Title stack */}
             <div>
-              <div className="flex items-center space-x-2">
-                <span className="text-xs font-extrabold tracking-widest text-sky-400 uppercase bg-sky-950/80 px-2 py-0.5 rounded border border-sky-800">
-                  UCT Infraestructura
+              <div className="flex items-center gap-2 mb-0.5">
+                <span
+                  className="text-[10px] font-bold tracking-[0.12em] uppercase px-2 py-0.5 rounded"
+                  style={{ background: 'rgba(56,189,248,0.15)', color: '#7dd3fc', border: '1px solid rgba(56,189,248,0.2)' }}
+                >
+                  UCT · Infraestructura
                 </span>
-                <span className="text-xs text-slate-400">Sistema SGC-DGDC</span>
+                <span className="text-[10px] text-slate-400 hidden sm:inline">SGC-DGDC</span>
               </div>
-              <h1 className="text-lg font-bold tracking-tight text-white flex items-center gap-2">
-                Gestor Inteligente de Adjudicaciones
+              <h1 className="text-base font-bold tracking-tight text-white leading-tight" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+                Gestor de Adjudicaciones
               </h1>
             </div>
           </div>
 
-          {/* Action buttons right */}
-          <div className="flex items-center space-x-3">
+          {/* ── Actions ────────────────────────────────────────────────── */}
+          <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => generarPlantillaCotizacionExcel()}
-              className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-600 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-md transition border border-emerald-500/30"
               title="Descargar plantilla Excel oficial para enviar a proveedores"
+              className="hidden sm:flex items-center gap-2 text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition border"
+              style={{
+                background: 'rgba(5,150,105,0.2)',
+                borderColor: 'rgba(52,211,153,0.25)',
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(5,150,105,0.35)';
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(5,150,105,0.2)';
+              }}
             >
-              <Download className="w-4 h-4" />
-              <span>Plantilla Excel Proveedores</span>
+              <Download className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="text-emerald-200">Plantilla Excel</span>
             </button>
 
             <button
               onClick={openSettings}
-              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
               title="Configuración de Firmas y Parámetros SGC"
+              className="p-2.5 rounded-lg transition"
+              style={{ background: 'rgba(255,255,255,0.07)' }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.14)';
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.07)';
+              }}
             >
-              <Settings className="w-5 h-5" />
+              <Settings className="w-5 h-5 text-slate-300" />
             </button>
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <nav className="flex space-x-1 border-t border-slate-800/80 pt-1 overflow-x-auto">
+        {/* ── Navigation Tabs ───────────────────────────────────────── */}
+        <nav className="flex gap-0.5 overflow-x-auto pb-0" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
           {tabs.map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -78,13 +118,18 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, openSet
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-3 text-xs font-semibold rounded-t-lg transition border-b-2 whitespace-nowrap ${
-                  isActive
-                    ? 'border-sky-400 text-sky-400 bg-slate-800/80 shadow-inner'
-                    : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
-                }`}
+                className="flex items-center gap-2 px-5 py-3 text-xs font-semibold whitespace-nowrap transition-all relative"
+                style={{
+                  color: isActive ? '#38bdf8' : 'rgba(148,163,184,0.9)',
+                  background: isActive ? 'rgba(56,189,248,0.08)' : 'transparent',
+                  borderBottom: isActive ? '2px solid #38bdf8' : '2px solid transparent',
+                  borderRadius: '0',
+                }}
               >
-                <Icon className={`w-4 h-4 ${isActive ? 'text-sky-400' : 'text-slate-400'}`} />
+                <Icon
+                  className="w-3.5 h-3.5"
+                  style={{ color: isActive ? '#38bdf8' : 'rgba(148,163,184,0.7)' }}
+                />
                 <span>{tab.label}</span>
               </button>
             );
