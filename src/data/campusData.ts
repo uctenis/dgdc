@@ -275,6 +275,8 @@ export const ESTADOS_PROYECTO = [
   'EN EJECUCIÓN',
   'TERMINADO',
   'POSTERGADO',
+  'ELIMINADO',
+  'AJUSTADO',
   'EN CARPETA',
 ];
 

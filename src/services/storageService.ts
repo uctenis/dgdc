@@ -109,6 +109,26 @@ export function uploadPropuesta(
   });
 }
 
+/** Respaldo persistente para documentos administrativos cuando Drive no está disponible. */
+export function uploadLicitacionDocument(
+  licitacionId: string,
+  categoria: 'ofertas' | 'ordenes-compra' | 'estados-pago',
+  file: File,
+  onProgress?: (pct: number) => void
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const nombreSeguro = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storageRef = ref(storage, `licitaciones/${licitacionId}/${categoria}/${Date.now()}_${nombreSeguro}`);
+    const task = uploadBytesResumable(storageRef, file);
+    task.on(
+      'state_changed',
+      snapshot => onProgress?.(Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)),
+      reject,
+      async () => resolve(await getDownloadURL(task.snapshot.ref))
+    );
+  });
+}
+
 /**
  * Elimina un archivo de Storage dado su URL completa.
  */

@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
 import type { Proveedor } from '../types';
-import { Building2, Search, Plus, Leaf, Edit3, Trash2, Phone, Mail, MapPin, Wifi, History, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Building2, Search, Plus, Leaf, Edit3, Trash2, Phone, Mail, MapPin, Wifi, History, CheckCircle2, AlertCircle, Upload, Loader2, FileText } from 'lucide-react';
 import { HistorialObrasModal } from './HistorialObrasModal';
 import { formatearRUT, validarRUT } from '../utils/rutUtils';
+import { parseProveedorDesdeCotizacion } from '../utils/providerDocumentParser';
+
+import { getRubrosList } from '../data/rubrosData';
 
 interface SupplierManagerProps {
   proveedores: Proveedor[];
   isLoading?: boolean;
-  onAddProveedor: (prov: Omit<Proveedor, 'id' | 'fechaRegistro'>) => void;
-  onUpdateProveedor: (id: string, prov: Partial<Proveedor>) => void;
+  onAddProveedor: (prov: Omit<Proveedor, 'id' | 'fechaRegistro'>) => void | Promise<void>;
+  onUpdateProveedor: (id: string, prov: Partial<Proveedor>) => void | Promise<void>;
   onDeleteProveedor: (id: string) => void;
 }
 
@@ -35,15 +38,16 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
   const [cuentaSustentabilidad, setCuentaSustentabilidad] = useState(true);
   const [direccion, setDireccion] = useState('');
   const [ciudad, setCiudad] = useState('Temuco');
+  const [leyendoCotizacion, setLeyendoCotizacion] = useState(false);
+  const [guardandoProveedor, setGuardandoProveedor] = useState(false);
+  const [lecturaFeedback, setLecturaFeedback] = useState<string[]>([]);
+  const [lecturaError, setLecturaError] = useState('');
 
-  const rubrosDisponibles = [
-    'Obras Menores y Remodelaciones',
-    'Climatización y Electricidad',
-    'Obras Civiles y Tabiquería',
-    'Pintura e Iluminación',
-    'Carpintería y Estructuras',
-    'Sanitario y Plomería',
-  ];
+  const rubrosLista = getRubrosList();
+  const rubrosDisponibles = rubrosLista.filter(r => r.estado === 'Activo').map(r => r.nombre);
+  if (rubrosDisponibles.length === 0) {
+    rubrosDisponibles.push('Obras Menores y Remodelaciones');
+  }
 
   const handleOpenAddModal = () => {
     setEditingId(null);
@@ -56,6 +60,10 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
     setCuentaSustentabilidad(true);
     setDireccion('');
     setCiudad('Temuco');
+    setLecturaFeedback([]);
+    setLecturaError('');
+    setLeyendoCotizacion(false);
+    setGuardandoProveedor(false);
     setShowModal(true);
   };
 
@@ -70,40 +78,94 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
     setCuentaSustentabilidad(prov.cuentaSustentabilidad);
     setDireccion(prov.direccion || '');
     setCiudad(prov.ciudad || 'Temuco');
+    setLecturaFeedback([]);
+    setLecturaError('');
+    setLeyendoCotizacion(false);
+    setGuardandoProveedor(false);
     setShowModal(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!rut || !razonSocial) return;
+  const handleLeerCotizacion = async (file?: File) => {
+    if (!file) return;
 
-    if (editingId) {
-      onUpdateProveedor(editingId, {
-        rut,
-        razonSocial,
-        nombreContacto,
-        email,
-        telefono,
-        rubro,
-        cuentaSustentabilidad,
-        direccion,
-        ciudad,
+    setLeyendoCotizacion(true);
+    setLecturaFeedback([]);
+    setLecturaError('');
+
+    try {
+      const timeout = new Promise<never>((_, reject) => {
+        window.setTimeout(() => reject(new Error('La lectura tardó demasiado. Intenta nuevamente o completa los datos manualmente.')), 20000);
       });
-    } else {
-      onAddProveedor({
-        rut,
-        razonSocial,
-        nombreContacto,
-        email,
-        telefono,
-        rubro,
-        cuentaSustentabilidad,
-        direccion,
-        ciudad,
-        estado: 'Activo',
-      });
+      const datos = await Promise.race([parseProveedorDesdeCotizacion(file), timeout]);
+
+      if (datos.rut) setRut(formatearRUT(datos.rut));
+      if (datos.razonSocial) setRazonSocial(datos.razonSocial);
+      if (datos.nombreContacto) setNombreContacto(datos.nombreContacto);
+      if (datos.email) setEmail(datos.email);
+      if (datos.telefono) setTelefono(datos.telefono);
+      if (datos.direccion) setDireccion(datos.direccion);
+      if (datos.ciudad) setCiudad(datos.ciudad);
+
+      setLecturaFeedback(
+        datos.detalles.length > 0
+          ? datos.detalles
+          : ['El documento fue leído, pero no se reconocieron datos del proveedor. Puedes completar los campos manualmente.'],
+      );
+    } catch (error) {
+      setLecturaError(error instanceof Error ? error.message : 'No fue posible leer la cotización.');
+    } finally {
+      setLeyendoCotizacion(false);
     }
-    setShowModal(false);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rut || !razonSocial || guardandoProveedor) return;
+
+    const rutNormalizado = rut.replace(/[^0-9kK]/g, '').toUpperCase();
+    const proveedorDuplicado = proveedores.some(
+      proveedor => proveedor.id !== editingId && proveedor.rut.replace(/[^0-9kK]/g, '').toUpperCase() === rutNormalizado,
+    );
+    if (proveedorDuplicado) {
+      setLecturaError('Ya existe un proveedor registrado con este RUT.');
+      return;
+    }
+
+    setGuardandoProveedor(true);
+    setLecturaError('');
+    try {
+      if (editingId) {
+        await onUpdateProveedor(editingId, {
+          rut,
+          razonSocial,
+          nombreContacto,
+          email,
+          telefono,
+          rubro,
+          cuentaSustentabilidad,
+          direccion,
+          ciudad,
+        });
+      } else {
+        await onAddProveedor({
+          rut,
+          razonSocial,
+          nombreContacto,
+          email,
+          telefono,
+          rubro,
+          cuentaSustentabilidad,
+          direccion,
+          ciudad,
+          estado: 'Activo',
+        });
+      }
+      setShowModal(false);
+    } catch (error) {
+      setLecturaError(error instanceof Error ? error.message : 'No fue posible guardar el proveedor. Intenta nuevamente.');
+    } finally {
+      setGuardandoProveedor(false);
+    }
   };
 
   const filteredProveedores = proveedores.filter(p => {
@@ -294,12 +356,58 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
       {/* Modal Add / Edit */}
       {showModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4">
+          <div className="bg-white rounded-2xl max-w-2xl max-h-[92vh] overflow-y-auto w-full p-6 shadow-2xl space-y-4">
             <h3 className="text-lg font-bold text-slate-800 border-b pb-3">
               {editingId ? 'Editar Proveedor' : 'Registrar Nuevo Proveedor'}
             </h3>
 
             <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+              {!editingId && (
+                <div className="rounded-xl border border-dashed border-sky-300 bg-sky-50/70 p-4">
+                  <label className={`flex cursor-pointer items-center gap-3 rounded-lg transition ${leyendoCotizacion ? 'pointer-events-none opacity-70' : 'hover:bg-sky-100/70'}`}>
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-sky-600 shadow-sm">
+                      {leyendoCotizacion ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
+                    </span>
+                    <span>
+                      <span className="block font-bold text-sky-900">
+                        {leyendoCotizacion ? 'Leyendo datos de la cotización…' : 'Adjuntar cotización para completar los datos'}
+                      </span>
+                      <span className="mt-0.5 block text-[11px] text-sky-700">
+                        PDF, Excel o CSV. Los campos detectados quedarán editables antes de registrar.
+                      </span>
+                    </span>
+                    <input
+                      type="file"
+                      accept=".pdf,.xlsx,.xls,.csv,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+                      className="hidden"
+                      disabled={leyendoCotizacion}
+                      onChange={event => {
+                        void handleLeerCotizacion(event.target.files?.[0]);
+                        event.currentTarget.value = '';
+                      }}
+                    />
+                  </label>
+
+                  {lecturaFeedback.length > 0 && (
+                    <div className="mt-3 rounded-lg border border-emerald-200 bg-white p-3 text-emerald-800">
+                      <div className="mb-1.5 flex items-center gap-1.5 font-bold">
+                        <FileText className="h-4 w-4" />
+                        Datos encontrados y completados
+                      </div>
+                      <ul className="space-y-0.5 text-[11px]">
+                        {lecturaFeedback.map((detalle, index) => <li key={`${detalle}-${index}`}>• {detalle}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {lecturaError && (
+                <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 font-medium text-red-700">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{lecturaError}</span>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">RUT Empresa *</label>
@@ -440,15 +548,18 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
+                  disabled={guardandoProveedor}
                   className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-semibold shadow-sm"
+                  disabled={leyendoCotizacion || guardandoProveedor}
+                  className="flex items-center gap-2 px-5 py-2 bg-sky-600 hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60 text-white rounded-lg font-semibold shadow-sm"
                 >
-                  {editingId ? 'Guardar Cambios' : 'Registrar Proveedor'}
+                  {guardandoProveedor && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {guardandoProveedor ? 'Guardando…' : editingId ? 'Guardar Cambios' : 'Registrar Proveedor'}
                 </button>
               </div>
             </form>

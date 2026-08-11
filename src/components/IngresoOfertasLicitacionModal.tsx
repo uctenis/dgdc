@@ -3,7 +3,7 @@ import {
   Upload, CheckCircle2, X, Plus
 } from 'lucide-react';
 import type { LicitacionProyecto, Cotizacion, Proveedor } from '../types';
-import { formatoMonedaCLP } from '../services/evaluationEngine';
+import { formatoMonedaCLP, ordenarCotizacionesPorResultado } from '../services/evaluationEngine';
 import { addCotizacion, deleteCotizacion } from '../services/firestoreService';
 import { parseCotizacionExcel } from '../utils/excelParser';
 import { parseCotizacionPdf } from '../utils/pdfParser';
@@ -23,7 +23,15 @@ export const IngresoOfertasLicitacionModal: React.FC<IngresoOfertasLicitacionMod
   proveedores,
   onClose,
 }) => {
-  const cotizacionesExistentes = cotizaciones.filter(c => c.licitacionId === licitacion.id);
+  const resultadosOrdenados = ordenarCotizacionesPorResultado(
+    cotizaciones.filter(c => c.licitacionId === licitacion.id),
+    licitacion,
+  );
+  const cotizacionesExistentes = resultadosOrdenados.map(resultado => resultado.cotizacion);
+  const procesoCerrado = licitacion.estado === 'Adjudicado'
+    || licitacion.estado === 'Cerrado'
+    || Boolean(licitacion.proveedorAdjudicadoId)
+    || Boolean(licitacion.proveedorGanadorId);
 
   const [ofertaActivaIndex, setOfertaActivaIndex] = useState<number>(0);
 
@@ -41,6 +49,10 @@ export const IngresoOfertasLicitacionModal: React.FC<IngresoOfertasLicitacionMod
   const total = typeof montoNeto === 'number' ? montoNeto + iva : 0;
 
   const handleFileUpload = async (file: File) => {
+    if (procesoCerrado) {
+      alert('Proceso cerrado: la licitación ya fue adjudicada y no acepta nuevas ofertas.');
+      return;
+    }
     const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
     const isPdf = file.name.toLowerCase().endsWith('.pdf');
     setUploadPct(10);
@@ -92,6 +104,10 @@ export const IngresoOfertasLicitacionModal: React.FC<IngresoOfertasLicitacionMod
 
   const handleGuardarOferta = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (procesoCerrado) {
+      alert('Proceso cerrado: no es posible registrar ofertas después de la adjudicación.');
+      return;
+    }
     if (!proveedorId) {
       alert('Por favor seleccione una empresa oferente.');
       return;
@@ -134,12 +150,20 @@ export const IngresoOfertasLicitacionModal: React.FC<IngresoOfertasLicitacionMod
       setDeclaraSustentabilidad(false);
       setObservaciones('');
       setParsedFeedback(null);
+    } catch (error) {
+      alert(error instanceof Error && error.message.includes('PROCESO_CERRADO')
+        ? 'Proceso cerrado: la licitación fue adjudicada mientras esta ventana estaba abierta.'
+        : 'No fue posible registrar la oferta. Intente nuevamente.');
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleDeleteOferta = async (cotizacionId: string) => {
+    if (procesoCerrado) {
+      alert('Las ofertas de una licitación adjudicada quedan bloqueadas como antecedentes del proceso.');
+      return;
+    }
     if (!confirm('¿Eliminar esta oferta registrada?')) return;
     await deleteCotizacion(cotizacionId);
   };
@@ -158,7 +182,7 @@ export const IngresoOfertasLicitacionModal: React.FC<IngresoOfertasLicitacionMod
               <span className="text-[10px] text-slate-500 font-bold">Cód: {licitacion.codigoProyecto}</span>
             </div>
             <h3 className="text-base font-bold text-slate-800 mt-1">
-              Ingreso de Ofertas para {licitacion.nombreProyecto}
+              Ingreso de Ofertas para {licitacion.nombreProyecto.toLocaleUpperCase('es-CL')}
             </h3>
             <p className="text-xs text-slate-500">Presupuesto Estimado: {formatoMonedaCLP(licitacion.montoEstimado)}</p>
           </div>
@@ -166,6 +190,13 @@ export const IngresoOfertasLicitacionModal: React.FC<IngresoOfertasLicitacionMod
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {procesoCerrado && (
+          <div className="bg-amber-50 border border-amber-300 text-amber-950 rounded-xl px-4 py-3 shrink-0">
+            <p className="font-extrabold">Proceso cerrado por adjudicación</p>
+            <p className="mt-1 text-[11px]">No se admiten nuevas ofertas ni cambios sobre las ya registradas. Esta vista es únicamente de consulta.</p>
+          </div>
+        )}
 
         {/* Pestañas de Ofertas (Oferta 1, Oferta 2, Oferta 3...) */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b shrink-0">
@@ -183,40 +214,51 @@ export const IngresoOfertasLicitacionModal: React.FC<IngresoOfertasLicitacionMod
                 {idx + 1}
               </div>
               <div>
+                <span className="block text-[9px] font-black uppercase text-emerald-600">
+                  {resultadosOrdenados[idx].esAdjudicada ? 'Adjudicada' : `Ranking #${resultadosOrdenados[idx].rankingPuntaje}`}
+                  {' · '}{resultadosOrdenados[idx].puntaje.toFixed(2)} pts
+                </span>
                 <span className="block text-[11px] font-bold truncate max-w-[120px]">{cot.proveedorNombre}</span>
                 <span className="block text-[10px] opacity-80">{formatoMonedaCLP(cot.montoNeto)} ({cot.plazoDias}d)</span>
               </div>
               <button
                 type="button"
+                disabled={procesoCerrado}
                 onClick={(e) => {
                   e.stopPropagation();
                   handleDeleteOferta(cot.id);
                 }}
-                className="text-slate-400 hover:text-red-400 p-0.5 rounded"
+                className="text-slate-400 hover:text-red-400 disabled:text-slate-600 disabled:cursor-not-allowed p-0.5 rounded"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
           ))}
 
-          <button
-            type="button"
-            onClick={() => setOfertaActivaIndex(cotizacionesExistentes.length)}
-            className={`px-4 py-2 rounded-xl border border-dashed flex items-center gap-1.5 font-bold transition shrink-0 ${
-              ofertaActivaIndex === cotizacionesExistentes.length
-                ? 'bg-sky-600 text-white border-sky-600 shadow-sm'
-                : 'bg-sky-50 text-sky-700 border-sky-300 hover:bg-sky-100'
-            }`}
-          >
-            <Plus className="w-4 h-4" />
-            <span>Ingresar Oferta {cotizacionesExistentes.length + 1}</span>
-          </button>
+          {!procesoCerrado && (
+            <button
+              type="button"
+              onClick={() => setOfertaActivaIndex(cotizacionesExistentes.length)}
+              className={`px-4 py-2 rounded-xl border border-dashed flex items-center gap-1.5 font-bold transition shrink-0 ${
+                ofertaActivaIndex === cotizacionesExistentes.length
+                  ? 'bg-sky-600 text-white border-sky-600 shadow-sm'
+                  : 'bg-sky-50 text-sky-700 border-sky-300 hover:bg-sky-100'
+              }`}
+            >
+              <Plus className="w-4 h-4" />
+              <span>Ingresar Oferta {cotizacionesExistentes.length + 1}</span>
+            </button>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto space-y-5 pr-1">
 
           {/* Formulario de Ingreso de Nueva Oferta */}
-          {ofertaActivaIndex === cotizacionesExistentes.length ? (
+          {procesoCerrado && cotizacionesExistentes.length === 0 ? (
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-8 text-center text-slate-600">
+              Esta licitación fue adjudicada sin ofertas disponibles para visualizar.
+            </div>
+          ) : ofertaActivaIndex === cotizacionesExistentes.length ? (
             <form onSubmit={handleGuardarOferta} className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
               <div className="flex items-center justify-between border-b pb-3">
                 <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-2">

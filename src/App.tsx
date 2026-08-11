@@ -7,15 +7,18 @@ import { QuotationIngestion } from './components/QuotationIngestion';
 import { EvaluationMatrix } from './components/EvaluationMatrix';
 import { DocumentGenerator } from './components/DocumentGenerator';
 import { SettingsModal } from './components/SettingsModal';
+import { SettingsView } from './components/SettingsView';
 import { ProyectosMaestros } from './components/ProyectosMaestros';
 import { SgcProcessWorkflow } from './components/SgcProcessWorkflow';
+import { FichaProyectoPage } from './components/FichaProyectoPage';
+import { LicitacionWorkspacePage } from './components/LicitacionWorkspacePage';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LoginPage } from './pages/LoginPage';
 import { PortalDashboard } from './pages/PortalDashboard';
 import { LicitacionDetalle } from './pages/LicitacionDetalle';
 
-import type { Proveedor, LicitacionProyecto, Cotizacion, ConfiguracionFirmas } from './types';
+import type { Proveedor, LicitacionProyecto, Cotizacion, ConfiguracionFirmas, ProyectoMaestro } from './types';
 import { storageService } from './services/storageService';
 import {
   subscribeToProveedores,
@@ -44,6 +47,19 @@ function AdminApp() {
   const [cotizaciones, setCotizaciones] = useState<Cotizacion[]>([]);
   const [configFirmas, setConfigFirmas] = useState<ConfiguracionFirmas>(storageService.getConfigFirmas());
   const [licitacionSeleccionadaId, setLicitacionSeleccionadaId] = useState<string | null>(null);
+  const [proyectoParaFicha, setProyectoParaFicha] = useState<LicitacionProyecto | ProyectoMaestro | null>(null);
+  const [licitacionWorkspaceId, setLicitacionWorkspaceId] = useState<string | null>(null);
+
+  const handleOpenFicha = (p: LicitacionProyecto | ProyectoMaestro) => {
+    if ('nombreProyecto' in p) {
+      setLicitacionSeleccionadaId(p.id);
+      setLicitacionWorkspaceId(p.id);
+      setActiveTab('ficha-licitacion');
+      return;
+    }
+    setProyectoParaFicha(p);
+    setActiveTab('ficha-proyecto');
+  };
 
   // Firestore Subscriptions for Licitaciones and Proveedores
   useEffect(() => {
@@ -54,8 +70,8 @@ function AdminApp() {
 
     const unsubLics = subscribeToLicitaciones(lics => {
       setLicitaciones(lics);
-      if (lics.length > 0 && !licitacionSeleccionadaId) {
-        setLicitacionSeleccionadaId(lics[0].id);
+      if (lics.length > 0) {
+        setLicitacionSeleccionadaId(currentId => currentId ?? lics[0].id);
       }
     });
 
@@ -89,6 +105,8 @@ function AdminApp() {
   const handleAddLicitacion = async (newLicitacion: Omit<LicitacionProyecto, 'id'>) => {
     const id = await fsAddLicitacion(newLicitacion);
     setLicitacionSeleccionadaId(id);
+    setLicitacionWorkspaceId(id);
+    setActiveTab('ficha-licitacion');
   };
 
   const handleUpdateLicitacion = async (id: string, updated: Partial<LicitacionProyecto>) => {
@@ -103,12 +121,34 @@ function AdminApp() {
 
   // Handlers for Cotizaciones (Firestore)
   const handleAddCotizacion = async (newCot: Omit<Cotizacion, 'id' | 'fechaCarga'>) => {
+    const licitacion = licitaciones.find(item => item.id === newCot.licitacionId);
+    if (licitacion && (
+      licitacion.estado === 'Adjudicado'
+      || licitacion.estado === 'Cerrado'
+      || licitacion.proveedorAdjudicadoId
+      || licitacion.proveedorGanadorId
+    )) {
+      throw new Error('PROCESO_CERRADO: La licitación ya fue adjudicada y no acepta nuevas ofertas.');
+    }
     await fsAddCotizacion(newCot);
     const updatedCots = await getAllCotizaciones();
     setCotizaciones(updatedCots);
   };
 
   const handleDeleteCotizacion = async (id: string) => {
+    const cotizacion = cotizaciones.find(item => item.id === id);
+    const licitacion = cotizacion
+      ? licitaciones.find(item => item.id === cotizacion.licitacionId)
+      : undefined;
+    if (licitacion && (
+      licitacion.estado === 'Adjudicado'
+      || licitacion.estado === 'Cerrado'
+      || licitacion.proveedorAdjudicadoId
+      || licitacion.proveedorGanadorId
+    )) {
+      alert('Proceso cerrado: una licitación adjudicada conserva sus ofertas como antecedentes y no permite eliminarlas.');
+      return;
+    }
     if (confirm('¿Confirma que desea eliminar esta cotización?')) {
       await fsDeleteCotizacion(id);
       const updatedCots = await getAllCotizaciones();
@@ -118,7 +158,8 @@ function AdminApp() {
 
   // Handler for Adjudicación Compuesta (Actualiza Firestore + Genera Historial en todos los proveedores)
   const handleAdjudicarLicitacion = async (licId: string, provId: string, justificacion: string) => {
-    if (!licitacionActiva) return;
+    const licitacionAAdjudicar = licitaciones.find(licitacion => licitacion.id === licId);
+    if (!licitacionAAdjudicar) return;
 
     const cots = cotizaciones.filter(c => c.licitacionId === licId);
     const evs = evaluarCotizaciones(cots);
@@ -133,12 +174,12 @@ function AdminApp() {
       justificacion,
       cotizaciones: cots,
       puntajes,
-      codigoCP: licitacionActiva.codigoCP,
-      codigoOP: licitacionActiva.codigoOP,
-      nombreProyecto: licitacionActiva.nombreProyecto,
+      codigoCP: licitacionAAdjudicar.codigoCP,
+      codigoOP: licitacionAAdjudicar.codigoOP,
+      nombreProyecto: licitacionAAdjudicar.nombreProyecto,
     });
 
-    alert('¡Licitación adjudicada con éxito! El historial de obras ha sido actualizado automáticamente en los perfiles de todos los proveedores participantes. Diríjase a la pestaña "Actas & Documentos SGC" para exportar los informes oficiales.');
+    alert('¡Licitación adjudicada con éxito! El historial de obras fue actualizado. Puede abrir el acta oficial desde la pestaña "Actas" y exportarla a PDF.');
   };
 
   const handleSaveConfigFirmas = (cfg: ConfiguracionFirmas) => {
@@ -157,7 +198,7 @@ function AdminApp() {
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        openSettings={() => setIsSettingsOpen(true)}
+        openSettings={() => setActiveTab('configuracion')}
       />
 
       {/* Main Content Area */}
@@ -167,11 +208,14 @@ function AdminApp() {
             licitaciones={licitaciones}
             proveedores={proveedores}
             cotizaciones={cotizaciones}
+            configFirmas={configFirmas}
             licitacionSeleccionadaId={licitacionSeleccionadaId}
             onSelectLicitacion={id => {
               setLicitacionSeleccionadaId(id);
-              setActiveTab('cotizaciones');
+              setLicitacionWorkspaceId(id);
+              setActiveTab('ficha-licitacion');
             }}
+            onOpenFicha={lic => handleOpenFicha(lic)}
             onAddLicitacion={handleAddLicitacion}
             onUpdateLicitacion={handleUpdateLicitacion}
             onDeleteLicitacion={handleDeleteLicitacion}
@@ -180,8 +224,33 @@ function AdminApp() {
         )}
 
         {activeTab === 'proyectos-maestros' && (
-          <ProyectosMaestros />
+          <ProyectosMaestros onOpenFicha={p => handleOpenFicha(p)} />
         )}
+
+        {activeTab === 'ficha-proyecto' && proyectoParaFicha && (
+          <FichaProyectoPage
+            proyecto={proyectoParaFicha}
+            onBack={() => setActiveTab('licitaciones')}
+          />
+        )}
+
+        {activeTab === 'ficha-licitacion' && (() => {
+          const licitacion = licitaciones.find(l => l.id === licitacionWorkspaceId);
+          return licitacion ? (
+            <LicitacionWorkspacePage
+              licitacion={licitacion}
+              proveedores={proveedores}
+              cotizaciones={cotizaciones}
+              configFirmas={configFirmas}
+              onBack={() => setActiveTab('licitaciones')}
+              onAddCotizacion={handleAddCotizacion}
+              onDeleteCotizacion={handleDeleteCotizacion}
+              onAdjudicarLicitacion={handleAdjudicarLicitacion}
+            />
+          ) : (
+            <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-sm text-slate-500">Cargando ficha de la licitación...</div>
+          );
+        })()}
 
         {activeTab === 'proveedores' && (
           <SupplierManager
@@ -216,12 +285,22 @@ function AdminApp() {
           <DocumentGenerator
             licitacion={licitaciones.find(l => l.id === licitacionSeleccionadaId) || licitaciones[0]}
             cotizaciones={cotizaciones}
+            proveedores={proveedores}
             configFirmas={configFirmas}
+            onAdjudicarLicitacion={handleAdjudicarLicitacion}
           />
         )}
 
         {activeTab === 'diagrama-sgc' && (
           <SgcProcessWorkflow />
+        )}
+
+        {activeTab === 'configuracion' && (
+          <SettingsView
+            config={configFirmas}
+            onSaveConfig={handleSaveConfigFirmas}
+            onResetData={handleResetAllData}
+          />
         )}
       </main>
 

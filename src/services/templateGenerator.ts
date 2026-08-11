@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import type { LicitacionProyecto } from '../types';
+import { normalizarNombreProyecto } from '../utils/spellCorrector';
 
 /* ─────────────────────────────────────────────────────────────────────────────
    Helper: aplica estilos a una celda (solo con SheetJS Pro, pero se usan
@@ -9,6 +10,7 @@ import type { LicitacionProyecto } from '../types';
 
 export function generarPlantillaCotizacionExcel(licitacion?: LicitacionProyecto) {
   const wb = XLSX.utils.book_new();
+  const nombreProyecto = normalizarNombreProyecto(licitacion?.nombreProyecto || 'NOMBRE DEL PROYECTO / SERVICIO');
 
   /* ══════════════════════════════════════════════════════════════════════════
      HOJA 1 — FORMULARIO OFICIAL DE COTIZACIÓN
@@ -33,7 +35,7 @@ export function generarPlantillaCotizacionExcel(licitacion?: LicitacionProyecto)
     ['DATOS DE LA LICITACIÓN / PROYECTO', null, null, null, null, null],
     ['Código CP', licitacion?.codigoCP || '409-XXX', 'Código OP', licitacion?.codigoOP || 'OP-XXXX', 'Código OT', licitacion?.codigoOT || 'OT-XXXX'],
     ['Código Proyecto', codigoProyecto, 'Fecha Cotización', fechaHoy, null, null],
-    ['Nombre del Proyecto', licitacion?.nombreProyecto || 'NOMBRE DEL PROYECTO / SERVICIO', null, null, null, null],
+    ['Nombre del Proyecto', nombreProyecto, null, null, null, null],
     ['Descripción', licitacion?.descripcion || 'DESCRIPCIÓN DE LA OBRA O SERVICIO A COTIZAR', null, null, null, null],
     [null, null, null, null, null, null],
 
@@ -207,7 +209,7 @@ export function generarPlantillaCotizacionExcel(licitacion?: LicitacionProyecto)
     ['SECCIÓN F — ENVÍO Y CARGA AL SISTEMA'],
     ['───────────────────────────────────────────────────────────────────────────'],
     ['17. Guarde el archivo con el nombre: Cotizacion_[NombreEmpresa]_[CodigoProyecto].xlsx'],
-    [`18. Proyecto activo: ${licitacion?.nombreProyecto || 'Ver indicaciones del funcionario UCT'}`],
+    [`18. Proyecto activo: ${nombreProyecto}`],
     ['19. Suba el archivo al sistema de la Subdirección de Infraestructura UCT.'],
     ['20. Ante consultas, contacte a la Subdirección de Infraestructura.'],
     [''],
@@ -228,7 +230,7 @@ export function generarPlantillaCotizacionExcel(licitacion?: LicitacionProyecto)
     ['RESUMEN EJECUTIVO DE OFERTA'],
     ['Complete este resumen luego de llenar el itemizado. Este resumen es para uso del evaluador.'],
     [null],
-    ['Proyecto', licitacion?.nombreProyecto || ''],
+    ['Proyecto', nombreProyecto],
     ['Código', codigoProyecto],
     ['Fecha', fechaHoy],
     [null],

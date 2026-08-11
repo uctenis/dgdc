@@ -1,5 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Source+Sans+Pro:wght@400;500;600;700;900&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
 /* ─── Design Tokens ─────────────────────────────────────────────────────── */
 :root {
@@ -44,8 +44,14 @@
   }
 
   h1, h2, h3, h4, h5 {
-    font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
-    letter-spacing: -0.02em;
+    font-family: 'Source Sans Pro', 'Inter', sans-serif;
+    letter-spacing: -0.01em;
+    font-weight: 600;
+  }
+
+  code, pre, kbd, samp, var {
+    font-family: 'IBM Plex Mono', 'Courier New', monospace;
+    font-weight: 500;
   }
 
   ::selection {
@@ -61,6 +67,53 @@
 
 /* ─── Component Utilities ───────────────────────────────────────────────── */
 @layer components {
+
+  /* Typographic hierarchy */
+  .heading-xl {
+    font-family: 'Source Sans Pro', 'Inter', sans-serif;
+    font-size: 3rem;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+
+  .heading-lg {
+    font-family: 'Source Sans Pro', 'Inter', sans-serif;
+    font-size: 1.875rem;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+
+  .heading-md {
+    font-family: 'Source Sans Pro', 'Inter', sans-serif;
+    font-size: 1.25rem;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  .heading-sm {
+    font-family: 'Source Sans Pro', 'Inter', sans-serif;
+    font-size: 0.875rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+
+  .text-body {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 0.9375rem;
+    font-weight: 400;
+    line-height: 1.5;
+    letter-spacing: -0.005em;
+  }
+
+  .text-code {
+    font-family: 'IBM Plex Mono', 'Courier New', monospace;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
 
   /* Card base */
   .card {

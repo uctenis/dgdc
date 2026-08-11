@@ -12,6 +12,7 @@ import {
 import { saveAs } from 'file-saver';
 import type { LicitacionProyecto, Cotizacion, EvaluacionResultado, ConfiguracionFirmas } from '../types';
 import { formatoMonedaCLP } from './evaluationEngine';
+import { normalizarNombreProyecto } from '../utils/spellCorrector';
 
 export async function generarDocumentoCuadroComparativoActa(
   licitacion: LicitacionProyecto,
@@ -233,7 +234,7 @@ export async function generarDocumentoCuadroComparativoActa(
           new Paragraph({
             children: [
               new TextRun({ text: `CP: ${licitacion.codigoCP}   OP: ${licitacion.codigoOP}   OT: ${licitacion.codigoOT}   Fecha: ${licitacion.fechaEvaluacion}\n`, bold: true, size: 18 }),
-              new TextRun({ text: `PROYECTO: ${licitacion.codigoProyecto} - ${licitacion.nombreProyecto}\n`, bold: true, size: 20 }),
+              new TextRun({ text: `PROYECTO: ${licitacion.codigoProyecto} - ${normalizarNombreProyecto(licitacion.nombreProyecto)}\n`, bold: true, size: 20 }),
               new TextRun({ text: `DESCRIPCIÓN: ${licitacion.descripcion}\n`, size: 18 }),
             ],
           }),

@@ -4,21 +4,33 @@ export const INITIAL_CONFIG_FIRMAS: ConfiguracionFirmas = {
   directorGestionCampus: {
     nombre: 'Iván Cisternas Cisternas',
     cargo: 'Director de Gestión y Desarrollo de Campus',
+    email: 'icisternas@uct.cl',
   },
   subdirectorInfraestructura: {
     nombre: 'David Silva Roco',
     cargo: 'Sub-Director de Infraestructura',
+    email: 'dsilva@uct.cl',
   },
   responsableDesarrollo: {
     nombre: 'Ing. Desarrollo Infraestructura',
     cargo: 'Responsable Desarrollo Infraestructura',
+    email: 'infraestructura@uct.cl',
   },
   vicerrectorAdministracion: {
-    nombre: 'Dr. Marcelo Toneatti Bastidas',
-    cargo: 'Vicerrector de Administración y Asuntos Económicos',
+    nombre: 'Alejandra Espinoza Cid',
+    cargo: 'Vicerrectora de Administración y Asuntos Económicos',
+    email: 'vrae@uct.cl',
   },
   institucion: 'Universidad Católica de Temuco',
   subdireccion: 'Subdirección de Infraestructura - Dirección de Gestión y Desarrollo de Campus',
+  parametrosSgc: {
+    porcentajeEconomico: 55,
+    porcentajeTecnico: 35,
+    porcentajeSustentabilidad: 10,
+    tasaIva: 19,
+    umbralActaObligatoria: 800001,
+    umbralAprobacionVrae: 5000001,
+  },
 };
 
 export const INITIAL_PROVEEDORES: Proveedor[] = [

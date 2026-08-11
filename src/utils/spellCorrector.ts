@@ -73,6 +73,53 @@ export function corregirOrtografiaEspanol(texto: string): string {
 }
 
 /**
+ * Convierte un nombre de proyecto o título a Formato Título (Title Case),
+ * respetando siglas institucionales (UCT, VRAE, SGC, DGDC, CP, OT, OP, etc.) y preposiciones en minúscula.
+ */
+export function formatearNombreTitulo(texto: string): string {
+  if (!texto) return '';
+
+  const corregido = corregirOrtografiaEspanol(texto.trim());
+  const minusculas = new Set(['de', 'del', 'en', 'y', 'e', 'a', 'al', 'con', 'para', 'por', 'las', 'los', 'la', 'el', 'un', 'una', 'unos', 'unas']);
+  const siglas = new Set(['UCT', 'VRAE', 'DGDC', 'SGC', 'CP', 'OP', 'OT', 'HVAC', 'LED', 'EETT', 'CJPII', 'CJP', 'CSF', 'CRC', 'CLL', 'RUA', 'CC']);
+
+  const palabras = corregido.split(/\s+/);
+  const resultado = palabras.map((palabra, index) => {
+    if (palabra.includes('-')) {
+      return palabra
+        .split('-')
+        .map(sub => formatearNombreTitulo(sub))
+        .join('-');
+    }
+
+    const limpia = palabra.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ0-9]/g, '');
+    const upper = limpia.toUpperCase();
+
+    if (siglas.has(upper)) {
+      return palabra.toUpperCase();
+    }
+
+    const lower = limpia.toLowerCase();
+    if (index > 0 && minusculas.has(lower)) {
+      return palabra.toLowerCase();
+    }
+
+    return palabra.charAt(0).toUpperCase() + palabra.slice(1).toLowerCase();
+  });
+
+  return resultado.join(' ');
+}
+
+/** Regla institucional: los nombres de proyectos se almacenan y presentan siempre en mayúsculas. */
+export function normalizarNombreProyecto(texto: string): string {
+  if (!texto) return '';
+  return corregirOrtografiaEspanol(texto)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLocaleUpperCase('es-CL');
+}
+
+/**
  * Atributos HTML estándar para activar la corrección nativa del navegador en español chileno.
  */
 export const ATRIBUTOS_ORTOGRAFIA_ES = {

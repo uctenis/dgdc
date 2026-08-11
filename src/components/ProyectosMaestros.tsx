@@ -12,18 +12,20 @@ import {
 } from '../services/firestoreService';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
-import { corregirOrtografiaEspanol, ATRIBUTOS_ORTOGRAFIA_ES } from '../utils/spellCorrector';
+import { corregirOrtografiaEspanol, normalizarNombreProyecto, ATRIBUTOS_ORTOGRAFIA_ES } from '../utils/spellCorrector';
 import { CAMPUS_UCT, obtenerEdificiosDeCampus, obtenerCampusPorSigla } from '../data/campusData';
 import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
+import { getCentrosCostoList } from '../data/centrosCostoData';
 import type { ProyectoMaestro } from '../types';
 
 interface ProyectosMaestrosProps {
   onSelectProyecto?: (p: ProyectoMaestro) => void;
+  onOpenFicha?: (p: ProyectoMaestro) => void;
   modoSelector?: boolean;
 }
 
 const EMPTY_FORM = {
-  codigoCP: '409-',
+  codigoCP: '409-1722',
   codigoOP: '',
   codigoOT: '',
   codigoProyecto: '2026_099',
@@ -49,6 +51,7 @@ const EMPTY_FORM = {
 
 export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   onSelectProyecto,
+  onOpenFicha,
   modoSelector = false,
 }) => {
   const [proyectos, setProyectos] = useState<ProyectoMaestro[]>([]);
@@ -156,7 +159,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
         await updateProyectoMaestro(editingId, {
           codigoCP: form.codigoCP,
           codigoProyecto: form.codigoProyecto,
-          nombre: form.nombre,
+          nombre: normalizarNombreProyecto(form.nombre),
           descripcion: form.descripcion,
           valorAprox: form.valorAprox,
           estado: form.estado,
@@ -175,7 +178,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           codigoOP: '',
           codigoOT: '',
           codigoProyecto: form.codigoProyecto,
-          nombre: form.nombre,
+          nombre: normalizarNombreProyecto(form.nombre),
           descripcion: form.descripcion,
           valorAprox: form.valorAprox,
           estado: form.estado,
@@ -316,8 +319,14 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                 return (
                   <tr
                     key={p.id}
-                    className={`hover:bg-slate-50 transition ${modoSelector ? 'cursor-pointer' : ''}`}
-                    onClick={() => modoSelector && onSelectProyecto?.(p)}
+                    className={`hover:bg-slate-50 transition ${(modoSelector || onOpenFicha) ? 'cursor-pointer' : ''}`}
+                    onClick={() => {
+                      if (modoSelector) {
+                        onSelectProyecto?.(p);
+                      } else {
+                        onOpenFicha?.(p);
+                      }
+                    }}
                   >
                     <td className="px-3 py-3">
                       <span className="font-extrabold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200 font-mono">
@@ -353,7 +362,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                       </div>
                     </td>
                     <td className="px-3 py-3">
-                      <p className="font-semibold text-slate-800 line-clamp-1">{p.nombre}</p>
+                      <p className="font-semibold text-slate-800 line-clamp-1">{(p.nombre || '').toUpperCase()}</p>
                       <p className="text-slate-500 text-[11px] line-clamp-1 mt-0.5">{p.descripcion}</p>
                     </td>
                     <td className="px-3 py-3 text-center">
@@ -378,6 +387,18 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                     <td className="px-3 py-3 text-center">
                       {!modoSelector && (
                         <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenFicha?.(p);
+                            }}
+                            className="px-2 py-1 text-[11px] font-bold text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-lg transition flex items-center gap-1 border border-sky-200"
+                            title="Ver Ficha y Carátula del Proyecto"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            <span>Ficha</span>
+                          </button>
                           <button onClick={() => openEdit(p)} className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition" title="Editar datos y antecedentes">
                             <Edit3 className="w-4 h-4" />
                           </button>
@@ -470,14 +491,21 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
                     <div>
                       <label className="block font-semibold text-slate-700 mb-1">Centro de Costo (CC) *</label>
-                      <input
-                        type="text"
+                      <select
                         required
-                        placeholder="Ej: 409-1722"
                         value={form.codigoCP}
                         onChange={e => setForm(f => ({ ...f, codigoCP: e.target.value }))}
                         className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800"
-                      />
+                      >
+                        <option value="">-- Seleccionar Centro de Costo (CP) --</option>
+                        {getCentrosCostoList()
+                          .filter(c => c.estado !== 'Inactivo' || c.codigoCP === form.codigoCP)
+                          .map(c => (
+                            <option key={c.codigoCP} value={c.codigoCP}>
+                              {c.codigoCP} — {c.nombre}
+                            </option>
+                          ))}
+                      </select>
                       <span className="text-[10px] text-slate-400 mt-0.5 block">Centro de costo asignado</span>
                     </div>
 
@@ -514,8 +542,8 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                       {...ATRIBUTOS_ORTOGRAFIA_ES}
                       placeholder="Ej: Iluminación y tabiquería interior laboratorio CRC17"
                       value={form.nombre}
-                      onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))}
-                      onBlur={e => setForm(f => ({ ...f, nombre: corregirOrtografiaEspanol(e.target.value) }))}
+                      onChange={e => setForm(f => ({ ...f, nombre: e.target.value.toLocaleUpperCase('es-CL') }))}
+                      onBlur={e => setForm(f => ({ ...f, nombre: normalizarNombreProyecto(e.target.value) }))}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-800"
                     />
                   </div>

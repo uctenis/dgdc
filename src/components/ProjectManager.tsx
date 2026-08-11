@@ -1,27 +1,30 @@
 import React, { useState } from 'react';
-import type { LicitacionProyecto, Proveedor, ProyectoMaestro, Cotizacion } from '../types';
+import type { LicitacionProyecto, Proveedor, ProyectoMaestro, Cotizacion, ConfiguracionFirmas } from '../types';
 import {
   FolderKanban, Plus, Calendar, ArrowRight, Edit3, Trash2,
   CheckCircle, Users, BookOpen, X, FileText, Sparkles, MapPin
 } from 'lucide-react';
-import { formatoMonedaCLP } from '../services/evaluationEngine';
+import { formatoMonedaCLP, ordenarCotizacionesPorResultado } from '../services/evaluationEngine';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
-import { corregirOrtografiaEspanol, ATRIBUTOS_ORTOGRAFIA_ES } from '../utils/spellCorrector';
+import { corregirOrtografiaEspanol, normalizarNombreProyecto, ATRIBUTOS_ORTOGRAFIA_ES } from '../utils/spellCorrector';
 import { InvitadosManager } from './InvitadosManager';
 import { AntecedentesManager } from './AntecedentesManager';
 import { ActaEvaluacionModal } from './ActaEvaluacionModal';
 import { IngresoOfertasLicitacionModal } from './IngresoOfertasLicitacionModal';
 import { CargaOrdenCompraModal } from './CargaOrdenCompraModal';
 import { ProyectosMaestros } from './ProyectosMaestros';
+import { getCentrosCostoList } from '../data/centrosCostoData';
 
 interface ProjectManagerProps {
   licitaciones: LicitacionProyecto[];
   proveedores: Proveedor[];
   cotizaciones: Cotizacion[];
+  configFirmas: ConfiguracionFirmas;
   licitacionSeleccionadaId: string | null;
   onSelectLicitacion: (id: string) => void;
-  onAddLicitacion: (lic: Omit<LicitacionProyecto, 'id'>) => void;
-  onUpdateLicitacion: (id: string, lic: Partial<LicitacionProyecto>) => void;
+  onOpenFicha?: (p: LicitacionProyecto) => void;
+  onAddLicitacion: (lic: Omit<LicitacionProyecto, 'id'>) => void | Promise<void>;
+  onUpdateLicitacion: (id: string, lic: Partial<LicitacionProyecto>) => void | Promise<void>;
   onDeleteLicitacion: (id: string) => void;
   onAdjudicarLicitacion: (licitacionId: string, proveedorId: string, justificacion: string) => void;
 }
@@ -30,8 +33,10 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
   licitaciones,
   proveedores,
   cotizaciones,
+  configFirmas,
   licitacionSeleccionadaId,
   onSelectLicitacion,
+  onOpenFicha,
   onAddLicitacion,
   onUpdateLicitacion,
   onDeleteLicitacion,
@@ -125,17 +130,19 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     setShowModal(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nombreProyecto) return;
 
+    const nombreFormateado = normalizarNombreProyecto(nombreProyecto);
+
     if (editingId) {
-      onUpdateLicitacion(editingId, {
+      await onUpdateLicitacion(editingId, {
         codigoCP,
         codigoOP,
         codigoOT,
         codigoProyecto,
-        nombreProyecto,
+        nombreProyecto: nombreFormateado,
         descripcion,
         montoEstimado,
         fechaVisitaTerreno,
@@ -148,12 +155,12 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
         responsableEmail,
       });
     } else {
-      onAddLicitacion({
+      await onAddLicitacion({
         codigoCP,
         codigoOP,
         codigoOT,
         codigoProyecto,
-        nombreProyecto,
+        nombreProyecto: nombreFormateado,
         descripcion,
         montoEstimado,
         fechaCreacion: new Date().toISOString().split('T')[0],
@@ -201,18 +208,29 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
         {licitaciones.map(lic => {
           const isSelected = lic.id === licitacionSeleccionadaId;
           const cotsLic = cotizaciones.filter(c => c.licitacionId === lic.id);
+          const resultadosOfertas = ordenarCotizacionesPorResultado(cotsLic, lic);
+          const cotizacionAdjudicada = cotsLic.find(c => c.id === lic.cotizacionAdjudicadaId)
+            || cotsLic.find(c => c.proveedorId === (lic.proveedorAdjudicadoId || lic.proveedorGanadorId));
+          const montoAdjudicado = lic.montoAdjudicadoTotal ?? cotizacionAdjudicada?.montoTotal;
+          const tieneMontoAdjudicado = Boolean(
+            montoAdjudicado && montoAdjudicado > 0 &&
+            (lic.estado === 'Adjudicado' || Boolean(lic.proveedorAdjudicadoId || lic.proveedorGanadorId)),
+          );
           const antecedentesContador = lic.antecedentesTecnicos?.length || 0;
           const invitadosContador = lic.proveedoresInvitadosIds?.length || 0;
 
           return (
             <div
-              key={lic.id}
-              onClick={() => onSelectLicitacion(lic.id)}
-              className={`bg-white rounded-2xl p-6 shadow-sm border transition flex flex-col justify-between relative overflow-hidden group hover:shadow-md ${
-                isSelected
-                  ? 'border-sky-500 ring-2 ring-sky-500/20 bg-gradient-to-b from-sky-50/30 to-white'
-                  : 'border-slate-200 hover:border-slate-300'
-              }`}
+                  key={lic.id}
+                  onClick={() => {
+                    onSelectLicitacion(lic.id);
+                    onOpenFicha?.(lic);
+                  }}
+                  className={`bg-white rounded-2xl p-6 shadow-sm border transition flex flex-col justify-between relative overflow-hidden group hover:shadow-md ${
+                    isSelected
+                      ? 'border-sky-500 ring-2 ring-sky-500/20 bg-gradient-to-b from-sky-50/30 to-white'
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
             >
               {/* Active Selection Badge */}
               {isSelected && (
@@ -262,7 +280,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
 
                 {/* Title and Description */}
                 <h3 className="text-base font-bold text-slate-800 line-clamp-2 leading-snug group-hover:text-sky-900 transition">
-                  {lic.nombreProyecto}
+                  {(lic.nombreProyecto || '').toUpperCase()}
                 </h3>
                 <p className="text-xs text-slate-500 mt-1.5 line-clamp-2">{lic.descripcion}</p>
               </div>
@@ -271,8 +289,9 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
               <div className="mt-4 space-y-3">
                 <div className="grid grid-cols-3 gap-2 text-xs bg-slate-50 p-2.5 rounded-xl border border-slate-100">
                   <div>
-                    <span className="text-[10px] text-slate-400 font-semibold block uppercase">Presupuesto</span>
-                    <span className="font-extrabold text-emerald-700">{formatoMonedaCLP(lic.montoEstimado)}</span>
+                    <span className="text-[10px] text-slate-400 font-semibold block uppercase">{tieneMontoAdjudicado ? 'Monto adjudicado' : 'Monto estimado'}</span>
+                    <span className="font-extrabold text-emerald-700">{formatoMonedaCLP(tieneMontoAdjudicado ? montoAdjudicado! : lic.montoEstimado)}</span>
+                    {tieneMontoAdjudicado && <span className="block text-[9px] text-slate-400">Estimado: {formatoMonedaCLP(lic.montoEstimado)}</span>}
                   </div>
 
                   <div>
@@ -348,12 +367,12 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                     <p className="text-[10px] text-slate-400 italic">No hay ofertas ingresadas aún. Presione "+ Ingresar Oferta" para agregar.</p>
                   ) : (
                     <div className="space-y-1">
-                      {cotsLic.slice(0, 3).map((c, i) => (
+                      {resultadosOfertas.slice(0, 3).map(({ cotizacion: c, puntaje, esAdjudicada }, i) => (
                         <div key={c.id} className="bg-white/10 px-2 py-1 rounded text-[11px] flex items-center justify-between">
                           <span className="truncate max-w-[170px]">
-                            <strong className="text-sky-300">Oferta {i + 1}:</strong> {c.proveedorNombre}
+                            <strong className={esAdjudicada ? 'text-emerald-300' : 'text-sky-300'}>{esAdjudicada ? 'Adjudicada' : `#${i + 1}`}:</strong> {c.proveedorNombre}
                           </span>
-                          <span className="font-bold text-emerald-400">{formatoMonedaCLP(c.montoNeto)} ({c.plazoDias}d)</span>
+                          <span className="font-bold text-emerald-400">{puntaje.toFixed(2)} pts · {formatoMonedaCLP(c.montoNeto)}</span>
                         </div>
                       ))}
                     </div>
@@ -442,6 +461,19 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                     type="button"
                     onClick={e => {
                       e.stopPropagation();
+                      onOpenFicha?.(lic);
+                    }}
+                    className="flex items-center gap-1.5 text-xs font-bold bg-sky-50 hover:bg-sky-100 text-sky-700 px-3 py-1.5 rounded-xl transition border border-sky-200"
+                    title="Ver Ficha y Carátula del Proyecto"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Ficha SGC</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={e => {
+                      e.stopPropagation();
                       setOfertasLicitacion(lic);
                     }}
                     className="flex items-center gap-1.5 text-xs font-bold bg-sky-600 hover:bg-sky-700 text-white px-3.5 py-1.5 rounded-xl transition shadow-sm"
@@ -481,6 +513,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
           licitacion={actaLicitacion}
           cotizaciones={cotizaciones}
           proveedores={proveedores}
+          configFirmas={configFirmas}
           onClose={() => setActaLicitacion(null)}
           onAdjudicar={(provId, justificacion) => {
             onAdjudicarLicitacion(actaLicitacion.id, provId, justificacion);
@@ -558,49 +591,56 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
 
             <form onSubmit={handleSubmit} className="space-y-4 text-xs">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Cód. Proyecto *</label>
+                <div className="flex flex-col h-full">
+                  <label className="block font-semibold text-slate-700 mb-1 h-8 flex items-center">Cód. Proyecto *</label>
                   <input
                     type="text"
                     required
                     placeholder="2026_XXX"
                     value={codigoProyecto}
                     onChange={e => setCodigoProyecto(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none font-bold text-indigo-700"
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none font-bold text-indigo-700 flex-grow"
                   />
-                  <span className="text-[10px] text-slate-400 mt-0.5 block">Desde Cartera 2026</span>
+                  <span className="text-[10px] text-slate-400 mt-1 block h-3 flex items-center">Desde Cartera 2026</span>
                 </div>
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Centro de Costo (CC) *</label>
-                  <input
-                    type="text"
+                <div className="flex flex-col h-full">
+                  <label className="block font-semibold text-slate-700 mb-1 h-8 flex items-center">Centro de Costo (CC) *</label>
+                  <select
                     required
-                    placeholder="409-XXXX"
                     value={codigoCP}
                     onChange={e => setCodigoCP(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none font-semibold text-slate-800"
-                  />
-                  <span className="text-[10px] text-slate-400 mt-0.5 block">CC del presupuesto</span>
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none font-semibold text-slate-800 flex-grow"
+                  >
+                    <option value="">-- Seleccionar Centro de Costo (CP) --</option>
+                    {getCentrosCostoList()
+                      .filter(c => c.estado !== 'Inactivo' || c.codigoCP === codigoCP)
+                      .map(c => (
+                        <option key={c.codigoCP} value={c.codigoCP}>
+                          {c.codigoCP} — {c.nombre}
+                        </option>
+                      ))}
+                  </select>
+                  <span className="text-[10px] text-slate-400 mt-1 block h-3 flex items-center">CC del presupuesto</span>
                 </div>
-                <div>
-                  <label className="block font-semibold text-slate-500 mb-1">Código OT (Orden Trabajo)</label>
+                <div className="flex flex-col h-full">
+                  <label className="block font-semibold text-slate-500 mb-1 h-8 flex items-center">Código OT (Orden Trabajo)</label>
                   <input
                     type="text"
                     disabled
                     value={codigoOT ? codigoOT : 'Pendiente (Post-Adjudicación)'}
-                    className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-slate-500 outline-none text-[11px] font-semibold"
+                    className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-slate-500 outline-none text-[11px] font-semibold flex-grow"
                   />
-                  <span className="text-[10px] text-amber-700 font-semibold mt-0.5 block">Se asigna al adjudicar</span>
+                  <span className="text-[10px] text-amber-700 font-semibold mt-1 block h-3 flex items-center">Se asigna al adjudicar</span>
                 </div>
-                <div>
-                  <label className="block font-semibold text-slate-500 mb-1">Código OP (Orden Pedido)</label>
+                <div className="flex flex-col h-full">
+                  <label className="block font-semibold text-slate-500 mb-1 h-8 flex items-center">Código OP (Orden Pedido)</label>
                   <input
                     type="text"
                     disabled
                     value={codigoOP ? codigoOP : 'Pendiente (Post-Adjudicación)'}
-                    className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-slate-500 outline-none text-[11px] font-semibold"
+                    className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-slate-500 outline-none text-[11px] font-semibold flex-grow"
                   />
-                  <span className="text-[10px] text-amber-700 font-semibold mt-0.5 block">Se asigna en Administración</span>
+                  <span className="text-[10px] text-amber-700 font-semibold mt-1 block h-3 flex items-center">Se asigna en Administración</span>
                 </div>
               </div>
 
@@ -612,8 +652,8 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                   {...ATRIBUTOS_ORTOGRAFIA_ES}
                   placeholder="Ej: Remodelación Laboratorio de Redes Campus San Juan Pablo II"
                   value={nombreProyecto}
-                  onChange={e => setNombreProyecto(e.target.value)}
-                  onBlur={e => setNombreProyecto(corregirOrtografiaEspanol(e.target.value))}
+                  onChange={e => setNombreProyecto(e.target.value.toLocaleUpperCase('es-CL'))}
+                  onBlur={e => setNombreProyecto(normalizarNombreProyecto(e.target.value))}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none"
                 />
               </div>

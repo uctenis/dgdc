@@ -190,7 +190,7 @@ export function PortalDashboard() {
                         {getEstadoBadge(lic)}
                       </div>
 
-                      <h3 className="text-base font-bold text-white line-clamp-2 leading-snug">{lic.nombreProyecto}</h3>
+                      <h3 className="text-base font-bold text-white line-clamp-2 leading-snug">{lic.nombreProyecto.toLocaleUpperCase('es-CL')}</h3>
                       <p className="text-xs text-slate-400 mt-1 line-clamp-1">{lic.descripcion}</p>
 
                       {/* Info row */}

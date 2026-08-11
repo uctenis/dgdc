@@ -14,7 +14,7 @@ import {
   getProveedores,
   updateLicitacion,
 } from '../services/firestoreService';
-import { uploadPropuesta } from '../services/storageService';
+import { uploadFileToProjectFolder } from '../services/driveService';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import type { LicitacionProyecto, Propuesta } from '../types';
 import { parseCotizacionExcel } from '../utils/excelParser';
@@ -51,6 +51,10 @@ export function LicitacionDetalle() {
     ? new Date() > new Date(licitacion.fechaEvaluacion)
     : false;
   const yaEnviada = propuesta.estado === 'Enviada';
+  const procesoCerrado = licitacion?.estado === 'Adjudicado'
+    || licitacion?.estado === 'Cerrado'
+    || Boolean(licitacion?.proveedorAdjudicadoId)
+    || Boolean(licitacion?.proveedorGanadorId);
   const canEdit = !vencida && !yaEnviada && licitacion?.estado === 'En Evaluacion';
 
   const [proveedorRut, setProveedorRut] = useState('');
@@ -81,6 +85,10 @@ export function LicitacionDetalle() {
 
   const handleFileUpload = async (file: File) => {
     if (!licitacionId || !proveedorId) return;
+    if (procesoCerrado) {
+      alert('Proceso cerrado: la licitación ya fue adjudicada y no acepta nuevas ofertas.');
+      return;
+    }
     const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
     const isPdf = file.name.toLowerCase().endsWith('.pdf');
     const tipo = isExcel ? 'excel' : 'pdf';
@@ -88,7 +96,14 @@ export function LicitacionDetalle() {
 
     try {
       // 1. Subida del archivo a Storage
-      const url = await uploadPropuesta(licitacionId, proveedorId, file, pct => setUploadPct(pct));
+      setUploadPct(20);
+      const archivoDrive = await uploadFileToProjectFolder(
+        file,
+        licitacionId,
+        licitacion?.nombreProyecto || 'Licitacion'
+      );
+      const url = archivoDrive.storage === 'drive' ? archivoDrive.url : undefined;
+      setUploadPct(60);
       
       // 2. Lectura e inteligencia de datos (Excel / PDF)
       let parsedData: any = null;
@@ -116,6 +131,9 @@ export function LicitacionDetalle() {
       } else if (feedbackList.length === 0) {
         feedbackList.push(`Archivo ${isExcel ? 'Excel' : 'PDF'} cargado exitosamente.`);
       }
+      if (archivoDrive.storage !== 'drive') {
+        feedbackList.push('⚠ El archivo fue leído, pero no quedó respaldado en Drive. Autorice Drive antes de enviar.');
+      }
 
       setParsedFeedback(feedbackList);
 
@@ -126,7 +144,10 @@ export function LicitacionDetalle() {
         archivoTipo: tipo,
         ...(parsedData?.montoNeto ? { montoNeto: parsedData.montoNeto } : {}),
         ...(parsedData?.plazoDias ? { plazoDias: parsedData.plazoDias } : {}),
+        ...(parsedData?.fechaCotizacion ? { fechaCotizacion: parsedData.fechaCotizacion } : {}),
+        ...(parsedData?.itemizado?.length ? { itemizado: parsedData.itemizado } : {}),
       }));
+      setUploadPct(100);
     } catch (err) {
       console.error('Error al subir/leer archivo:', err);
     } finally {
@@ -136,6 +157,18 @@ export function LicitacionDetalle() {
 
   const handleSave = async (estado: 'Borrador' | 'Enviada') => {
     if (!licitacionId || !proveedorId || !profile) return;
+    if (procesoCerrado) {
+      alert('Proceso cerrado: no es posible guardar ni enviar propuestas después de la adjudicación.');
+      return;
+    }
+    if (estado === 'Enviada' && (!propuesta.archivoNombre || !propuesta.archivoURL)) {
+      alert('Para enviar la propuesta debe adjuntar el archivo y completar su respaldo en Google Drive.');
+      return;
+    }
+    if (estado === 'Enviada' && (!propuesta.itemizado || propuesta.itemizado.length === 0)) {
+      alert('No se detectó el itemizado de la cotización. Use la plantilla oficial o un PDF con columnas de item, descripción, unidad, cantidad, precio unitario y total.');
+      return;
+    }
     const setter = estado === 'Enviada' ? setSending : setSaving;
     setter(true);
 
@@ -149,6 +182,8 @@ export function LicitacionDetalle() {
       montoIva: iva,
       montoTotal: total,
       plazoDias: propuesta.plazoDias ?? 0,
+      itemizado: propuesta.itemizado,
+      fechaCotizacion: propuesta.fechaCotizacion,
       ajustaRequerimientos: propuesta.ajustaRequerimientos ?? false,
       cuentaExperiencia: propuesta.cuentaExperiencia ?? false,
       cumplePlazoRequerido: propuesta.cumplePlazoRequerido ?? false,
@@ -162,14 +197,22 @@ export function LicitacionDetalle() {
       estado,
     };
 
-    await savePropuesta(licitacionId, proveedorId, data);
-    if (estado === 'Enviada') {
-      await updateInvitadoEstado(licitacionId, proveedorId, 'Presentada');
+    try {
+      await savePropuesta(licitacionId, proveedorId, data);
+      if (estado === 'Enviada') {
+        await updateInvitadoEstado(licitacionId, proveedorId, 'Presentada');
+      }
+      setPropuesta(prev => ({ ...prev, ...data }));
+      setSavedMsg(estado === 'Enviada' ? '¡Propuesta enviada exitosamente!' : 'Borrador guardado.');
+      setTimeout(() => setSavedMsg(''), 3000);
+    } catch (error) {
+      const mensaje = error instanceof Error && error.message.includes('PROCESO_CERRADO')
+        ? 'Proceso cerrado: la licitación fue adjudicada mientras esta página estaba abierta.'
+        : 'No fue posible guardar la propuesta. Intente nuevamente.';
+      alert(mensaje);
+    } finally {
+      setter(false);
     }
-    setPropuesta(prev => ({ ...prev, ...data }));
-    setter(false);
-    setSavedMsg(estado === 'Enviada' ? '¡Propuesta enviada exitosamente!' : 'Borrador guardado.');
-    setTimeout(() => setSavedMsg(''), 3000);
   };
 
   if (loading) {
@@ -200,14 +243,19 @@ export function LicitacionDetalle() {
         </button>
         <div>
           <p className="text-[10px] text-sky-400 font-semibold uppercase tracking-wider">Presentar Propuesta</p>
-          <p className="text-sm font-bold text-white leading-tight line-clamp-1">{licitacion.nombreProyecto}</p>
+          <p className="text-sm font-bold text-white leading-tight line-clamp-1">{licitacion.nombreProyecto.toLocaleUpperCase('es-CL')}</p>
         </div>
-        {yaEnviada && (
+        {procesoCerrado && (
+          <span className="ml-auto flex items-center gap-1.5 text-amber-300 text-xs font-bold">
+            <AlertTriangle className="w-4 h-4" /> Proceso Cerrado
+          </span>
+        )}
+        {!procesoCerrado && yaEnviada && (
           <span className="ml-auto flex items-center gap-1.5 text-emerald-400 text-xs font-bold">
             <CheckCircle2 className="w-4 h-4" /> Propuesta Enviada
           </span>
         )}
-        {vencida && !yaEnviada && (
+        {!procesoCerrado && vencida && !yaEnviada && (
           <span className="ml-auto flex items-center gap-1.5 text-red-400 text-xs font-bold">
             <AlertTriangle className="w-4 h-4" /> Plazo Vencido
           </span>
@@ -250,15 +298,17 @@ export function LicitacionDetalle() {
           <div
             className="rounded-2xl p-4 flex items-center gap-3 text-sm"
             style={{
-              background: yaEnviada ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
-              border: `1px solid ${yaEnviada ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}`,
-              color: yaEnviada ? '#6ee7b7' : '#fca5a5',
+              background: procesoCerrado ? 'rgba(245,158,11,0.12)' : yaEnviada ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+              border: `1px solid ${procesoCerrado ? 'rgba(245,158,11,0.3)' : yaEnviada ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}`,
+              color: procesoCerrado ? '#fcd34d' : yaEnviada ? '#6ee7b7' : '#fca5a5',
             }}
           >
-            {yaEnviada ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertTriangle className="w-5 h-5 shrink-0" />}
-            {yaEnviada
-              ? 'Su propuesta fue enviada exitosamente. No puede realizar más cambios.'
-              : 'El plazo para presentar propuestas ha vencido.'}
+            {yaEnviada && !procesoCerrado ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertTriangle className="w-5 h-5 shrink-0" />}
+            {procesoCerrado
+              ? 'La licitación fue adjudicada y el proceso de recepción de ofertas está cerrado. Su propuesta queda disponible únicamente como antecedente.'
+              : yaEnviada
+                ? 'Su propuesta fue enviada exitosamente. No puede realizar más cambios.'
+                : 'El plazo para presentar propuestas ha vencido.'}
           </div>
         )}
 

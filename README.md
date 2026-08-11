@@ -1,5 +1,9 @@
 # React + TypeScript + Vite
 
+## Google Drive
+
+Copie `.env.example` como `.env.local` y configure `VITE_GOOGLE_DRIVE_CLIENT_ID` con un cliente OAuth 2.0 web. En Google Cloud habilite Google Drive API y registre `http://localhost:5180` como origen JavaScript autorizado. La aplicación solicitará el alcance `drive.file` al cargar ofertas, órdenes de compra y respaldos de estados de pago.
+
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
 Currently, two official plugins are available:

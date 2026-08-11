@@ -182,3 +182,31 @@
     border-right-color: var(--border);
   }
 }
+
+/* Print styles for single-page carátula (A4) */
+@page {
+  size: A4 portrait;
+  margin: 20mm;
+}
+
+@media print {
+  /* Hide everything except the carátula */
+  body * { visibility: hidden; }
+  .caratula-print, .caratula-print * { visibility: visible !important; }
+  .caratula-print { position: absolute; left: 0; top: 0; width: 100%; }
+
+  /* Remove shadows, borders and backgrounds for ink-friendly output */
+  .caratula-print { box-shadow: none !important; border: none !important; }
+  .caratula-print .bg-slate-900 { background-color: #111827 !important; color: #ffffff !important; }
+  .no-print { display: none !important; }
+
+  /* Ensure fonts and sizing suitable for print */
+  .caratula-print h3, .caratula-print h2, .caratula-print h4 { color: #000 !important; }
+  .caratula-print h3 { font-size: 18pt; }
+  .caratula-print .font-extrabold { font-weight: 800; }
+  .caratula-print .text-xs { font-size: 10pt; }
+  .caratula-print .text-[12px], .caratula-print .text-[11px] { font-size: 11pt; }
+
+  /* Avoid page breaks inside the carátula */
+  .caratula-print { break-inside: avoid; -webkit-print-color-adjust: exact; }
+}

@@ -123,7 +123,7 @@ export const AntecedentesManager: React.FC<AntecedentesManagerProps> = ({
             <h3 className="text-base font-bold text-slate-800 mt-1">
               Antecedentes Técnicos y Checklist Previos a la Invitación
             </h3>
-            <p className="text-xs text-slate-500">{licitacion.nombreProyecto}</p>
+            <p className="text-xs text-slate-500">{licitacion.nombreProyecto.toLocaleUpperCase('es-CL')}</p>
           </div>
           <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition">
             <X className="w-5 h-5" />

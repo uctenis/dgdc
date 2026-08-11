@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   FileCheck2, Trophy, X, Edit3, Save, Printer, ShieldCheck
 } from 'lucide-react';
-import type { LicitacionProyecto, Cotizacion, Proveedor } from '../types';
+import type { LicitacionProyecto, Cotizacion, Proveedor, ConfiguracionFirmas, EvaluacionResultado } from '../types';
 import { formatoMonedaCLP, evaluarCotizaciones } from '../services/evaluationEngine';
 import { updateLicitacion } from '../services/firestoreService';
 import confetti from 'canvas-confetti';
@@ -11,6 +11,7 @@ interface ActaEvaluacionModalProps {
   licitacion: LicitacionProyecto;
   cotizaciones: Cotizacion[];
   proveedores: Proveedor[];
+  configFirmas: ConfiguracionFirmas;
   onClose: () => void;
   onAdjudicar: (proveedorId: string, justificacion: string) => void;
 }
@@ -19,6 +20,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
   licitacion,
   cotizaciones,
   proveedores,
+  configFirmas,
   onClose,
   onAdjudicar,
 }) => {
@@ -30,11 +32,13 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
     licitacion.proveedorAdjudicadoId || ganadoraDefault?.proveedorId || ''
   );
 
+  const crearTextoAdjudicacion = (evaluacion?: EvaluacionResultado) => evaluacion
+    ? `Según el análisis comparativo de las cotizaciones recibidas y la aplicación de los criterios de evaluación establecidos, se adjudica la contratación a ${evaluacion.proveedorNombre} (RUT ${evaluacion.proveedorRut}), por un monto total de ${formatoMonedaCLP(evaluacion.montoTotal)} IVA incluido y un plazo de ejecución ofertado de ${evaluacion.plazoDias} días corridos.`
+    : 'Pendiente de recepción de ofertas.';
+
   const [justificacionEditada, setJustificacionEditada] = useState<string>(
     licitacion.justificacionAdjudicacion ||
-      (ganadoraDefault
-        ? `Según análisis comparativo basado en cotizaciones adjuntas, entre las propuestas recibidas todas responden a los requisitos técnicos de obras. Por tanto se adjudica la oferta correspondiente a ${formatoMonedaCLP(ganadoraDefault.montoTotal)} IVA incluido, a la empresa ${ganadoraDefault.proveedorNombre}.`
-        : 'Pendiente de recepción de ofertas.')
+      crearTextoAdjudicacion(ganadoraDefault)
   );
 
   const [modoEdicion, setModoEdicion] = useState(false);
@@ -48,7 +52,13 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
   };
 
   const montoAdjudicadoTotal = cotizacionGanadoraSel?.montoTotal || licitacion.montoEstimado;
-  const requiereFirmaVicerrectora = montoAdjudicadoTotal > 5000001;
+  const plazoAdjudicadoDias = cotizacionGanadoraSel?.plazoDias || licitacion.plazoAdjudicadoDias;
+  const umbralActa = configFirmas.parametrosSgc?.umbralActaObligatoria ?? 800001;
+  const umbralVrae = configFirmas.parametrosSgc?.umbralAprobacionVrae ?? 5000001;
+  const requiereFirmaVicerrectora = montoAdjudicadoTotal > umbralVrae;
+  const cotizacionPorId = new Map(cotizacionesLicitacion.map(cotizacion => [cotizacion.id, cotizacion]));
+  const montoNetoAdjudicado = cotizacionGanadoraSel?.montoNeto
+    ?? (montoAdjudicadoTotal ? Math.round(montoAdjudicadoTotal / 1.19) : undefined);
 
   const handleGuardarActa = async () => {
     setIsSaving(true);
@@ -56,6 +66,15 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
       await updateLicitacion(licitacion.id, {
         proveedorAdjudicadoId: proveedorSeleccionadoId,
         justificacionAdjudicacion: justificacionEditada,
+        cotizacionAdjudicadaId: cotizacionGanadoraSel?.cotizacionId,
+        proveedorAdjudicadoNombre: cotizacionGanadoraSel?.proveedorNombre,
+        proveedorAdjudicadoRut: cotizacionGanadoraSel?.proveedorRut,
+        montoAdjudicadoNeto: montoNetoAdjudicado,
+        montoAdjudicadoTotal: cotizacionGanadoraSel?.montoTotal,
+        montoAdjudicadoIva: cotizacionGanadoraSel && montoNetoAdjudicado !== undefined
+          ? cotizacionGanadoraSel.montoTotal - montoNetoAdjudicado
+          : undefined,
+        plazoAdjudicadoDias: cotizacionGanadoraSel?.plazoDias,
       });
       alert('¡Acta de Evaluación y Adjudicación SGC guardada exitosamente!');
       setModoEdicion(false);
@@ -89,15 +108,52 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
     <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       {/* Estilos CSS para Impresión Oficial en 2 Páginas */}
       <style>{`
+        .signature-table {
+          table-layout: fixed;
+        }
+        .signature-block,
+        .signature-row {
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }
+        .signature-identity {
+          vertical-align: middle;
+          padding: 12px 16px;
+        }
+        .signature-space {
+          min-height: 88px;
+          padding: 12px 16px 10px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: flex-end;
+        }
+        .signature-line {
+          width: min(82%, 320px);
+          border-bottom: 1.5px solid #0f172a;
+          margin: 0 auto 5px;
+        }
+        .signature-caption {
+          min-height: 14px;
+          text-align: center;
+          font-size: 9px;
+          line-height: 1.2;
+          font-weight: 700;
+          color: #475569;
+        }
         @media print {
           @page {
             size: letter portrait;
-            margin: 8mm;
+            margin: 10mm;
           }
-          html, body {
+          html, body, #root, main {
             height: auto !important;
+            max-height: none !important;
+            min-height: 0 !important;
             overflow: visible !important;
             background: white !important;
+            margin: 0 !important;
+            padding: 0 !important;
           }
           body * {
             visibility: hidden !important;
@@ -105,13 +161,13 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
           .printable-sgc-acta, .printable-sgc-acta * {
             visibility: visible !important;
           }
-          /* Desactivar restricciones de scroll, posicionamiento y recortado de modal al imprimir */
           .fixed,
           .inset-0,
           .backdrop-blur-sm,
           .max-h-\\[94vh\\],
           .overflow-y-auto,
-          .overflow-x-auto {
+          .overflow-x-auto,
+          .shadow-2xl {
             position: static !important;
             overflow: visible !important;
             max-height: none !important;
@@ -124,24 +180,54 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
             background: white !important;
           }
           .printable-sgc-acta {
-            position: static !important;
-            display: block !important;
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
             width: 100% !important;
             margin: 0 !important;
             padding: 0 !important;
             background: white !important;
             color: black !important;
-            font-size: 9.5pt !important;
+            font-size: 9pt !important;
+            line-height: 1.3 !important;
           }
           .page-break {
             page-break-before: always !important;
             break-before: page !important;
             clear: both !important;
             margin-top: 0 !important;
-            padding-top: 15px !important;
+            padding-top: 4mm !important;
           }
           .no-print {
             display: none !important;
+          }
+          table {
+            page-break-inside: auto;
+          }
+          tr {
+            page-break-inside: avoid;
+            page-break-after: auto;
+          }
+          thead {
+            display: table-header-group;
+          }
+          tfoot {
+            display: table-footer-group;
+          }
+          .signature-space {
+            min-height: 23mm !important;
+            padding: 3mm 4mm 2.5mm !important;
+          }
+          .signature-identity {
+            padding: 3mm 4mm !important;
+          }
+          .signature-line {
+            width: 82% !important;
+            border-bottom-width: 0.4mm !important;
+            margin-bottom: 1.5mm !important;
+          }
+          .signature-caption {
+            font-size: 7.5pt !important;
           }
         }
       `}</style>
@@ -159,7 +245,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
               <span className="text-[10px] text-slate-500 font-bold">CP: {licitacion.codigoCP}</span>
               {requiereFirmaVicerrectora ? (
                 <span className="text-[10px] bg-purple-100 text-purple-900 font-bold px-2 py-0.5 rounded border border-purple-300">
-                  Requiere Firma VRAE (&gt; $5.000.001)
+                  Requiere Firma VRAE (&gt; {formatoMonedaCLP(umbralVrae)})
                 </span>
               ) : (
                 <span className="text-[10px] bg-emerald-100 text-emerald-900 font-bold px-2 py-0.5 rounded border border-emerald-300">
@@ -170,7 +256,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
             <h3 className="text-base font-bold text-slate-800 mt-1">
               Acta de Evaluación y Adjudicación Institucional SGC
             </h3>
-            <p className="text-xs text-slate-500">{licitacion.codigoProyecto} - {licitacion.nombreProyecto}</p>
+            <p className="text-xs text-slate-500">{licitacion.codigoProyecto} - {licitacion.nombreProyecto.toLocaleUpperCase('es-CL')}</p>
           </div>
           <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition">
             <X className="w-5 h-5" />
@@ -192,7 +278,11 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
           <div className="flex items-center gap-3">
             <select
               value={proveedorSeleccionadoId}
-              onChange={e => setProveedorSeleccionadoId(e.target.value)}
+              onChange={e => {
+                const proveedorId = e.target.value;
+                setProveedorSeleccionadoId(proveedorId);
+                setJustificacionEditada(crearTextoAdjudicacion(evaluaciones.find(ev => ev.proveedorId === proveedorId)));
+              }}
               className="flex-1 px-3 py-2 bg-white text-slate-900 rounded-lg font-bold text-xs outline-none"
             >
               {evaluaciones.length === 0 ? (
@@ -218,11 +308,11 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
               <div className="grid grid-cols-12 border-b border-slate-900 divide-x divide-slate-900">
                 <div className="col-span-3 p-3 flex flex-col justify-center items-center bg-slate-50">
                   <div className="font-black text-xs text-sky-900 uppercase text-center leading-tight">
-                    UNIVERSIDAD CATÓLICA<br />DE TEMUCO
+                    {configFirmas.institucion.toUpperCase()}
                   </div>
                 </div>
                 <div className="col-span-6 p-3 flex flex-col justify-center items-center text-center bg-slate-50">
-                  <span className="text-[10px] font-bold text-slate-600 italic">Universidad Católica de Temuco</span>
+                  <span className="text-[10px] font-bold text-slate-600 italic">{configFirmas.subdireccion}</span>
                   <h4 className="font-black text-sm text-slate-900 uppercase mt-0.5">
                     CUADRO COMPARATIVO Y ACTA ADJUDICACIÓN
                   </h4>
@@ -246,7 +336,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
               {/* Fila de Detalle del Proyecto */}
               <div className="p-4 space-y-2 bg-white text-xs text-slate-900">
                 <h5 className="font-black text-slate-900 text-xs uppercase tracking-wide">
-                  PROYECTO: {licitacion.codigoProyecto} - {licitacion.nombreProyecto}
+                  PROYECTO: {licitacion.codigoProyecto} - {licitacion.nombreProyecto.toLocaleUpperCase('es-CL')}
                 </h5>
                 <div className="space-y-1 text-slate-800 text-[11px]">
                   <div>• <strong>Detalle:</strong> {licitacion.descripcion}</div>
@@ -256,6 +346,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
                   <div>• <strong>Motivo de Compra:</strong> {licitacion.descripcion || 'Necesidad de infraestructura institucional'}</div>
                   <div>• <strong>Usuario Solicitante:</strong> {licitacion.uso || 'Facultad de Ingeniería / Dirección de Campos'}</div>
                   <div>• <strong>Precio Adjudicado:</strong> <strong className="text-emerald-700 font-extrabold">{formatoMonedaCLP(montoAdjudicadoTotal)} IVA incluido</strong></div>
+                  <div>• <strong>Plazo de Ejecución Adjudicado:</strong> <strong>{plazoAdjudicadoDias ? `${plazoAdjudicadoDias} días corridos` : 'No informado'}</strong></div>
                   <div>• <strong>Centro de Costo (CC):</strong> {licitacion.codigoCP}</div>
                 </div>
               </div>
@@ -312,7 +403,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
                         {evaluaciones.map(ev => (
                           <React.Fragment key={ev.cotizacionId}>
                             <td className="p-2 text-center border-r border-slate-200">{ev.puntajeEconomico.toFixed(2)}</td>
-                            <td className="p-2 text-center font-bold text-emerald-800 border-r border-slate-300">{ev.puntajeEconomicoPonderado.toFixed(2)}</td>
+                            <td className="p-2 text-center font-bold text-emerald-800 border-r border-slate-300">{formatoMonedaCLP(ev.montoTotal)}</td>
                           </React.Fragment>
                         ))}
                       </tr>
@@ -328,7 +419,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
                         {evaluaciones.map(ev => (
                           <React.Fragment key={ev.cotizacionId}>
                             <td className="p-2 text-center border-r border-slate-200">{ev.puntajeTecnico.toFixed(2)}</td>
-                            <td className="p-2 text-center font-bold text-sky-800 border-r border-slate-300">{ev.puntajeTecnicoPonderado.toFixed(2)}</td>
+                            <td className="p-2 text-center font-bold text-sky-800 border-r border-slate-300">{ev.plazoDias} días</td>
                           </React.Fragment>
                         ))}
                       </tr>
@@ -344,7 +435,9 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
                         {evaluaciones.map(ev => (
                           <React.Fragment key={ev.cotizacionId}>
                             <td className="p-2 text-center border-r border-slate-200">{ev.puntajeSustentabilidad.toFixed(2)}</td>
-                            <td className="p-2 text-center font-bold text-indigo-800 border-r border-slate-300">{ev.puntajeSustentabilidadPonderado.toFixed(2)}</td>
+                            <td className="p-2 text-center font-bold text-indigo-800 border-r border-slate-300">
+                              {cotizacionPorId.get(ev.cotizacionId)?.declaraSustentabilidad ? 'Declara' : 'No declara'}
+                            </td>
                           </React.Fragment>
                         ))}
                       </tr>
@@ -387,11 +480,11 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
               <div className="grid grid-cols-12 border-b border-slate-900 divide-x divide-slate-900">
                 <div className="col-span-3 p-3 flex flex-col justify-center items-center bg-slate-50">
                   <div className="font-black text-xs text-sky-900 uppercase text-center leading-tight">
-                    UNIVERSIDAD CATÓLICA<br />DE TEMUCO
+                    {configFirmas.institucion.toUpperCase()}
                   </div>
                 </div>
                 <div className="col-span-6 p-3 flex flex-col justify-center items-center text-center bg-slate-50">
-                  <span className="text-[10px] font-bold text-slate-600 italic">Universidad Católica de Temuco</span>
+                  <span className="text-[10px] font-bold text-slate-600 italic">{configFirmas.subdireccion}</span>
                   <h4 className="font-black text-sm text-slate-900 uppercase mt-0.5">
                     CUADRO COMPARATIVO Y ACTA ADJUDICACIÓN
                   </h4>
@@ -410,7 +503,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
               <h4 className="font-extrabold text-slate-900 text-xs uppercase">
                 2. Acta Adjudicación
               </h4>
-              <p className="text-[10px] text-slate-600 font-bold">(*) Completar sólo en el caso de compras superiores a $800.001.</p>
+              <p className="text-[10px] text-slate-600 font-bold">(*) Acta requerida para compras superiores a {formatoMonedaCLP(umbralActa)}.</p>
 
               <div className="p-3.5 bg-slate-50 border border-slate-900 rounded-xl space-y-2">
                 <div className="flex items-center justify-between no-print">
@@ -436,14 +529,21 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
                 </div>
               </div>
 
+              <div className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-[9px] leading-relaxed text-slate-700">
+                <strong className="text-slate-900">Criterios aplicados:</strong>{' '}
+                Oferta económica 55% (menor precio = 100 puntos; restantes: precio menor / precio evaluado × 100);{' '}
+                oferta técnica 35% (cumplimiento de requerimientos, experiencia y plazo);{' '}
+                sustentabilidad 10% (declaración o compromiso acreditado).
+              </div>
+
               {/* Módulo de Firmas Estándar (3 Firmantes: Director, Subdirector, Responsable) */}
-              <div className="space-y-2 pt-2">
+              <div className="space-y-2 pt-2 signature-block">
                 <span className="font-bold text-slate-900 text-xs block uppercase">
                   Han actuado como evaluadores de las ofertas las siguientes personas:
                 </span>
                 
                 <div className="border border-slate-900 rounded-xl overflow-hidden bg-white">
-                  <table className="w-full text-left border-collapse text-xs">
+                  <table className="w-full text-left border-collapse text-xs signature-table">
                     <thead>
                       <tr className="bg-slate-100 border-b border-slate-900 font-bold text-slate-900">
                         <th className="p-2.5 w-1/2 border-r border-slate-900">Nombre y Cargo del Evaluador</th>
@@ -452,38 +552,44 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
                     </thead>
                     <tbody className="divide-y divide-slate-300">
                       {/* Firma 1: Director */}
-                      <tr>
-                        <td className="p-3 font-medium">
-                          <strong className="text-slate-900 block text-xs">Iván Cisternas Cisternas.</strong>
-                          <span className="text-slate-600 text-[11px]">Director de Gestión y Desarrollo de Campus</span>
+                      <tr className="signature-row">
+                        <td className="font-medium signature-identity">
+                          <strong className="text-slate-900 block text-xs">{configFirmas.directorGestionCampus.nombre}</strong>
+                          <span className="text-slate-600 text-[11px]">{configFirmas.directorGestionCampus.cargo}</span>
                         </td>
-                        <td className="p-3 text-center align-middle font-mono text-slate-400">
-                          <div className="border-b border-dashed border-slate-400 w-48 mx-auto mb-1"></div>
-                          <span className="text-[10px]">Director de Gestión y Desarrollo de Campus</span>
+                        <td className="p-0 text-center align-middle font-mono text-slate-800">
+                          <div className="signature-space">
+                            <div className="signature-line"></div>
+                            <span className="signature-caption">Firma de conformidad</span>
+                          </div>
                         </td>
                       </tr>
 
                       {/* Firma 2: Subdirector */}
-                      <tr>
-                        <td className="p-3 font-medium">
-                          <strong className="text-slate-900 block text-xs">Felipe Anselme Grandón.</strong>
-                          <span className="text-slate-600 text-[11px]">Sub-Director de Infraestructura</span>
+                      <tr className="signature-row">
+                        <td className="font-medium signature-identity">
+                          <strong className="text-slate-900 block text-xs">{configFirmas.subdirectorInfraestructura.nombre}</strong>
+                          <span className="text-slate-600 text-[11px]">{configFirmas.subdirectorInfraestructura.cargo}</span>
                         </td>
-                        <td className="p-3 text-center align-middle font-mono text-slate-400">
-                          <div className="border-b border-dashed border-slate-400 w-48 mx-auto mb-1"></div>
-                          <span className="text-[10px]">Sub-Director de Infraestructura</span>
+                        <td className="p-0 text-center align-middle font-mono text-slate-800">
+                          <div className="signature-space">
+                            <div className="signature-line"></div>
+                            <span className="signature-caption">Firma de conformidad</span>
+                          </div>
                         </td>
                       </tr>
 
                       {/* Firma 3: Responsable del Proyecto */}
-                      <tr>
-                        <td className="p-3 font-medium">
-                          <strong className="text-slate-900 block text-xs">{licitacion.responsableNombre || 'David Silva Roco'}</strong>
-                          <span className="text-slate-600 text-[11px]">Desarrollo Infraestructura / Responsable de Obra</span>
+                      <tr className="signature-row">
+                        <td className="font-medium signature-identity">
+                          <strong className="text-slate-900 block text-xs">{licitacion.responsableNombre || configFirmas.responsableDesarrollo.nombre}</strong>
+                          <span className="text-slate-600 text-[11px]">{configFirmas.responsableDesarrollo.cargo}</span>
                         </td>
-                        <td className="p-3 text-center align-middle font-mono text-slate-400">
-                          <div className="border-b border-dashed border-slate-400 w-48 mx-auto mb-1"></div>
-                          <span className="text-[10px]">Responsable del Proyecto</span>
+                        <td className="p-0 text-center align-middle font-mono text-slate-800">
+                          <div className="signature-space">
+                            <div className="signature-line"></div>
+                            <span className="signature-caption">Firma de conformidad</span>
+                          </div>
                         </td>
                       </tr>
                     </tbody>
@@ -491,21 +597,21 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
                 </div>
               </div>
 
-              {/* Módulo de Firma Condicional VRAE (> $5.000.001 CLP) */}
-              <div className="space-y-2 pt-2">
+              {/* Módulo de Firma Condicional VRAE */}
+              <div className="space-y-2 pt-2 signature-block">
                 <div className="flex items-center justify-between">
                   <span className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5 uppercase">
                     <ShieldCheck className="w-4 h-4 text-purple-700 shrink-0" />
                     Aprueba cuadro comparativo y acta de adjudicación:
                   </span>
                   <span className="text-[10px] font-bold text-slate-600">
-                    (Completar sólo en el caso de compras superiores a $5.000.001)
+                    (Completar sólo en el caso de compras superiores a {formatoMonedaCLP(umbralVrae)})
                   </span>
                 </div>
 
                 {requiereFirmaVicerrectora ? (
                   <div className="border border-slate-900 rounded-xl overflow-hidden bg-purple-50/40">
-                    <table className="w-full text-left border-collapse text-xs">
+                    <table className="w-full text-left border-collapse text-xs signature-table">
                       <thead>
                         <tr className="bg-purple-100 text-purple-950 font-bold border-b border-slate-900">
                           <th className="p-2.5 w-1/2 border-r border-slate-900">Nombre y Cargo Aprobador VRAE</th>
@@ -513,14 +619,16 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
                         </tr>
                       </thead>
                       <tbody>
-                        <tr>
-                          <td className="p-3 font-medium">
-                            <strong className="text-purple-950 block text-xs">Alejandra Espinoza Cid</strong>
-                            <span className="text-purple-800 text-[11px]">Vicerrectora de Administración y Asuntos Económicos (VRAE)</span>
+                        <tr className="signature-row">
+                          <td className="font-medium signature-identity">
+                            <strong className="text-purple-950 block text-xs">{configFirmas.vicerrectorAdministracion.nombre}</strong>
+                            <span className="text-purple-800 text-[11px]">{configFirmas.vicerrectorAdministracion.cargo}</span>
                           </td>
-                          <td className="p-3 text-center align-middle">
-                            <div className="border-b border-dashed border-purple-500 w-48 mx-auto mb-1"></div>
-                            <span className="text-[10px] text-purple-800 font-semibold">Vicerrectora de Administración y Asuntos Económicos</span>
+                          <td className="p-0 text-center align-middle">
+                            <div className="signature-space">
+                              <div className="signature-line !border-purple-900"></div>
+                              <span className="signature-caption !text-purple-900">Firma de aprobación</span>
+                            </div>
                           </td>
                         </tr>
                       </tbody>
@@ -528,7 +636,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
                   </div>
                 ) : (
                   <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[10px] text-slate-600 italic">
-                    El monto adjudicado ({formatoMonedaCLP(montoAdjudicadoTotal)}) es menor o igual a $5.000.001 CLP. No requiere firma adicional de la Vicerrectora de Administración.
+                    El monto adjudicado ({formatoMonedaCLP(montoAdjudicadoTotal)}) es menor o igual a {formatoMonedaCLP(umbralVrae)}. No requiere firma adicional de VRAE.
                   </div>
                 )}
               </div>

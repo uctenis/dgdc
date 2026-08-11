@@ -17,6 +17,31 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
   onAdjudicarLicitacion,
   onNavigateToDocumentos,
 }) => {
+  const cotizacionesProyecto = useMemo(
+    () => licitacion ? cotizaciones.filter(c => c.licitacionId === licitacion.id) : [],
+    [cotizaciones, licitacion]
+  );
+
+  // Calcular evaluación en tiempo real
+  const evaluaciones = useMemo(() => {
+    const resultados = evaluarCotizaciones(cotizacionesProyecto);
+    const proveedorAdjudicadoId = licitacion?.proveedorAdjudicadoId || licitacion?.proveedorGanadorId;
+    const hayAdjudicacion = Boolean(licitacion?.cotizacionAdjudicadaId || proveedorAdjudicadoId);
+    if (!hayAdjudicacion) return resultados;
+
+    return resultados
+      .map(resultado => ({
+        ...resultado,
+        esPropuestaAdjudicada: resultado.cotizacionId === licitacion?.cotizacionAdjudicadaId
+          || Boolean(proveedorAdjudicadoId && resultado.proveedorId === proveedorAdjudicadoId),
+      }))
+      .sort((a, b) => {
+        if (a.esPropuestaAdjudicada !== b.esPropuestaAdjudicada) return a.esPropuestaAdjudicada ? -1 : 1;
+        if (b.puntajeTotalPonderado !== a.puntajeTotalPonderado) return b.puntajeTotalPonderado - a.puntajeTotalPonderado;
+        return a.montoTotal - b.montoTotal;
+      });
+  }, [cotizacionesProyecto, licitacion]);
+
   if (!licitacion) {
     return (
       <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center space-y-3">
@@ -29,14 +54,10 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
     );
   }
 
-  const cotizacionesProyecto = cotizaciones.filter(c => c.licitacionId === licitacion.id);
-
-  // Calcular evaluación en tiempo real
-  const evaluaciones = useMemo(() => {
-    return evaluarCotizaciones(cotizacionesProyecto);
-  }, [cotizacionesProyecto]);
-
   const adjudicado = evaluaciones.find(e => e.esPropuestaAdjudicada) || evaluaciones[0];
+  const procesoAdjudicado = licitacion.estado === 'Adjudicado'
+    || licitacion.estado === 'Cerrado'
+    || Boolean(licitacion.proveedorAdjudicadoId || licitacion.proveedorGanadorId);
 
   const handleCelebrarAdjudicacion = () => {
     if (!adjudicado) return;
@@ -69,9 +90,9 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
             <div className="flex items-center gap-2">
               <span className="bg-emerald-500 text-slate-950 font-extrabold text-[10px] uppercase px-3 py-1 rounded-full flex items-center gap-1 shadow-md">
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Propuesta Automática de Adjudicación</span>
+                <span>{procesoAdjudicado ? 'Proveedor adjudicado' : 'Propuesta automática de adjudicación'}</span>
               </span>
-              <span className="text-xs text-sky-300">Puntaje Ganador: {adjudicado.puntajeTotalPonderado.toFixed(2)} / 100 pts</span>
+              <span className="text-xs text-sky-300">Puntaje: {adjudicado.puntajeTotalPonderado.toFixed(2)} / 100 pts · Ranking técnico #{adjudicado.ranking}</span>
             </div>
 
             <h2 className="text-xl font-extrabold text-white tracking-tight">
@@ -83,13 +104,15 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              onClick={handleCelebrarAdjudicacion}
-              className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-5 py-3 rounded-xl text-xs shadow-lg transition flex items-center gap-2"
-            >
-              <Trophy className="w-4 h-4" />
-              <span>Aprobar Adjudicación</span>
-            </button>
+            {!procesoAdjudicado && (
+              <button
+                onClick={handleCelebrarAdjudicacion}
+                className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-5 py-3 rounded-xl text-xs shadow-lg transition flex items-center gap-2"
+              >
+                <Trophy className="w-4 h-4" />
+                <span>Aprobar Adjudicación</span>
+              </button>
+            )}
             <button
               onClick={onNavigateToDocumentos}
               className="bg-white/10 hover:bg-white/20 text-white px-4 py-3 rounded-xl text-xs font-semibold backdrop-blur-sm border border-white/20 transition flex items-center gap-2"
@@ -110,7 +133,7 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
               <span>1. Cuadro Comparativo de Ofertas (SGC PS-FOR-DGDC0003)</span>
             </h3>
             <p className="text-xs text-slate-500 mt-1">
-              CP: {licitacion.codigoCP} • OP: {licitacion.codigoOP} • OT: {licitacion.codigoOT} • Proyecto: {licitacion.nombreProyecto}
+              CP: {licitacion.codigoCP} • OP: {licitacion.codigoOP} • OT: {licitacion.codigoOT} • Proyecto: {licitacion.nombreProyecto.toLocaleUpperCase('es-CL')}
             </p>
           </div>
 

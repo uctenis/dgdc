@@ -3,6 +3,8 @@ import { parseCotizacionExcel } from './excelParser';
 
 export interface OCParseResult {
   numeroOC: string | null;
+  numeroOT: string | null;
+  numeroOP: string | null;
   textoExtraido: string;
 }
 
@@ -17,10 +19,10 @@ export async function parseOrdenDeCompra(file: File): Promise<OCParseResult> {
   try {
     if (extension === 'pdf') {
       const pdfRes = await parseCotizacionPdf(file);
-      text += ' ' + pdfRes.detallesLeidos.join(' ');
+      text += ' ' + (pdfRes.textoExtraido || pdfRes.detallesLeidos.join(' '));
     } else if (['xlsx', 'xls', 'csv'].includes(extension || '')) {
       const excelRes = await parseCotizacionExcel(file);
-      text += ' ' + excelRes.detallesLeidos.join(' ');
+      text += ' ' + (excelRes.textoExtraido || excelRes.detallesLeidos.join(' '));
     } else {
       text += ' ' + (await file.text());
     }
@@ -29,11 +31,31 @@ export async function parseOrdenDeCompra(file: File): Promise<OCParseResult> {
   }
 
   const numeroOC = extraerNumeroOC(text, file.name);
+  const numeroOT = extraerNumeroDocumento(text, 'OT', ['Orden de Trabajo', 'Orden Trabajo']);
+  const numeroOP = extraerNumeroDocumento(text, 'OP', ['Orden de Pedido', 'Orden Pedido']);
 
   return {
     numeroOC,
+    numeroOT,
+    numeroOP,
     textoExtraido: text,
   };
+}
+
+function extraerNumeroDocumento(text: string, prefijo: 'OT' | 'OP', etiquetas: string[]): string | null {
+  const cleanText = text.replace(/\s+/g, ' ');
+  const etiqueta = etiquetas.map(valor => valor.replace(/\s+/g, '\\s*')).join('|');
+  const patrones = [
+    new RegExp(`(?:${etiqueta})\\s*(?:N[°ºo]|Nro|Num|N°|#|Código)?\\s*[:.]?\\s*(${prefijo}[-_\\s]?[A-Z0-9][A-Z0-9._/-]{1,24}|[A-Z0-9][A-Z0-9._/-]{2,24})`, 'i'),
+    new RegExp(`\\b(${prefijo}[-_\\s]?[A-Z0-9][A-Z0-9._/-]{2,24})\\b`, 'i'),
+  ];
+
+  for (const patron of patrones) {
+    const candidato = cleanText.match(patron)?.[1]?.trim().replace(/\s+/g, '-').toUpperCase();
+    if (!candidato) continue;
+    return candidato.startsWith(prefijo) ? candidato : `${prefijo}-${candidato}`;
+  }
+  return null;
 }
 
 /**

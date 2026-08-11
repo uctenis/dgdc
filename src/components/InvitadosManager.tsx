@@ -114,7 +114,7 @@ export const InvitadosManager: React.FC<InvitadosManagerProps> = ({
               <Users className="w-5 h-5 text-sky-600" />
               Gestión de Invitados a la Licitación
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5">{licitacion.nombreProyecto}</p>
+            <p className="text-xs text-slate-500 mt-0.5">{licitacion.nombreProyecto.toLocaleUpperCase('es-CL')}</p>
           </div>
           <div className="flex items-center gap-2">
             <button

@@ -23,9 +23,15 @@ export interface HistorialObra {
   nombreProyecto: string;
   montoTotal: number;
   plazoDias: number;
-  resultado: 'Adjudicado' | 'No Adjudicado' | 'Invitado';
+  resultado: 'Adjudicado' | 'No Adjudicado' | 'Invitado' | 'Participando';
   fecha: string; // fecha de adjudicación / cierre
   puntajeObtenido?: number;
+  codigoOT?: string;
+  codigoProyecto?: string;
+  estadoLicitacion?: LicitacionProyecto['estado'];
+  estadoLifecycle?: LicitacionProyecto['estadoLifecycle'];
+  estadoActual?: 'Licitación activa' | 'Obra activa' | 'Proceso cerrado' | 'Finalizado';
+  activo?: boolean;
 }
 
 // ─── PROYECTO MAESTRO ──────────────────────────────────────────────────────
@@ -88,6 +94,7 @@ export interface Cotizacion {
   montoTotal: number; // Con IVA
   plazoDias: number;
   itemizado?: ItemCotizacion[];
+  fechaCotizacion?: string;
 
   // Parámetros de Evaluación Técnica
   ajustaRequerimientos: boolean;
@@ -99,6 +106,9 @@ export interface Cotizacion {
   tipoEvidenciaSustentable?: string;
 
   documentoCotizacionNombre?: string;
+  documentoCotizacionURL?: string;
+  documentoCotizacionDriveId?: string;
+  documentoCotizacionStorage?: 'drive' | 'firebase';
   observaciones?: string;
   fechaCarga: string;
 
@@ -130,6 +140,8 @@ export interface Propuesta {
   montoIva: number;
   montoTotal: number;
   plazoDias: number;
+  itemizado?: ItemCotizacion[];
+  fechaCotizacion?: string;
 
   // Criterios técnicos (auto-declaración del proveedor)
   ajustaRequerimientos: boolean;
@@ -164,6 +176,34 @@ export interface LicitacionProyecto {
   proveedorAdjudicadoId?: string;
   proveedorGanadorId?: string;
   justificacionAdjudicacion?: string;
+  proveedorAdjudicadoNombre?: string;
+  proveedorAdjudicadoRut?: string;
+  montoAdjudicadoNeto?: number;
+  montoAdjudicadoIva?: number;
+  montoAdjudicadoTotal?: number;
+  plazoAdjudicadoDias?: number;
+  fechaInicioObra?: string;
+  fechaTerminoProgramada?: string;
+  cotizacionAdjudicadaId?: string;
+  actaFirmaDigital?: {
+    archivoNombre: string;
+    archivoURL: string;
+    archivoDriveId: string;
+    version: number;
+    estado: 'En firma' | 'Firmada';
+    fechaActualizacion: string;
+    sha256: string;
+    firmas: {
+      uid: string;
+      email: string;
+      nombre: string;
+      cargo: string;
+      rolFirma: 'director' | 'subdirector' | 'responsable' | 'vrae';
+      fecha: string;
+      version: number;
+      sha256: string;
+    }[];
+  };
   esUnicoProveedor?: boolean;
   proyectoMaestroId?: string;  // Referencia a la lista maestra
 
@@ -208,7 +248,10 @@ export interface LicitacionProyecto {
   ordenTrabajoNumero?: string;      // ej: OT-2026-099 (Generada al adjudicar)
   ordenPedidoNumero?: string;       // ej: OP-2026-099 (Revisada por administración)
   ordenCompraNumero?: string;       // ej: OC-450012890 (Emitida por Finanzas)
+  numeroContrato?: string;          // Contrato formal, cuando corresponda
   archivoOCNombre?: string;         // Nombre del archivo PDF/Excel de la OC subida
+  archivoOCURL?: string;
+  archivoOCDriveId?: string;
   fechaCargaOC?: string;            // Fecha en que se cargó la OC
 
   // Estado del Ciclo de Vida Operativo
@@ -223,6 +266,40 @@ export interface LicitacionProyecto {
     observaciones?: string;
     aprobadoPor?: string;
   };
+}
+
+export interface ItemEstadoPago {
+  itemCotizacionId: string;
+  item: string;
+  descripcion: string;
+  unidad: string;
+  cantidad: number;
+  precioUnitario: number;
+  precioTotal: number;
+  avanceAnteriorPct: number;
+  avancePeriodoPct: number;
+  avanceAcumuladoPct: number;
+  montoPeriodo: number;
+}
+
+export interface EstadoPago {
+  id: string;
+  licitacionId: string;
+  numero: number;
+  fecha: string;
+  proveedorId: string;
+  proveedorNombre: string;
+  cotizacionId: string;
+  items: ItemEstadoPago[];
+  montoNeto: number;
+  montoIva: number;
+  montoTotal: number;
+  porcentajeAvanceGlobal: number;
+  observaciones?: string;
+  archivoNombre?: string;
+  archivoURL?: string;
+  archivoDriveId?: string;
+  estado: 'Borrador' | 'Ingresado' | 'Aprobado' | 'Pagado';
 }
 
 // ─── EVALUACIÓN ────────────────────────────────────────────────────────────
@@ -259,26 +336,42 @@ export interface UserProfile {
   displayName: string;
   fechaRegistro: string;
   verificado: boolean;
+  puedeFirmarActas?: boolean;
+  cargoFirma?: string;
 }
 
-// ─── CONFIGURACIÓN DE FIRMAS ───────────────────────────────────────────────
+// ─── CONFIGURACIÓN DE FIRMAS Y PARÁMETROS SGC ──────────────────────────────
+export interface ParametrosLicitacionSGC {
+  porcentajeEconomico: number;     // 55
+  porcentajeTecnico: number;       // 35
+  porcentajeSustentabilidad: number; // 10
+  tasaIva: number;                 // 19
+  umbralActaObligatoria: number;   // 800001
+  umbralAprobacionVrae: number;    // 5000001
+}
+
 export interface ConfiguracionFirmas {
   directorGestionCampus: {
     nombre: string;
     cargo: string;
+    email?: string;
   };
   subdirectorInfraestructura: {
     nombre: string;
     cargo: string;
+    email?: string;
   };
   responsableDesarrollo: {
     nombre: string;
     cargo: string;
+    email?: string;
   };
   vicerrectorAdministracion: {
     nombre: string;
     cargo: string;
+    email?: string;
   };
   institucion: string;
   subdireccion: string;
+  parametrosSgc?: ParametrosLicitacionSGC;
 }

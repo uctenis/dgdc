@@ -1,5 +1,12 @@
 import type { Cotizacion, EvaluacionResultado } from '../types';
 
+export interface CotizacionOrdenada {
+  cotizacion: Cotizacion;
+  puntaje: number;
+  rankingPuntaje: number;
+  esAdjudicada: boolean;
+}
+
 export function evaluarCotizaciones(cotizaciones: Cotizacion[]): EvaluacionResultado[] {
   if (!cotizaciones || cotizaciones.length === 0) {
     return [];
@@ -84,6 +91,34 @@ export function evaluarCotizaciones(cotizaciones: Cotizacion[]): EvaluacionResul
   });
 
   return resultados;
+}
+
+export function ordenarCotizacionesPorResultado(
+  cotizaciones: Cotizacion[],
+  adjudicacion?: { cotizacionAdjudicadaId?: string; proveedorAdjudicadoId?: string; proveedorGanadorId?: string },
+): CotizacionOrdenada[] {
+  const evaluaciones = evaluarCotizaciones(cotizaciones);
+  const porCotizacion = new Map(evaluaciones.map(evaluacion => [evaluacion.cotizacionId, evaluacion]));
+  const proveedorGanadorId = adjudicacion?.proveedorAdjudicadoId || adjudicacion?.proveedorGanadorId;
+
+  return cotizaciones
+    .map(cotizacion => {
+      const evaluacion = porCotizacion.get(cotizacion.id);
+      return {
+        cotizacion,
+        puntaje: evaluacion?.puntajeTotalPonderado ?? 0,
+        rankingPuntaje: evaluacion?.ranking ?? cotizaciones.length,
+        esAdjudicada: cotizacion.id === adjudicacion?.cotizacionAdjudicadaId
+          || Boolean(proveedorGanadorId && cotizacion.proveedorId === proveedorGanadorId),
+      };
+    })
+    .sort((a, b) => {
+      if (a.esAdjudicada !== b.esAdjudicada) return a.esAdjudicada ? -1 : 1;
+      if (b.puntaje !== a.puntaje) return b.puntaje - a.puntaje;
+      if (a.cotizacion.montoTotal !== b.cotizacion.montoTotal) return a.cotizacion.montoTotal - b.cotizacion.montoTotal;
+      if (a.cotizacion.plazoDias !== b.cotizacion.plazoDias) return a.cotizacion.plazoDias - b.cotizacion.plazoDias;
+      return a.cotizacion.proveedorNombre.localeCompare(b.cotizacion.proveedorNombre, 'es-CL');
+    });
 }
 
 export function formatoMonedaCLP(monto: number): string {

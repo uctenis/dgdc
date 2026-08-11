@@ -14,10 +14,13 @@ import {
   where,
   increment,
   runTransaction,
+  arrayUnion,
+  arrayRemove,
   type Unsubscribe,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { formatearRUT } from '../utils/rutUtils';
+import { normalizarNombreProyecto } from '../utils/spellCorrector';
 import type {
   Proveedor,
   HistorialObra,
@@ -26,6 +29,7 @@ import type {
   InvitadoLicitacion,
   Cotizacion,
   Propuesta,
+  EstadoPago,
   UserProfile,
 } from '../types';
 
@@ -79,12 +83,91 @@ export async function deleteProveedor(id: string): Promise<void> {
 // ═══════════════════════════════════════════════════════════════════
 
 export async function getHistorialObras(proveedorId: string): Promise<HistorialObra[]> {
-  const q = query(
+  const historialQuery = query(
     collection(db, 'proveedores', proveedorId, 'historialObras'),
     orderBy('fecha', 'desc')
   );
-  const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<HistorialObra, 'id'>) }));
+  const [historialSnap, licitacionesSnap, cotizacionesSnap] = await Promise.all([
+    getDocs(historialQuery),
+    getDocs(collection(db, 'licitaciones')),
+    getDocs(query(collection(db, 'cotizaciones'), where('proveedorId', '==', proveedorId))),
+  ]);
+
+  const historialGuardado = historialSnap.docs.map(d => ({
+    id: d.id,
+    ...(d.data() as Omit<HistorialObra, 'id'>),
+  }));
+  const licitaciones = licitacionesSnap.docs.map(d => ({
+    id: d.id,
+    ...(d.data() as Omit<LicitacionProyecto, 'id'>),
+  }));
+  const cotizaciones = cotizacionesSnap.docs.map(d => ({
+    id: d.id,
+    ...(d.data() as Omit<Cotizacion, 'id'>),
+  }));
+  const historialPorLicitacion = new Map(historialGuardado.map(item => [item.licitacionId, item]));
+
+  const relaciones = await Promise.all(licitaciones.map(async licitacion => {
+    const [invitacionSnap, propuestaSnap] = await Promise.all([
+      getDoc(doc(db, 'licitaciones', licitacion.id, 'invitados', proveedorId)).catch(() => null),
+      getDoc(doc(db, 'licitaciones', licitacion.id, 'propuestas', proveedorId)).catch(() => null),
+    ]);
+    return {
+      licitacion,
+      invitacion: invitacionSnap?.exists() ? invitacionSnap.data() as InvitadoLicitacion : undefined,
+      propuesta: propuestaSnap?.exists() ? propuestaSnap.data() as Propuesta : undefined,
+    };
+  }));
+
+  const consolidado = new Map<string, HistorialObra>();
+  relaciones.forEach(({ licitacion, invitacion, propuesta }) => {
+    const cotizacion = cotizaciones.find(item => item.licitacionId === licitacion.id);
+    const registroPrevio = historialPorLicitacion.get(licitacion.id);
+    const fueInvitado = Boolean(invitacion)
+      || Boolean(licitacion.proveedoresInvitadosIds?.includes(proveedorId));
+    const participo = Boolean(cotizacion) || propuesta?.estado === 'Enviada';
+    const esAdjudicado = proveedorId === (licitacion.proveedorAdjudicadoId || licitacion.proveedorGanadorId);
+    if (!fueInvitado && !participo && !esAdjudicado && !registroPrevio) return;
+
+    const procesoAbierto = licitacion.estado === 'Borrador' || licitacion.estado === 'En Evaluacion';
+    const obraFinalizada = licitacion.estadoLifecycle === 'Finalizado' || licitacion.recepcionConforme?.aprobada === true;
+    const activo = esAdjudicado ? !obraFinalizada : procesoAbierto;
+    const estadoActual: HistorialObra['estadoActual'] = activo
+      ? esAdjudicado && !procesoAbierto ? 'Obra activa' : 'Licitación activa'
+      : obraFinalizada ? 'Finalizado' : 'Proceso cerrado';
+    const resultado: HistorialObra['resultado'] = esAdjudicado
+      ? 'Adjudicado'
+      : participo ? (procesoAbierto ? 'Participando' : 'No Adjudicado') : 'Invitado';
+
+    consolidado.set(licitacion.id, {
+      id: registroPrevio?.id || `consolidado-${licitacion.id}`,
+      licitacionId: licitacion.id,
+      codigoCP: licitacion.codigoCP,
+      codigoOP: licitacion.codigoOP,
+      codigoOT: licitacion.codigoOT,
+      codigoProyecto: licitacion.codigoProyecto,
+      nombreProyecto: normalizarNombreProyecto(licitacion.nombreProyecto),
+      montoTotal: cotizacion?.montoTotal || propuesta?.montoTotal || registroPrevio?.montoTotal || 0,
+      plazoDias: cotizacion?.plazoDias || propuesta?.plazoDias || registroPrevio?.plazoDias || 0,
+      resultado,
+      fecha: registroPrevio?.fecha || cotizacion?.fechaCotizacion || propuesta?.fechaEnvio?.split('T')[0]
+        || invitacion?.fechaInvitacion || licitacion.fechaCreacion || licitacion.fechaEvaluacion,
+      puntajeObtenido: registroPrevio?.puntajeObtenido,
+      estadoLicitacion: licitacion.estado,
+      estadoLifecycle: licitacion.estadoLifecycle,
+      estadoActual,
+      activo,
+    });
+  });
+
+  historialGuardado.forEach(item => {
+    if (!consolidado.has(item.licitacionId)) consolidado.set(item.licitacionId, item);
+  });
+
+  return [...consolidado.values()].sort((a, b) => {
+    if (Boolean(a.activo) !== Boolean(b.activo)) return a.activo ? -1 : 1;
+    return (b.fecha || '').localeCompare(a.fecha || '');
+  });
 }
 
 export async function addHistorialObra(
@@ -106,7 +189,10 @@ export function subscribeToProyectos(
 ): Unsubscribe {
   const q = query(collection(db, 'proyectos'), orderBy('correlativo', 'asc'));
   return onSnapshot(q, snap => {
-    callback(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<ProyectoMaestro, 'id'>) })));
+    callback(snap.docs.map(d => {
+      const proyecto = { id: d.id, ...(d.data() as Omit<ProyectoMaestro, 'id'>) };
+      return { ...proyecto, nombre: normalizarNombreProyecto(proyecto.nombre) };
+    }));
   });
 }
 
@@ -129,6 +215,7 @@ export async function addProyectoMaestro(
 
   const ref = await addDoc(collection(db, 'proyectos'), {
     ...data,
+    nombre: normalizarNombreProyecto(data.nombre),
     correlativo,
     fechaCreacion: new Date().toISOString(),
     _createdAt: serverTimestamp(),
@@ -140,7 +227,11 @@ export async function updateProyectoMaestro(
   id: string,
   data: Partial<ProyectoMaestro>
 ): Promise<void> {
-  await updateDoc(doc(db, 'proyectos', id), { ...data, _updatedAt: serverTimestamp() });
+  await updateDoc(doc(db, 'proyectos', id), {
+    ...data,
+    ...(data.nombre !== undefined ? { nombre: normalizarNombreProyecto(data.nombre) } : {}),
+    _updatedAt: serverTimestamp(),
+  });
 }
 
 export async function deleteProyectoMaestro(id: string): Promise<void> {
@@ -156,7 +247,10 @@ export function subscribeToLicitaciones(
 ): Unsubscribe {
   const q = query(collection(db, 'licitaciones'), orderBy('_createdAt', 'desc'));
   return onSnapshot(q, snap => {
-    callback(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<LicitacionProyecto, 'id'>) })));
+    callback(snap.docs.map(d => {
+      const licitacion = { id: d.id, ...(d.data() as Omit<LicitacionProyecto, 'id'>) };
+      return { ...licitacion, nombreProyecto: normalizarNombreProyecto(licitacion.nombreProyecto) };
+    }));
   });
 }
 
@@ -165,6 +259,7 @@ export async function addLicitacion(
 ): Promise<string> {
   const ref = await addDoc(collection(db, 'licitaciones'), {
     ...data,
+    nombreProyecto: normalizarNombreProyecto(data.nombreProyecto),
     _createdAt: serverTimestamp(),
   });
   return ref.id;
@@ -174,7 +269,11 @@ export async function updateLicitacion(
   id: string,
   data: Partial<LicitacionProyecto>
 ): Promise<void> {
-  await updateDoc(doc(db, 'licitaciones', id), { ...data, _updatedAt: serverTimestamp() });
+  await updateDoc(doc(db, 'licitaciones', id), {
+    ...data,
+    ...(data.nombreProyecto !== undefined ? { nombreProyecto: normalizarNombreProyecto(data.nombreProyecto) } : {}),
+    _updatedAt: serverTimestamp(),
+  });
 }
 
 export async function deleteLicitacion(id: string): Promise<void> {
@@ -200,11 +299,23 @@ export async function addInvitado(
   data: Omit<InvitadoLicitacion, 'id'>
 ): Promise<void> {
   const ref = doc(db, 'licitaciones', licitacionId, 'invitados', data.proveedorId);
-  await setDoc(ref, { ...data, _createdAt: serverTimestamp() });
+  await Promise.all([
+    setDoc(ref, { ...data, _createdAt: serverTimestamp() }),
+    updateDoc(doc(db, 'licitaciones', licitacionId), {
+      proveedoresInvitadosIds: arrayUnion(data.proveedorId),
+      _updatedAt: serverTimestamp(),
+    }),
+  ]);
 }
 
 export async function removeInvitado(licitacionId: string, proveedorId: string): Promise<void> {
-  await deleteDoc(doc(db, 'licitaciones', licitacionId, 'invitados', proveedorId));
+  await Promise.all([
+    deleteDoc(doc(db, 'licitaciones', licitacionId, 'invitados', proveedorId)),
+    updateDoc(doc(db, 'licitaciones', licitacionId), {
+      proveedoresInvitadosIds: arrayRemove(proveedorId),
+      _updatedAt: serverTimestamp(),
+    }),
+  ]);
 }
 
 export async function updateInvitadoEstado(
@@ -238,17 +349,85 @@ export async function getAllCotizaciones(): Promise<Cotizacion[]> {
   return snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Cotizacion, 'id'>) }));
 }
 
+function licitacionCerradaParaOfertas(data: Partial<LicitacionProyecto>): boolean {
+  return data.estado === 'Adjudicado'
+    || data.estado === 'Cerrado'
+    || Boolean(data.proveedorAdjudicadoId)
+    || Boolean(data.proveedorGanadorId);
+}
+
+function validarRecepcionOfertasAbierta(
+  licitacionSnap: { exists: () => boolean; data: () => unknown }
+): void {
+  if (!licitacionSnap.exists()) {
+    throw new Error('La licitacion asociada no existe.');
+  }
+  if (licitacionCerradaParaOfertas(licitacionSnap.data() as Partial<LicitacionProyecto>)) {
+    throw new Error('PROCESO_CERRADO: La licitacion ya fue adjudicada y no acepta nuevas ofertas ni modificaciones.');
+  }
+}
+
 export async function addCotizacion(data: Omit<Cotizacion, 'id' | 'fechaCarga'>): Promise<string> {
-  const ref = await addDoc(collection(db, 'cotizaciones'), {
+  const licitacionRef = doc(db, 'licitaciones', data.licitacionId);
+  const cotizacionRef = doc(collection(db, 'cotizaciones'));
+  await runTransaction(db, async transaction => {
+    const licitacionSnap = await transaction.get(licitacionRef);
+    validarRecepcionOfertasAbierta(licitacionSnap);
+    transaction.set(cotizacionRef, {
+      ...data,
+      fechaCarga: new Date().toISOString().split('T')[0],
+      _createdAt: serverTimestamp(),
+    });
+  });
+  return cotizacionRef.id;
+}
+
+export async function deleteCotizacion(id: string): Promise<void> {
+  const cotizacionRef = doc(db, 'cotizaciones', id);
+  await runTransaction(db, async transaction => {
+    const cotizacionSnap = await transaction.get(cotizacionRef);
+    if (!cotizacionSnap.exists()) return;
+    const cotizacion = cotizacionSnap.data() as Omit<Cotizacion, 'id'>;
+    const licitacionSnap = await transaction.get(doc(db, 'licitaciones', cotizacion.licitacionId));
+    validarRecepcionOfertasAbierta(licitacionSnap);
+    transaction.delete(cotizacionRef);
+  });
+}
+
+export function subscribeToEstadosPago(
+  licitacionId: string,
+  callback: (estados: EstadoPago[]) => void
+): Unsubscribe {
+  const q = query(
+    collection(db, 'licitaciones', licitacionId, 'estadosPago'),
+    orderBy('numero', 'asc')
+  );
+  return onSnapshot(q, snap => {
+    callback(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<EstadoPago, 'id'>) })));
+  });
+}
+
+export async function addEstadoPago(
+  licitacionId: string,
+  data: Omit<EstadoPago, 'id' | 'licitacionId'>
+): Promise<string> {
+  const ref = await addDoc(collection(db, 'licitaciones', licitacionId, 'estadosPago'), {
     ...data,
-    fechaCarga: new Date().toISOString().split('T')[0],
+    licitacionId,
     _createdAt: serverTimestamp(),
   });
   return ref.id;
 }
 
-export async function deleteCotizacion(id: string): Promise<void> {
-  await deleteDoc(doc(db, 'cotizaciones', id));
+export async function updateEstadoPago(
+  licitacionId: string,
+  estadoPagoId: string,
+  data: Partial<EstadoPago>
+): Promise<void> {
+  await updateDoc(doc(db, 'licitaciones', licitacionId, 'estadosPago', estadoPagoId), {
+    ...data,
+    _updatedAt: serverTimestamp(),
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -270,8 +449,13 @@ export async function savePropuesta(
   proveedorId: string,
   data: Omit<Propuesta, 'id'>
 ): Promise<void> {
+  const licitacionRef = doc(db, 'licitaciones', licitacionId);
   const ref = doc(db, 'licitaciones', licitacionId, 'propuestas', proveedorId);
-  await setDoc(ref, { ...data, _updatedAt: serverTimestamp() }, { merge: true });
+  await runTransaction(db, async transaction => {
+    const licitacionSnap = await transaction.get(licitacionRef);
+    validarRecepcionOfertasAbierta(licitacionSnap);
+    transaction.set(ref, { ...data, _updatedAt: serverTimestamp() }, { merge: true });
+  });
 }
 
 export async function getPropuesta(
@@ -296,12 +480,15 @@ export async function convertirPropuestaACotizacion(
     montoIva: propuesta.montoIva,
     montoTotal: propuesta.montoTotal,
     plazoDias: propuesta.plazoDias,
+    itemizado: propuesta.itemizado,
+    fechaCotizacion: propuesta.fechaCotizacion,
     ajustaRequerimientos: propuesta.ajustaRequerimientos,
     cuentaExperiencia: propuesta.cuentaExperiencia,
     cumplePlazoRequerido: propuesta.cumplePlazoRequerido,
     declaraSustentabilidad: propuesta.declaraSustentabilidad,
     tipoEvidenciaSustentable: propuesta.tipoEvidenciaSustentable,
     documentoCotizacionNombre: propuesta.archivoNombre,
+    documentoCotizacionURL: propuesta.archivoURL,
     observaciones: propuesta.observaciones,
     origenPropuestaId: propuesta.id,
   };
@@ -356,7 +543,16 @@ export async function adjudicarLicitacion(params: {
   await updateLicitacion(licitacionId, {
     estado: 'Adjudicado',
     proveedorAdjudicadoId: proveedorGanadorId,
+    proveedorGanadorId,
     justificacionAdjudicacion: justificacion,
+    cotizacionAdjudicadaId: cotizaciones.find(c => c.proveedorId === proveedorGanadorId)?.id,
+    proveedorAdjudicadoNombre: cotizaciones.find(c => c.proveedorId === proveedorGanadorId)?.proveedorNombre,
+    proveedorAdjudicadoRut: cotizaciones.find(c => c.proveedorId === proveedorGanadorId)?.proveedorRut,
+    montoAdjudicadoNeto: cotizaciones.find(c => c.proveedorId === proveedorGanadorId)?.montoNeto,
+    montoAdjudicadoIva: cotizaciones.find(c => c.proveedorId === proveedorGanadorId)?.montoIva,
+    montoAdjudicadoTotal: cotizaciones.find(c => c.proveedorId === proveedorGanadorId)?.montoTotal,
+    plazoAdjudicadoDias: cotizaciones.find(c => c.proveedorId === proveedorGanadorId)?.plazoDias,
+    estadoLifecycle: 'Adjudicado',
   });
 
   // 2. Actualizar estado de invitados
@@ -375,7 +571,7 @@ export async function adjudicarLicitacion(params: {
       licitacionId,
       codigoCP,
       codigoOP,
-      nombreProyecto,
+      nombreProyecto: normalizarNombreProyecto(nombreProyecto),
       montoTotal: cot.montoTotal,
       plazoDias: cot.plazoDias,
       resultado,

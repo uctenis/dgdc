@@ -18,6 +18,9 @@ export const CargaOrdenCompraModal: React.FC<CargaOrdenCompraModalProps> = ({
   const [file, setFile] = useState<File | null>(null);
   const [parsing, setParsing] = useState(false);
   const [numeroOCDetectado, setNumeroOCDetectado] = useState<string>(licitacion.ordenCompraNumero || '');
+  const [numeroContrato, setNumeroContrato] = useState<string>(licitacion.numeroContrato || '');
+  const [numeroOT, setNumeroOT] = useState<string>(licitacion.codigoOT || licitacion.ordenTrabajoNumero || '');
+  const [numeroOP, setNumeroOP] = useState<string>(licitacion.codigoOP || licitacion.ordenPedidoNumero || '');
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -36,6 +39,8 @@ export const CargaOrdenCompraModal: React.FC<CargaOrdenCompraModalProps> = ({
       } else {
         setNumeroOCDetectado(`OC-${Date.now().toString().slice(-6)}`);
       }
+      if (res.numeroOT) setNumeroOT(res.numeroOT);
+      if (res.numeroOP) setNumeroOP(res.numeroOP);
     } catch (err) {
       console.error('Error al procesar la OC:', err);
       setErrorMsg('No se pudo leer automáticamente el número de OC. Por favor confírmelo manualmente.');
@@ -55,8 +60,13 @@ export const CargaOrdenCompraModal: React.FC<CargaOrdenCompraModalProps> = ({
     try {
       const datosOC = {
         ordenCompraNumero: numeroOCDetectado.trim(),
+        numeroContrato: numeroContrato.trim(),
+        codigoOT: numeroOT.trim(),
+        ordenTrabajoNumero: numeroOT.trim(),
+        codigoOP: numeroOP.trim(),
+        ordenPedidoNumero: numeroOP.trim(),
         archivoOCNombre: file ? file.name : licitacion.archivoOCNombre || 'Orden_de_Compra.pdf',
-        fechaCargaOC: new Date().toLocaleDateString('es-CL'),
+        fechaCargaOC: new Date().toISOString().split('T')[0],
         estadoLifecycle: 'OC_Emitida' as LicitacionProyecto['estadoLifecycle'],
       };
 
@@ -66,7 +76,8 @@ export const CargaOrdenCompraModal: React.FC<CargaOrdenCompraModalProps> = ({
       // 2. Si está vinculada a un proyecto en Cartera, actualizar también el proyecto maestro
       if (licitacion.proyectoMaestroId) {
         await updateProyectoMaestro(licitacion.proyectoMaestroId, {
-          codigoOP: licitacion.codigoOP || 'OP-2026',
+          codigoOP: numeroOP.trim(),
+          codigoOT: numeroOT.trim(),
         });
       }
 
@@ -83,7 +94,7 @@ export const CargaOrdenCompraModal: React.FC<CargaOrdenCompraModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-200">
+      <div className="bg-white rounded-2xl max-w-lg max-h-[94vh] overflow-y-auto w-full p-6 shadow-2xl space-y-4 border border-slate-200">
         
         {/* Header */}
         <div className="flex items-center justify-between border-b pb-3">
@@ -94,7 +105,7 @@ export const CargaOrdenCompraModal: React.FC<CargaOrdenCompraModalProps> = ({
             <h3 className="text-base font-bold text-slate-800 mt-1">
               Cargar Orden de Compra (OC)
             </h3>
-            <p className="text-xs text-slate-500">{licitacion.nombreProyecto}</p>
+            <p className="text-xs text-slate-500">{licitacion.nombreProyecto.toLocaleUpperCase('es-CL')}</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
             <X className="w-5 h-5" />
@@ -160,6 +171,30 @@ export const CargaOrdenCompraModal: React.FC<CargaOrdenCompraModalProps> = ({
             <span className="text-[10px] text-slate-400 mt-0.5 block">
               Este número de OC quedará registrado permanentemente en la ficha del proyecto.
             </span>
+          </div>
+
+          <div>
+            <label className="block font-semibold text-slate-700 mb-1">Número de contrato (si corresponde)</label>
+            <input
+              type="text"
+              placeholder="Ej: CONTRATO-2026-001"
+              value={numeroContrato}
+              onChange={e => setNumeroContrato(e.target.value.toUpperCase())}
+              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none font-bold text-slate-800"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">Orden de Trabajo (OT)</label>
+              <input type="text" value={numeroOT} onChange={e => setNumeroOT(e.target.value.toUpperCase())} placeholder="OT-2026-001" className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none font-bold" />
+              <span className="text-[9px] text-slate-400">Lectura automática desde la OC.</span>
+            </div>
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">Orden de Pedido (OP)</label>
+              <input type="text" value={numeroOP} onChange={e => setNumeroOP(e.target.value.toUpperCase())} placeholder="OP-2026-001" className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none font-bold" />
+              <span className="text-[9px] text-slate-400">Lectura automática desde la OC.</span>
+            </div>
           </div>
 
           <div className="flex justify-end gap-3 pt-3 border-t">
