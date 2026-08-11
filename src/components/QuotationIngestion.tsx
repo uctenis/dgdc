@@ -1,8 +1,62 @@
-import React, { useState } from 'react';
-import type { Cotizacion, Proveedor, LicitacionProyecto } from '../types';
-import { FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Plus, Trash2, ShieldCheck, Leaf, Clock, FileText } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import type { Cotizacion, Proveedor, LicitacionProyecto, Propuesta } from '../types';
+import { FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Plus, Trash2, ShieldCheck, Leaf, Clock, FileText, Globe, ArrowDownToLine } from 'lucide-react';
 import { parsearCotizacionExcel } from '../services/excelParser';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
+import { subscribeToPropuestas, convertirPropuestaACotizacion } from '../services/firestoreService';
+import { SupplierSearchInput } from './SupplierSearchInput';
+import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
+
+const OnlinePropuestasList: React.FC<{
+  licitacionId: string;
+  onImportPropuesta: (p: Propuesta) => void;
+}> = ({ licitacionId, onImportPropuesta }) => {
+  const [propuestas, setPropuestas] = useState<Propuesta[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsub = subscribeToPropuestas(licitacionId, data => {
+      setPropuestas(data);
+      setLoading(false);
+    });
+    return unsub;
+  }, [licitacionId]);
+
+  if (loading || propuestas.length === 0) return null;
+
+  return (
+    <div className="bg-gradient-to-r from-sky-900 to-indigo-900 text-white p-6 rounded-2xl shadow-sm space-y-3">
+      <div className="flex items-center justify-between">
+        <h4 className="text-xs font-bold uppercase tracking-wider flex items-center gap-2 text-sky-300">
+          <Globe className="w-4 h-4" />
+          Propuestas Recibidas vía Portal de Proveedores ({propuestas.length})
+        </h4>
+      </div>
+
+      <div className="space-y-2">
+        {propuestas.map(p => (
+          <div key={p.id} className="bg-white/10 backdrop-blur-md rounded-xl p-3.5 flex items-center justify-between border border-white/10">
+            <div className="space-y-1">
+              <span className="font-bold text-sm text-white">{p.proveedorNombre}</span>
+              <div className="flex gap-3 text-xs text-sky-200">
+                <span>Total: <strong>{formatoMonedaCLP(p.montoTotal)}</strong></span>
+                <span>Plazo: <strong>{p.plazoDias} días</strong></span>
+                {p.archivoNombre && <span>Archivo: <a href={p.archivoURL} target="_blank" rel="noreferrer" className="underline">{p.archivoNombre}</a></span>}
+              </div>
+            </div>
+            <button
+              onClick={() => onImportPropuesta(p)}
+              className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold px-3 py-2 rounded-lg transition shadow-sm shrink-0"
+            >
+              <ArrowDownToLine className="w-3.5 h-3.5" />
+              Convertir en Cotización
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 interface QuotationIngestionProps {
   licitacion: LicitacionProyecto | null;
@@ -233,6 +287,18 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
             )}
           </div>
 
+          {/* Online Proposals from Provider Portal */}
+          <OnlinePropuestasList
+            licitacionId={licitacion.id}
+            onImportPropuesta={async p => {
+              await convertirPropuestaACotizacion(p);
+              setMensajeNotificacion({
+                tipo: 'exito',
+                texto: `Propuesta enviada por ${p.proveedorNombre} importada como Cotización Oficial.`,
+              });
+            }}
+          />
+
           {/* Form Entry */}
           <form onSubmit={handleSaveCotizacion} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
             <h3 className="text-sm font-bold text-slate-800 border-b pb-3 flex items-center gap-2">
@@ -243,52 +309,53 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
             <div className="space-y-4 text-xs">
               {/* Select Supplier */}
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Proveedor (Oferente) *</label>
-                <select
-                  required
-                  value={selectedProveedorId}
-                  onChange={e => setSelectedProveedorId(e.target.value)}
-                  className="w-full px-3 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-sky-500 outline-none text-slate-800"
-                >
-                  <option value="">-- Seleccionar Proveedor Registrado --</option>
-                  {proveedores.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.razonSocial} (RUT: {p.rut})
-                    </option>
-                  ))}
-                </select>
+                <label className="block font-semibold text-slate-700 mb-1">Buscar y Seleccionar Proveedor (Oferente por RUT o Nombre) *</label>
+                <SupplierSearchInput
+                  proveedores={proveedores}
+                  selectedProveedorId={selectedProveedorId}
+                  onSelectProveedor={setSelectedProveedorId}
+                  placeholder="Buscar proveedor por RUT o Razón Social (ej: 76.814.443-5 o Abastec)..."
+                />
               </div>
 
               {/* Amounts Grid */}
               <div className="grid grid-cols-3 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Monto Oferta NETO</label>
-                  <input
-                    type="number"
-                    required
-                    value={montoNeto}
-                    onChange={e => handleMontoNetoChange(Number(e.target.value))}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none font-bold"
-                  />
+                  <label className="block font-semibold text-slate-700 mb-1">Monto Oferta NETO *</label>
+                  <div className="relative flex items-center">
+                    <span className="absolute left-3 text-slate-400 font-bold">$</span>
+                    <input
+                      type="text"
+                      required
+                      placeholder="12.500.000"
+                      value={formatearEnteroConMiles(montoNeto)}
+                      onChange={e => handleMontoNetoChange(desformatearEntero(e.target.value))}
+                      className="w-full pl-7 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none font-bold text-emerald-700"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">IVA (19%)</label>
                   <input
-                    type="number"
+                    type="text"
                     readOnly
-                    value={montoIva}
+                    value={formatoMonedaCLP(montoIva)}
                     className="w-full px-3 py-2 border border-slate-200 bg-slate-100 rounded-lg text-slate-600 font-semibold"
                   />
                 </div>
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Monto TOTAL con IVA</label>
-                  <input
-                    type="number"
-                    required
-                    value={montoTotal}
-                    onChange={e => setMontoTotal(Number(e.target.value))}
-                    className="w-full px-3 py-2 border border-sky-300 bg-sky-50 rounded-lg text-sky-900 font-extrabold"
-                  />
+                  <label className="block font-semibold text-slate-700 mb-1">Monto TOTAL con IVA *</label>
+                  <div className="relative flex items-center">
+                    <span className="absolute left-3 text-slate-400 font-bold">$</span>
+                    <input
+                      type="text"
+                      required
+                      placeholder="14.875.000"
+                      value={formatearEnteroConMiles(montoTotal)}
+                      onChange={e => setMontoTotal(desformatearEntero(e.target.value))}
+                      className="w-full pl-7 pr-3 py-2 border border-sky-300 bg-sky-50 rounded-lg text-sky-900 font-extrabold"
+                    />
+                  </div>
                 </div>
               </div>
 

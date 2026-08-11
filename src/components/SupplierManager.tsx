@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import type { Proveedor } from '../types';
-import { Building2, Search, Plus, Leaf, Edit3, Trash2, Phone, Mail, MapPin, Wifi } from 'lucide-react';
+import { Building2, Search, Plus, Leaf, Edit3, Trash2, Phone, Mail, MapPin, Wifi, History, CheckCircle2, AlertCircle } from 'lucide-react';
+import { HistorialObrasModal } from './HistorialObrasModal';
+import { formatearRUT, validarRUT } from '../utils/rutUtils';
 
 interface SupplierManagerProps {
   proveedores: Proveedor[];
@@ -21,6 +23,7 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
   const [filtroRubro, setFiltroRubro] = useState('Todos');
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [selectedHistorialProv, setSelectedHistorialProv] = useState<Proveedor | null>(null);
 
   // Form state
   const [rut, setRut] = useState('');
@@ -251,24 +254,42 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
                 )}
               </div>
 
-              <span
-                onClick={() =>
-                  onUpdateProveedor(prov.id, {
-                    estado: prov.estado === 'Activo' ? 'Inactivo' : 'Activo',
-                  })
-                }
-                className={`cursor-pointer px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                  prov.estado === 'Activo'
-                    ? 'bg-sky-100 text-sky-800'
-                    : 'bg-slate-100 text-slate-500'
-                }`}
-              >
-                {prov.estado}
-              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setSelectedHistorialProv(prov)}
+                  className="flex items-center gap-1 text-xs text-sky-600 hover:text-sky-800 font-semibold bg-sky-50 px-2 py-1 rounded-md border border-sky-200 transition"
+                  title="Ver historial de licitaciones y obras"
+                >
+                  <History className="w-3.5 h-3.5" />
+                  <span>Historial</span>
+                </button>
+
+                <span
+                  onClick={() =>
+                    onUpdateProveedor(prov.id, {
+                      estado: prov.estado === 'Activo' ? 'Inactivo' : 'Activo',
+                    })
+                  }
+                  className={`cursor-pointer px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                    prov.estado === 'Activo'
+                      ? 'bg-sky-100 text-sky-800'
+                      : 'bg-slate-100 text-slate-500'
+                  }`}
+                >
+                  {prov.estado}
+                </span>
+              </div>
             </div>
           </div>
         ))}
       </div>
+
+      {selectedHistorialProv && (
+        <HistorialObrasModal
+          proveedor={selectedHistorialProv}
+          onClose={() => setSelectedHistorialProv(null)}
+        />
+      )}
 
       {/* Modal Add / Edit */}
       {showModal && (
@@ -287,9 +308,34 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
                     required
                     placeholder="Ej: 76.123.456-7"
                     value={rut}
-                    onChange={e => setRut(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none"
+                    onChange={e => setRut(formatearRUT(e.target.value))}
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 outline-none font-medium ${
+                      rut
+                        ? validarRUT(rut).esValido
+                          ? 'border-emerald-500 focus:ring-emerald-500 bg-emerald-50/20'
+                          : 'border-amber-400 focus:ring-amber-500 bg-amber-50/20'
+                        : 'border-slate-300 focus:ring-sky-500'
+                    }`}
                   />
+                  {rut ? (
+                    <div className="mt-1 flex items-center gap-1 text-[11px] font-semibold">
+                      {validarRUT(rut).esValido ? (
+                        <span className="text-emerald-700 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          RUT Válido (Módulo 11 OK)
+                        </span>
+                      ) : (
+                        <span className="text-amber-700 flex items-center gap-1">
+                          <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                          {validarRUT(rut).mensaje}
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-[10px] text-slate-400 mt-0.5 block">
+                      Puntos de miles automáticos. Ingrese el DV manualmente.
+                    </span>
+                  )}
                 </div>
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Rubro Principal *</label>

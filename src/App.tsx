@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
 import { ProjectManager } from './components/ProjectManager';
 import { SupplierManager } from './components/SupplierManager';
@@ -6,6 +7,13 @@ import { QuotationIngestion } from './components/QuotationIngestion';
 import { EvaluationMatrix } from './components/EvaluationMatrix';
 import { DocumentGenerator } from './components/DocumentGenerator';
 import { SettingsModal } from './components/SettingsModal';
+import { ProyectosMaestros } from './components/ProyectosMaestros';
+import { SgcProcessWorkflow } from './components/SgcProcessWorkflow';
+
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { LoginPage } from './pages/LoginPage';
+import { PortalDashboard } from './pages/PortalDashboard';
+import { LicitacionDetalle } from './pages/LicitacionDetalle';
 
 import type { Proveedor, LicitacionProyecto, Cotizacion, ConfiguracionFirmas } from './types';
 import { storageService } from './services/storageService';
@@ -14,9 +22,18 @@ import {
   addProveedor as fsAddProveedor,
   updateProveedor as fsUpdateProveedor,
   deleteProveedor as fsDeleteProveedor,
+  subscribeToLicitaciones,
+  addLicitacion as fsAddLicitacion,
+  updateLicitacion as fsUpdateLicitacion,
+  deleteLicitacion as fsDeleteLicitacion,
+  getAllCotizaciones,
+  addCotizacion as fsAddCotizacion,
+  deleteCotizacion as fsDeleteCotizacion,
+  adjudicarLicitacion as fsAdjudicarLicitacion,
 } from './services/firestoreService';
+import { evaluarCotizaciones } from './services/evaluationEngine';
 
-export function App() {
+function AdminApp() {
   const [activeTab, setActiveTab] = useState<string>('licitaciones');
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
@@ -28,34 +45,34 @@ export function App() {
   const [configFirmas, setConfigFirmas] = useState<ConfiguracionFirmas>(storageService.getConfigFirmas());
   const [licitacionSeleccionadaId, setLicitacionSeleccionadaId] = useState<string | null>(null);
 
-  // Load licitaciones/cotizaciones from localStorage (working data)
+  // Firestore Subscriptions for Licitaciones and Proveedores
   useEffect(() => {
-    const l = storageService.getLicitaciones();
-    const c = storageService.getCotizaciones();
-    const cfg = storageService.getConfigFirmas();
-    setLicitaciones(l);
-    setCotizaciones(c);
-    setConfigFirmas(cfg);
-    if (l.length > 0) {
-      setLicitacionSeleccionadaId(l[0].id);
-    }
-  }, []);
-
-  // Real-time Firestore subscription for Proveedores
-  useEffect(() => {
-    const unsubscribe = subscribeToProveedores(provs => {
+    const unsubProvs = subscribeToProveedores(provs => {
       setProveedores(provs);
       setFirestoreLoading(false);
     });
-    return () => unsubscribe();
+
+    const unsubLics = subscribeToLicitaciones(lics => {
+      setLicitaciones(lics);
+      if (lics.length > 0 && !licitacionSeleccionadaId) {
+        setLicitacionSeleccionadaId(lics[0].id);
+      }
+    });
+
+    // Cargar cotizaciones
+    getAllCotizaciones().then(cots => setCotizaciones(cots));
+
+    return () => {
+      unsubProvs();
+      unsubLics();
+    };
   }, []);
 
   const licitacionActiva = licitaciones.find(l => l.id === licitacionSeleccionadaId) || null;
 
-  // Handlers for Proveedores — now using Firestore
+  // Handlers for Proveedores
   const handleAddProveedor = async (newProv: Omit<Proveedor, 'id' | 'fechaRegistro'>) => {
     await fsAddProveedor(newProv);
-    // state update is handled by onSnapshot
   };
 
   const handleUpdateProveedor = async (id: string, updated: Partial<Proveedor>) => {
@@ -68,51 +85,60 @@ export function App() {
     }
   };
 
-  // Handlers for Licitaciones
-  const handleAddLicitacion = (newLicitacion: Omit<LicitacionProyecto, 'id'>) => {
-    const created = storageService.addLicitacion(newLicitacion);
-    setLicitaciones(storageService.getLicitaciones());
-    setLicitacionSeleccionadaId(created.id);
+  // Handlers for Licitaciones (Firestore)
+  const handleAddLicitacion = async (newLicitacion: Omit<LicitacionProyecto, 'id'>) => {
+    const id = await fsAddLicitacion(newLicitacion);
+    setLicitacionSeleccionadaId(id);
   };
 
-  const handleUpdateLicitacion = (id: string, updated: Partial<LicitacionProyecto>) => {
-    storageService.updateLicitacion(id, updated);
-    setLicitaciones(storageService.getLicitaciones());
+  const handleUpdateLicitacion = async (id: string, updated: Partial<LicitacionProyecto>) => {
+    await fsUpdateLicitacion(id, updated);
   };
 
-  const handleDeleteLicitacion = (id: string) => {
+  const handleDeleteLicitacion = async (id: string) => {
     if (confirm('¿Confirma que desea eliminar esta licitación y sus cotizaciones asociadas?')) {
-      storageService.deleteLicitacion(id);
-      const l = storageService.getLicitaciones();
-      setLicitaciones(l);
-      setCotizaciones(storageService.getCotizaciones());
-      if (l.length > 0) setLicitacionSeleccionadaId(l[0].id);
-      else setLicitacionSeleccionadaId(null);
+      await fsDeleteLicitacion(id);
     }
   };
 
-  // Handlers for Cotizaciones
-  const handleAddCotizacion = (newCot: Omit<Cotizacion, 'id' | 'fechaCarga'>) => {
-    storageService.addCotizacion(newCot);
-    setCotizaciones(storageService.getCotizaciones());
+  // Handlers for Cotizaciones (Firestore)
+  const handleAddCotizacion = async (newCot: Omit<Cotizacion, 'id' | 'fechaCarga'>) => {
+    await fsAddCotizacion(newCot);
+    const updatedCots = await getAllCotizaciones();
+    setCotizaciones(updatedCots);
   };
 
-  const handleDeleteCotizacion = (id: string) => {
+  const handleDeleteCotizacion = async (id: string) => {
     if (confirm('¿Confirma que desea eliminar esta cotización?')) {
-      storageService.deleteCotizacion(id);
-      setCotizaciones(storageService.getCotizaciones());
+      await fsDeleteCotizacion(id);
+      const updatedCots = await getAllCotizaciones();
+      setCotizaciones(updatedCots);
     }
   };
 
-  // Handler for Adjudicación
-  const handleAdjudicarLicitacion = (licId: string, provId: string, justificacion: string) => {
-    storageService.updateLicitacion(licId, {
-      estado: 'Adjudicado',
-      proveedorAdjudicadoId: provId,
-      justificacionAdjudicacion: justificacion,
+  // Handler for Adjudicación Compuesta (Actualiza Firestore + Genera Historial en todos los proveedores)
+  const handleAdjudicarLicitacion = async (licId: string, provId: string, justificacion: string) => {
+    if (!licitacionActiva) return;
+
+    const cots = cotizaciones.filter(c => c.licitacionId === licId);
+    const evs = evaluarCotizaciones(cots);
+    const puntajes: Record<string, number> = {};
+    evs.forEach(e => {
+      puntajes[e.proveedorId] = e.puntajeTotalPonderado;
     });
-    setLicitaciones(storageService.getLicitaciones());
-    alert('¡Licitación adjudicada con éxito! Diríjase a la pestaña "Actas & Documentos SGC" para exportar los informes oficiales.');
+
+    await fsAdjudicarLicitacion({
+      licitacionId: licId,
+      proveedorGanadorId: provId,
+      justificacion,
+      cotizaciones: cots,
+      puntajes,
+      codigoCP: licitacionActiva.codigoCP,
+      codigoOP: licitacionActiva.codigoOP,
+      nombreProyecto: licitacionActiva.nombreProyecto,
+    });
+
+    alert('¡Licitación adjudicada con éxito! El historial de obras ha sido actualizado automáticamente en los perfiles de todos los proveedores participantes. Diríjase a la pestaña "Actas & Documentos SGC" para exportar los informes oficiales.');
   };
 
   const handleSaveConfigFirmas = (cfg: ConfiguracionFirmas) => {
@@ -139,6 +165,8 @@ export function App() {
         {activeTab === 'licitaciones' && (
           <ProjectManager
             licitaciones={licitaciones}
+            proveedores={proveedores}
+            cotizaciones={cotizaciones}
             licitacionSeleccionadaId={licitacionSeleccionadaId}
             onSelectLicitacion={id => {
               setLicitacionSeleccionadaId(id);
@@ -147,7 +175,12 @@ export function App() {
             onAddLicitacion={handleAddLicitacion}
             onUpdateLicitacion={handleUpdateLicitacion}
             onDeleteLicitacion={handleDeleteLicitacion}
+            onAdjudicarLicitacion={handleAdjudicarLicitacion}
           />
+        )}
+
+        {activeTab === 'proyectos-maestros' && (
+          <ProyectosMaestros />
         )}
 
         {activeTab === 'proveedores' && (
@@ -181,10 +214,14 @@ export function App() {
 
         {activeTab === 'documentos' && (
           <DocumentGenerator
-            licitacion={licitacionActiva}
+            licitacion={licitaciones.find(l => l.id === licitacionSeleccionadaId) || licitaciones[0]}
             cotizaciones={cotizaciones}
             configFirmas={configFirmas}
           />
+        )}
+
+        {activeTab === 'diagrama-sgc' && (
+          <SgcProcessWorkflow />
         )}
       </main>
 
@@ -209,5 +246,45 @@ export function App() {
         onResetData={handleResetAllData}
       />
     </div>
+  );
+}
+
+function ProtectedProveedorRoute({ children }: { children: React.ReactNode }) {
+  const { user, isProveedor, loading } = useAuth();
+  if (loading) return null;
+  if (!user || !isProveedor) return <Navigate to="/portal/login" replace />;
+  return <>{children}</>;
+}
+
+export function App() {
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          {/* Admin routes */}
+          <Route path="/" element={<AdminApp />} />
+
+          {/* Provider routes */}
+          <Route path="/portal/login" element={<LoginPage />} />
+          <Route
+            path="/portal"
+            element={
+              <ProtectedProveedorRoute>
+                <PortalDashboard />
+              </ProtectedProveedorRoute>
+            }
+          />
+          <Route
+            path="/portal/licitacion/:id"
+            element={
+              <ProtectedProveedorRoute>
+                <LicitacionDetalle />
+              </ProtectedProveedorRoute>
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }

@@ -7,7 +7,6 @@ import {
   FileText,
   Settings,
   Download,
-  Flame,
 } from 'lucide-react';
 import { generarPlantillaCotizacionExcel } from '../services/templateGenerator';
 
@@ -19,11 +18,13 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, openSettings }) => {
   const tabs = [
-    { id: 'licitaciones', label: 'Proyectos', icon: FolderKanban },
+    { id: 'licitaciones', label: 'Licitaciones', icon: FolderKanban },
+    { id: 'proyectos-maestros', label: 'Cartera de Proyectos 2026', icon: FileText },
     { id: 'proveedores',  label: 'Proveedores', icon: Building2 },
     { id: 'cotizaciones', label: 'Cotizaciones', icon: FileSpreadsheet },
     { id: 'evaluacion',   label: 'Evaluación', icon: FileCheck2 },
     { id: 'documentos',   label: 'Actas SGC', icon: FileText },
+    { id: 'diagrama-sgc', label: 'Flujo SGC 0021', icon: FileCheck2 },
   ];
 
   return (

@@ -51,6 +51,7 @@ export function evaluarCotizaciones(cotizaciones: Cotizacion[]): EvaluacionResul
       proveedorNombre: cotizacion.proveedorNombre,
       proveedorRut: cotizacion.proveedorRut,
       montoTotal: cotizacion.montoTotal,
+      montoNeto: cotizacion.montoNeto,
       plazoDias: cotizacion.plazoDias,
 
       puntajeEconomico,

@@ -21,7 +21,7 @@ export function generarPlantillaCotizacionExcel(licitacion?: LicitacionProyecto)
   const codigoProyecto = licitacion?.codigoProyecto || 'XXXX';
 
   // Filas de la hoja (índice de fila → contenido)
-  const wsData: (string | number | null)[][] = [
+  const wsData: any[][] = [
     // ── Fila 0: Título principal ──────────────────────────────────────────
     ['UNIVERSIDAD CATÓLICA DE TEMUCO', null, null, null, null, null],
     ['SUBDIRECCIÓN DE INFRAESTRUCTURA — DIRECCIÓN DE GESTIÓN DEL CAMPUS', null, null, null, null, null],

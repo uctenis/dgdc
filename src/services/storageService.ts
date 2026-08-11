@@ -1,10 +1,13 @@
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
+import { storage } from '../lib/firebase';
 import type { Proveedor, LicitacionProyecto, Cotizacion, ConfiguracionFirmas } from '../types';
 import { INITIAL_PROVEEDORES, INITIAL_LICITACIONES, INITIAL_COTIZACIONES, INITIAL_CONFIG_FIRMAS } from '../data/initialData';
+import { formatearRUT } from '../utils/rutUtils';
 
 const KEYS = {
-  PROVEEDORES: 'infra_app_proveedores_v1',
-  LICITACIONES: 'infra_app_licitaciones_v1',
-  COTIZACIONES: 'infra_app_cotizaciones_v1',
+  PROVEEDORES: 'infra_app_proveedores_v3',
+  LICITACIONES: 'infra_app_licitaciones_v2',
+  COTIZACIONES: 'infra_app_cotizaciones_v2',
   CONFIG_FIRMAS: 'infra_app_config_firmas_v1',
 };
 
@@ -12,37 +15,20 @@ export const storageService = {
   // PROVEEDORES
   getProveedores(): Proveedor[] {
     const data = localStorage.getItem(KEYS.PROVEEDORES);
+    let provs: Proveedor[];
     if (!data) {
-      this.saveProveedores(INITIAL_PROVEEDORES);
-      return INITIAL_PROVEEDORES;
+      provs = INITIAL_PROVEEDORES;
+    } else {
+      provs = JSON.parse(data);
     }
-    return JSON.parse(data);
+    // Formatear RUTs siempre
+    const formatted = provs.map(p => ({ ...p, rut: formatearRUT(p.rut) }));
+    this.saveProveedores(formatted);
+    return formatted;
   },
 
   saveProveedores(proveedores: Proveedor[]): void {
     localStorage.setItem(KEYS.PROVEEDORES, JSON.stringify(proveedores));
-  },
-
-  addProveedor(proveedor: Omit<Proveedor, 'id' | 'fechaRegistro'>): Proveedor {
-    const proveedores = this.getProveedores();
-    const newProveedor: Proveedor = {
-      ...proveedor,
-      id: 'prov-' + Date.now(),
-      fechaRegistro: new Date().toISOString().split('T')[0],
-    };
-    proveedores.unshift(newProveedor);
-    this.saveProveedores(proveedores);
-    return newProveedor;
-  },
-
-  updateProveedor(id: string, updated: Partial<Proveedor>): void {
-    const proveedores = this.getProveedores().map(p => (p.id === id ? { ...p, ...updated } : p));
-    this.saveProveedores(proveedores);
-  },
-
-  deleteProveedor(id: string): void {
-    const proveedores = this.getProveedores().filter(p => p.id !== id);
-    this.saveProveedores(proveedores);
   },
 
   // LICITACIONES
@@ -59,30 +45,6 @@ export const storageService = {
     localStorage.setItem(KEYS.LICITACIONES, JSON.stringify(licitaciones));
   },
 
-  addLicitacion(licitacion: Omit<LicitacionProyecto, 'id'>): LicitacionProyecto {
-    const licitaciones = this.getLicitaciones();
-    const newLicitacion: LicitacionProyecto = {
-      ...licitacion,
-      id: 'lic-' + Date.now(),
-    };
-    licitaciones.unshift(newLicitacion);
-    this.saveLicitaciones(licitaciones);
-    return newLicitacion;
-  },
-
-  updateLicitacion(id: string, updated: Partial<LicitacionProyecto>): void {
-    const licitaciones = this.getLicitaciones().map(l => (l.id === id ? { ...l, ...updated } : l));
-    this.saveLicitaciones(licitaciones);
-  },
-
-  deleteLicitacion(id: string): void {
-    const licitaciones = this.getLicitaciones().filter(l => l.id !== id);
-    this.saveLicitaciones(licitaciones);
-    // Eliminar también las cotizaciones asociadas
-    const cotizaciones = this.getCotizaciones().filter(c => c.licitacionId !== id);
-    this.saveCotizaciones(cotizaciones);
-  },
-
   // COTIZACIONES
   getCotizaciones(): Cotizacion[] {
     const data = localStorage.getItem(KEYS.COTIZACIONES);
@@ -93,34 +55,8 @@ export const storageService = {
     return JSON.parse(data);
   },
 
-  getCotizacionesPorLicitacion(licitacionId: string): Cotizacion[] {
-    return this.getCotizaciones().filter(c => c.licitacionId === licitacionId);
-  },
-
   saveCotizaciones(cotizaciones: Cotizacion[]): void {
     localStorage.setItem(KEYS.COTIZACIONES, JSON.stringify(cotizaciones));
-  },
-
-  addCotizacion(cotizacion: Omit<Cotizacion, 'id' | 'fechaCarga'>): Cotizacion {
-    const cotizaciones = this.getCotizaciones();
-    const newCotizacion: Cotizacion = {
-      ...cotizacion,
-      id: 'cot-' + Date.now(),
-      fechaCarga: new Date().toISOString().split('T')[0],
-    };
-    cotizaciones.push(newCotizacion);
-    this.saveCotizaciones(cotizaciones);
-    return newCotizacion;
-  },
-
-  updateCotizacion(id: string, updated: Partial<Cotizacion>): void {
-    const cotizaciones = this.getCotizaciones().map(c => (c.id === id ? { ...c, ...updated } : c));
-    this.saveCotizaciones(cotizaciones);
-  },
-
-  deleteCotizacion(id: string): void {
-    const cotizaciones = this.getCotizaciones().filter(c => c.id !== id);
-    this.saveCotizaciones(cotizaciones);
   },
 
   // CONFIGURACIÓN FIRMAS
@@ -141,3 +77,46 @@ export const storageService = {
     localStorage.clear();
   },
 };
+
+/**
+ * Sube un archivo de propuesta y retorna la URL de descarga.
+ * Ruta: propuestas/{licitacionId}/{proveedorId}/{filename}
+ */
+export function uploadPropuesta(
+  licitacionId: string,
+  proveedorId: string,
+  file: File,
+  onProgress: (pct: number) => void
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const ext = file.name.split('.').pop();
+    const filename = `propuesta_${Date.now()}.${ext}`;
+    const storageRef = ref(storage, `propuestas/${licitacionId}/${proveedorId}/${filename}`);
+
+    const task = uploadBytesResumable(storageRef, file);
+
+    task.on(
+      'state_changed',
+      snapshot => {
+        onProgress(Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100));
+      },
+      error => reject(error),
+      async () => {
+        const url = await getDownloadURL(task.snapshot.ref);
+        resolve(url);
+      }
+    );
+  });
+}
+
+/**
+ * Elimina un archivo de Storage dado su URL completa.
+ */
+export async function deletePropuestaFile(url: string): Promise<void> {
+  try {
+    const fileRef = ref(storage, url);
+    await deleteObject(fileRef);
+  } catch {
+    // Silencioso si el archivo no existe
+  }
+}
