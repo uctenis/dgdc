@@ -90,26 +90,55 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
       {/* Estilos CSS para Impresión Oficial en 2 Páginas */}
       <style>{`
         @media print {
+          @page {
+            size: letter portrait;
+            margin: 8mm;
+          }
+          html, body {
+            height: auto !important;
+            overflow: visible !important;
+            background: white !important;
+          }
           body * {
-            visibility: hidden;
+            visibility: hidden !important;
           }
           .printable-sgc-acta, .printable-sgc-acta * {
-            visibility: visible;
+            visibility: visible !important;
+          }
+          /* Desactivar restricciones de scroll, posicionamiento y recortado de modal al imprimir */
+          .fixed,
+          .inset-0,
+          .backdrop-blur-sm,
+          .max-h-\\[94vh\\],
+          .overflow-y-auto,
+          .overflow-x-auto {
+            position: static !important;
+            overflow: visible !important;
+            max-height: none !important;
+            height: auto !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            background: white !important;
           }
           .printable-sgc-acta {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            margin: 0;
-            padding: 20px;
+            position: static !important;
+            display: block !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
             background: white !important;
             color: black !important;
-            font-size: 10pt;
+            font-size: 9.5pt !important;
           }
           .page-break {
-            page-break-before: always;
-            break-before: page;
+            page-break-before: always !important;
+            break-before: page !important;
+            clear: both !important;
+            margin-top: 0 !important;
+            padding-top: 15px !important;
           }
           .no-print {
             display: none !important;
@@ -400,8 +429,11 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
                   disabled={!modoEdicion}
                   value={justificacionEditada}
                   onChange={e => setJustificacionEditada(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs outline-none disabled:bg-white disabled:text-slate-900 leading-relaxed font-medium"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs outline-none disabled:bg-white disabled:text-slate-900 leading-relaxed font-medium no-print"
                 />
+                <div className="hidden print:block text-xs font-medium text-slate-900 leading-relaxed whitespace-pre-wrap p-2 border border-slate-300 rounded-lg">
+                  {justificacionEditada}
+                </div>
               </div>
 
               {/* Módulo de Firmas Estándar (3 Firmantes: Director, Subdirector, Responsable) */}
