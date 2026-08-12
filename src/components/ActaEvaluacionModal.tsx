@@ -6,6 +6,7 @@ import type { LicitacionProyecto, Cotizacion, Proveedor, ConfiguracionFirmas, Ev
 import { formatoMonedaCLP, evaluarCotizaciones } from '../services/evaluationEngine';
 import { updateLicitacion } from '../services/firestoreService';
 import confetti from 'canvas-confetti';
+import { auth } from '../lib/firebase';
 
 interface ActaEvaluacionModalProps {
   licitacion: LicitacionProyecto;
@@ -98,6 +99,46 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
 
     onAdjudicar(proveedorSeleccionadoId, justificacionEditada);
     onClose();
+  };
+
+  const isAdjudicado = licitacion.estado === 'Adjudicado' || licitacion.estado === 'Cerrado';
+  const isFirmada = licitacion.actaFirmaDigital?.estado === 'Firmada';
+  const [isGeneratingEmail, setIsGeneratingEmail] = useState(false);
+
+  const handleEnviarAMarioly = async () => {
+    setIsGeneratingEmail(true);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error('Usuario no autenticado.');
+      
+      const baseUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+        ? 'http://127.0.0.1:5001/dgdc-c848d/us-central1'
+        : 'https://us-central1-dgdc-c848d.cloudfunctions.net';
+      
+      const response = await fetch(`${baseUrl}/enviarCorreoAdjudicacion`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ licitacionId: licitacion.id })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Error HTTP ${response.status}`);
+      }
+      
+      const data = await response.json();
+      alert('¡Correo enviado exitosamente en segundo plano!');
+      if (data.previewUrl) {
+        console.log('Preview del correo:', data.previewUrl);
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Error al enviar el correo.');
+    } finally {
+      setIsGeneratingEmail(false);
+    }
   };
 
   const handleImprimirDocumento = () => {
@@ -680,14 +721,28 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
               <span>{isSaving ? 'Guardando...' : 'Guardar Acta'}</span>
             </button>
 
-            <button
-              type="button"
-              onClick={handleAprobarYAdjudicar}
-              className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-md transition flex items-center gap-2"
-            >
-              <Trophy className="w-4 h-4" />
-              <span>Aprobar y Emitir Adjudicación</span>
-            </button>
+            {!isAdjudicado && (
+              <button
+                type="button"
+                onClick={handleAprobarYAdjudicar}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-md transition flex items-center gap-2"
+              >
+                <Trophy className="w-4 h-4" />
+                <span>Aprobar y Emitir Adjudicación</span>
+              </button>
+            )}
+
+            {isFirmada && (
+              <button
+                type="button"
+                onClick={handleEnviarAMarioly}
+                disabled={isGeneratingEmail}
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl shadow-md transition flex items-center gap-2 disabled:bg-blue-400"
+              >
+                {isGeneratingEmail ? <span className="animate-spin text-lg leading-none">↻</span> : <Trophy className="w-4 h-4" />}
+                <span>{isGeneratingEmail ? 'Generando...' : 'Generar Solicitud OP (Enviar a Marioly)'}</span>
+              </button>
+            )}
           </div>
         </div>
 

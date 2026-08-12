@@ -30,6 +30,8 @@ import type {
   Cotizacion,
   Propuesta,
   EstadoPago,
+  AumentoObra,
+  HitoDesarrolloProyecto,
   UserProfile,
 } from '../types';
 
@@ -426,6 +428,94 @@ export async function updateEstadoPago(
 ): Promise<void> {
   await updateDoc(doc(db, 'licitaciones', licitacionId, 'estadosPago', estadoPagoId), {
     ...data,
+    _updatedAt: serverTimestamp(),
+  });
+}
+
+export function subscribeToAumentosObra(
+  licitacionId: string,
+  callback: (aumentos: AumentoObra[]) => void
+): Unsubscribe {
+  const q = query(
+    collection(db, 'licitaciones', licitacionId, 'aumentosObra'),
+    orderBy('numero', 'asc')
+  );
+  return onSnapshot(q, snap => {
+    callback(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<AumentoObra, 'id'>) })));
+  });
+}
+
+export async function addAumentoObra(
+  licitacionId: string,
+  data: Omit<AumentoObra, 'id' | 'licitacionId' | 'numero'>
+): Promise<string> {
+  const counterRef = doc(db, 'licitaciones', licitacionId, 'control', 'aumentosObra');
+  const aumentoRef = doc(collection(db, 'licitaciones', licitacionId, 'aumentosObra'));
+  await runTransaction(db, async transaction => {
+    const counter = await transaction.get(counterRef);
+    const numero = Number(counter.data()?.ultimoNumero || 0) + 1;
+    transaction.set(counterRef, { ultimoNumero: numero, _updatedAt: serverTimestamp() }, { merge: true });
+    transaction.set(aumentoRef, {
+      ...data,
+      licitacionId,
+      numero,
+      _createdAt: serverTimestamp(),
+    });
+  });
+  return aumentoRef.id;
+}
+
+export async function updateAumentoObraEstado(
+  licitacionId: string,
+  aumentoId: string,
+  estado: AumentoObra['estado'],
+  aprobadoPor?: string
+): Promise<void> {
+  await updateDoc(doc(db, 'licitaciones', licitacionId, 'aumentosObra', aumentoId), {
+    estado,
+    ...(estado === 'Aprobado' ? {
+      aprobadoPor: aprobadoPor || '',
+      fechaAprobacion: new Date().toISOString(),
+    } : {}),
+    _updatedAt: serverTimestamp(),
+  });
+}
+
+export function subscribeToBitacoraProyecto(
+  coleccionProyecto: 'licitaciones' | 'proyectos',
+  proyectoId: string,
+  callback: (hitos: HitoDesarrolloProyecto[]) => void
+): Unsubscribe {
+  const q = query(
+    collection(db, coleccionProyecto, proyectoId, 'bitacoraDesarrollo'),
+    orderBy('fecha', 'desc')
+  );
+  return onSnapshot(q, snap => {
+    callback(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<HitoDesarrolloProyecto, 'id'>) })));
+  });
+}
+
+export async function addHitoDesarrolloProyecto(
+  coleccionProyecto: 'licitaciones' | 'proyectos',
+  proyectoId: string,
+  data: Omit<HitoDesarrolloProyecto, 'id' | 'proyectoId'>
+): Promise<string> {
+  const ref = await addDoc(collection(db, coleccionProyecto, proyectoId, 'bitacoraDesarrollo'), {
+    ...data,
+    proyectoId,
+    _createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function updateHitoDesarrolloEstado(
+  coleccionProyecto: 'licitaciones' | 'proyectos',
+  proyectoId: string,
+  hitoId: string,
+  estado: HitoDesarrolloProyecto['estado']
+): Promise<void> {
+  await updateDoc(doc(db, coleccionProyecto, proyectoId, 'bitacoraDesarrollo', hitoId), {
+    estado,
     _updatedAt: serverTimestamp(),
   });
 }

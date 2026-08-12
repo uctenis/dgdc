@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft, ClipboardCheck, FileCheck2, FileText, FolderOpen, Landmark,
   CalendarDays, CircleDollarSign, Clock3, Loader2, Receipt, Save, TrendingUp,
-  Trophy, Upload, WalletCards,
+  Trophy, Upload, WalletCards, ShieldCheck, LockKeyhole,
 } from 'lucide-react';
 import type {
-  ConfiguracionFirmas, Cotizacion, EstadoPago, ItemEstadoPago,
+  AumentoObra, ConfiguracionFirmas, Cotizacion, EstadoPago, ItemEstadoPago,
   LicitacionProyecto, Proveedor,
 } from '../types';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
@@ -17,8 +17,11 @@ import { EstadoPagoDocumentModal } from './EstadoPagoDocumentModal';
 import { parseOrdenDeCompra } from '../utils/ocParser';
 import { uploadFileToProjectFolder } from '../services/driveService';
 import {
-  addEstadoPago, subscribeToEstadosPago, updateLicitacion,
+  addEstadoPago, subscribeToAumentosObra, subscribeToEstadosPago, updateLicitacion,
 } from '../services/firestoreService';
+import { useAuth } from '../context/AuthContext';
+import { isProjectResponsible } from '../services/internalAccessService';
+import { firmarEstadoPagoSeguro } from '../services/paymentSignatureService';
 
 type TabId = 'resumen' | 'expediente' | 'ofertas' | 'evaluacion' | 'actas' | 'oc' | 'pagos';
 
@@ -251,8 +254,30 @@ function OrdenCompraTab({ licitacion, oferta }: { licitacion: LicitacionProyecto
   );
 }
 
+async function calcularHashEstadoPago(estado: EstadoPago): Promise<string> {
+  const contenidoFirmado = JSON.stringify({
+    id: estado.id,
+    licitacionId: estado.licitacionId,
+    numero: estado.numero,
+    fecha: estado.fecha,
+    proveedorId: estado.proveedorId,
+    cotizacionId: estado.cotizacionId,
+    items: estado.items,
+    montoNeto: estado.montoNeto,
+    montoIva: estado.montoIva,
+    montoTotal: estado.montoTotal,
+    porcentajeAvanceGlobal: estado.porcentajeAvanceGlobal,
+    observaciones: estado.observaciones || '',
+    archivoDriveId: estado.archivoDriveId || '',
+  });
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(contenidoFirmado));
+  return Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
 function EstadosPagoTab({ licitacion, oferta }: { licitacion: LicitacionProyecto; oferta?: Cotizacion }) {
+  const { user } = useAuth();
   const [estados, setEstados] = useState<EstadoPago[]>([]);
+  const [aumentos, setAumentos] = useState<AumentoObra[]>([]);
   const [avances, setAvances] = useState<Record<string, number | undefined>>({});
   const [observaciones, setObservaciones] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -260,12 +285,49 @@ function EstadosPagoTab({ licitacion, oferta }: { licitacion: LicitacionProyecto
   const [savingDates, setSavingDates] = useState(false);
   const [fechaInicio, setFechaInicio] = useState(licitacion.fechaInicioObra || '');
   const [estadoDocumento, setEstadoDocumento] = useState<EstadoPago | null>(null);
+  const [firmandoId, setFirmandoId] = useState<string | null>(null);
 
   useEffect(() => subscribeToEstadosPago(licitacion.id, setEstados), [licitacion.id]);
+  useEffect(() => subscribeToAumentosObra(licitacion.id, setAumentos), [licitacion.id]);
   useEffect(() => setFechaInicio(licitacion.fechaInicioObra || ''), [licitacion.fechaInicioObra]);
 
-  const items = oferta?.itemizado || [];
-  const plazoDias = licitacion.plazoAdjudicadoDias || oferta?.plazoDias || 0;
+  const esResponsableActual = isProjectResponsible(user?.email, licitacion.responsableEmail);
+
+  const firmarEstadoPago = async (estado: EstadoPago) => {
+    if (!user || !esResponsableActual) {
+      return alert(`Solo ${licitacion.responsableNombre || 'el responsable del proyecto'} (${licitacion.responsableEmail || 'correo no configurado'}) puede firmar este estado de pago.`);
+    }
+    if (estado.firmaResponsable) return alert('Este estado de pago ya fue firmado y no admite una segunda firma.');
+    if (!confirm(`¿Confirma la revisión y firma electrónica del Estado de Pago N° ${estado.numero}? Esta aprobación quedará asociada a ${user.email}.`)) return;
+    setFirmandoId(estado.id);
+    try {
+      const sha256 = await calcularHashEstadoPago(estado);
+      await firmarEstadoPagoSeguro(user, licitacion.id, estado.id, sha256);
+      alert(`Estado de Pago N° ${estado.numero} firmado correctamente.`);
+    } catch (error) {
+      console.error('No se pudo firmar el estado de pago:', error);
+      alert('No fue posible registrar la firma. Intente nuevamente.');
+    } finally {
+      setFirmandoId(null);
+    }
+  };
+
+  const aumentosAprobados = aumentos.filter(aumento => aumento.estado === 'Aprobado');
+  const items = useMemo(() => [
+    ...(oferta?.itemizado || []),
+    ...aumentosAprobados.flatMap(aumento => aumento.items.map(item => ({
+      id: `aumento-${aumento.id}-${item.id}`,
+      item: `AO${aumento.numero}-${item.item}`,
+      descripcion: item.descripcion,
+      unidad: item.unidad,
+      cantidad: item.cantidad,
+      precioUnitario: item.precioUnitario,
+      precioTotal: item.precioTotal,
+    }))),
+  ], [oferta?.itemizado, aumentosAprobados]);
+  const diasAumentos = aumentosAprobados.reduce((total, aumento) => total + aumento.ampliacionPlazoDias, 0);
+  const montoAumentos = aumentosAprobados.reduce((total, aumento) => total + aumento.montoTotal, 0);
+  const plazoDias = (licitacion.plazoAdjudicadoDias || oferta?.plazoDias || 0) + diasAumentos;
   const fechaTermino = fechaInicio && plazoDias ? sumarDiasCorridos(fechaInicio, plazoDias - 1) : '';
   const pagadoAnterior = useMemo(() => {
     const result: Record<string, number> = {};
@@ -302,15 +364,21 @@ function EstadosPagoTab({ licitacion, oferta }: { licitacion: LicitacionProyecto
   const montoNeto = itemsPago.reduce((sum, item) => sum + item.montoPeriodo, 0);
   const montoIva = Math.round(montoNeto * .19);
   const montoTotal = montoNeto + montoIva;
+  const totalItemizadoOriginalNeto = (oferta?.itemizado || []).reduce((sum, item) => sum + item.precioTotal, 0);
   const totalItemizadoNeto = items.reduce((sum, item) => sum + item.precioTotal, 0);
-  const totalContrato = oferta?.montoTotal || licitacion.montoAdjudicadoTotal || Math.round(totalItemizadoNeto * 1.19);
+  const totalContratoOriginal = oferta?.montoTotal || licitacion.montoAdjudicadoTotal || Math.round(totalItemizadoOriginalNeto * 1.19);
+  const totalContrato = totalContratoOriginal + montoAumentos;
   const porcentajeGlobal = totalItemizadoNeto
     ? redondear(itemsPago.reduce((sum, item) => sum + item.precioTotal * item.avanceAcumuladoPct / 100, 0) / totalItemizadoNeto * 100)
     : 0;
-  const porcentajeFisicoRegistrado = estados.length ? Math.max(...estados.map(ep => ep.porcentajeAvanceGlobal)) : 0;
+  const porcentajeFisicoRegistrado = totalItemizadoNeto
+    ? redondear(items.reduce((sum, item) => sum + item.precioTotal * (pagadoAnterior[item.id] || 0) / 100, 0) / totalItemizadoNeto * 100)
+    : 0;
   const pagadoAcumulado = estados.reduce((sum, ep) => sum + ep.montoTotal, 0);
   const avanceFinanciero = totalContrato ? Math.min(100, redondear(pagadoAcumulado / totalContrato * 100)) : 0;
   const saldoContrato = Math.max(0, totalContrato - pagadoAcumulado);
+  const contratoCompletado = porcentajeFisicoRegistrado >= 100 || avanceFinanciero >= 100 || saldoContrato <= 1;
+  const estadoPendienteFirma = estados.find(estado => !estado.firmaResponsable);
   const diasTranscurridos = fechaInicio ? Math.max(0, diferenciaDias(fechaInicio, new Date().toISOString().split('T')[0]) + 1) : 0;
   const avanceProgramado = fechaInicio && plazoDias ? Math.min(100, redondear(diasTranscurridos / plazoDias * 100)) : 0;
   const desviacionFisica = redondear(porcentajeFisicoRegistrado - avanceProgramado);
@@ -346,9 +414,12 @@ function EstadosPagoTab({ licitacion, oferta }: { licitacion: LicitacionProyecto
   };
 
   const save = async () => {
+    if (contratoCompletado) return alert('El contrato vigente ya alcanzó el 100% de avance. Para habilitar nuevos estados debe aprobarse previamente un aumento de obra con nuevas partidas.');
+    if (estadoPendienteFirma) return alert(`El Estado de Pago N° ${estadoPendienteFirma.numero} debe ser firmado por el responsable antes de ingresar el siguiente.`);
     if (!oferta || !items.length) return alert('La oferta adjudicada no contiene un itemizado para controlar avances.');
     if (Object.keys(erroresAvance).length) return alert('Corrija los porcentajes: ningún avance puede ser menor al anterior ni superior a 100%.');
     if (!montoNeto) return alert('Ingrese un avance acumulado mayor al registrado en al menos una partida.');
+    if (montoTotal > saldoContrato + 1) return alert(`El estado supera el saldo contractual disponible (${formatoMonedaCLP(saldoContrato)}). Ajuste los avances del período.`);
     setSaving(true);
     try {
       let archivo: { id: string; url: string } | undefined;
@@ -393,7 +464,7 @@ function EstadosPagoTab({ licitacion, oferta }: { licitacion: LicitacionProyecto
   return (
     <div className="space-y-5">
       <section className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
-        <IndicadorProyecto icon={CircleDollarSign} label="Contrato adjudicado" value={formatoMonedaCLP(totalContrato)} detail="Monto oficial con IVA" color="emerald" />
+        <IndicadorProyecto icon={CircleDollarSign} label="Contrato vigente" value={formatoMonedaCLP(totalContrato)} detail={montoAumentos > 0 ? `${formatoMonedaCLP(totalContratoOriginal)} original + ${formatoMonedaCLP(montoAumentos)} en aumentos` : 'Monto original con IVA'} color="emerald" />
         <IndicadorProyecto icon={WalletCards} label="Estados acumulados" value={formatoMonedaCLP(pagadoAcumulado)} detail={`${avanceFinanciero}% de avance financiero cursado`} color="sky" progress={avanceFinanciero} />
         <IndicadorProyecto icon={TrendingUp} label="Avance físico" value={`${porcentajeFisicoRegistrado}%`} detail={`Programado a hoy: ${avanceProgramado}%`} color={desviacionFisica < 0 ? 'amber' : 'emerald'} progress={porcentajeFisicoRegistrado} />
         <IndicadorProyecto icon={Clock3} label="Saldo contractual" value={formatoMonedaCLP(saldoContrato)} detail={desviacionFisica < 0 ? `${Math.abs(desviacionFisica)} pts bajo programa` : `${desviacionFisica} pts sobre programa`} color={desviacionFisica < 0 ? 'amber' : 'slate'} />
@@ -433,7 +504,19 @@ function EstadosPagoTab({ licitacion, oferta }: { licitacion: LicitacionProyecto
         ) : <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800">Ingrese la fecha de inicio para calcular el término contractual y generar la Carta Gantt.</div>}
       </section>
 
-      <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      {contratoCompletado && (
+        <section className="rounded-2xl border border-emerald-300 bg-emerald-50 p-6 text-emerald-950">
+          <div className="flex items-start gap-3"><ShieldCheck className="h-6 w-6 shrink-0 text-emerald-700" /><div><h2 className="font-black">Contrato vigente completado</h2><p className="mt-1 text-xs">El avance físico o financiero alcanzó el 100%. No se pueden ingresar más estados de pago. Si existe mayor obra, regístrela en la ficha del proyecto y obtenga su aprobación; las nuevas partidas y el nuevo saldo habilitarán automáticamente el siguiente estado.</p></div></div>
+        </section>
+      )}
+      {aumentos.some(aumento => aumento.estado === 'Borrador') && (
+        <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-xs text-violet-900">Existe una modificación contractual en borrador. Sus partidas, monto y plazo no se incorporarán hasta que el administrador la apruebe.</div>
+      )}
+      {!contratoCompletado && estadoPendienteFirma && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-xs text-amber-900"><strong>Ingreso temporalmente bloqueado:</strong> el Estado de Pago N° {estadoPendienteFirma.numero} está pendiente de firma del responsable. La secuencia se habilitará cuando quede firmado.</div>
+      )}
+
+      <section className={`${contratoCompletado || estadoPendienteFirma ? 'hidden' : ''} bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden`}>
         <div className="p-5 border-b"><h2 className="font-black">Estado de pago N° {estados.length + 1}</h2><p className="text-xs text-slate-500">Ingrese el nuevo avance acumulado. Debe ser igual o superior al aprobado anteriormente y nunca mayor a 100%.</p></div>
         <div className="overflow-x-auto">
           <table className="w-full text-[11px]">
@@ -467,8 +550,40 @@ function EstadosPagoTab({ licitacion, oferta }: { licitacion: LicitacionProyecto
       </section>
 
       <section className="bg-white rounded-2xl border border-slate-200 p-5">
-        <h3 className="font-black mb-3">Historial financiero</h3>
-        {estados.length === 0 ? <p className="text-xs text-slate-400">Aún no hay estados de pago ingresados.</p> : <div className="grid md:grid-cols-2 gap-3">{estados.map(ep => <div key={ep.id} className="border rounded-xl p-4"><div className="flex justify-between"><strong className="text-sm">Estado N° {ep.numero}</strong><span className="text-[10px] bg-sky-100 text-sky-800 px-2 py-1 rounded-full font-bold">{ep.estado}</span></div><p className="text-xs text-slate-500 mt-1">{formatearFecha(ep.fecha)} · Avance físico acumulado {ep.porcentajeAvanceGlobal}%</p><p className="text-sm font-black text-emerald-700 mt-2">{formatoMonedaCLP(ep.montoTotal)}</p><div className="mt-3 flex items-center gap-3"><button onClick={() => setEstadoDocumento(ep)} className="flex items-center gap-1 text-xs font-bold text-slate-700 hover:text-sky-700"><FileText className="w-3.5 h-3.5" /> Ver documento</button>{ep.archivoURL && <a href={ep.archivoURL} target="_blank" rel="noreferrer" className="text-xs text-sky-700 underline">Abrir respaldo</a>}</div></div>)}</div>}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-black">Historial financiero y firmas</h3>
+          <span className={`rounded-full border px-3 py-1 text-[10px] font-bold ${esResponsableActual ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+            {esResponsableActual ? 'Puede firmar como responsable' : `Firma asignada a ${licitacion.responsableEmail || 'correo pendiente'}`}
+          </span>
+        </div>
+        {estados.length === 0 ? <p className="text-xs text-slate-400">Aún no hay estados de pago ingresados.</p> : (
+          <div className="grid md:grid-cols-2 gap-3">
+            {estados.map(ep => (
+              <div key={ep.id} className={`rounded-xl border p-4 ${ep.firmaResponsable ? 'border-emerald-200 bg-emerald-50/40' : 'border-amber-200 bg-amber-50/30'}`}>
+                <div className="flex justify-between gap-3">
+                  <strong className="text-sm">Estado N° {ep.numero}</strong>
+                  <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${ep.firmaResponsable ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{ep.firmaResponsable ? 'Firmado' : 'Pendiente de firma'}</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">{formatearFecha(ep.fecha)} · Avance físico acumulado {ep.porcentajeAvanceGlobal}%</p>
+                <p className="text-sm font-black text-emerald-700 mt-2">{formatoMonedaCLP(ep.montoTotal)}</p>
+                {ep.firmaResponsable ? (
+                  <div className="mt-3 rounded-lg border border-emerald-200 bg-white/80 p-2 text-[10px] text-emerald-900">
+                    <p className="flex items-center gap-1 font-bold"><ShieldCheck className="h-3.5 w-3.5" /> {ep.firmaResponsable.nombre}</p>
+                    <p>{ep.firmaResponsable.email} · {new Date(ep.firmaResponsable.fecha).toLocaleString('es-CL')}</p>
+                    <p className="mt-1 truncate font-mono text-[8px] text-slate-500" title={ep.firmaResponsable.sha256}>SHA-256: {ep.firmaResponsable.sha256}</p>
+                  </div>
+                ) : (
+                  <div className="mt-3 flex items-center gap-2 text-[10px] text-amber-800"><LockKeyhole className="h-3.5 w-3.5" /> Requiere firma de {licitacion.responsableNombre || 'responsable asignado'}.</div>
+                )}
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <button onClick={() => setEstadoDocumento(ep)} className="flex items-center gap-1 text-xs font-bold text-slate-700 hover:text-sky-700"><FileText className="w-3.5 h-3.5" /> Ver documento</button>
+                  {ep.archivoURL && <a href={ep.archivoURL} target="_blank" rel="noreferrer" className="text-xs text-sky-700 underline">Abrir respaldo</a>}
+                  {!ep.firmaResponsable && esResponsableActual && <button onClick={() => void firmarEstadoPago(ep)} disabled={firmandoId === ep.id} className="ml-auto flex items-center gap-1 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{firmandoId === ep.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />} Firmar estado</button>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {estadoDocumento && (

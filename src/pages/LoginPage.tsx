@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, LogIn, UserPlus, Eye, EyeOff, AlertCircle, ChevronDown } from 'lucide-react';
+import { Building2, LogIn, UserPlus, AlertCircle, ChevronDown, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getProveedores } from '../services/firestoreService';
 import type { Proveedor } from '../types';
@@ -8,14 +8,10 @@ import type { Proveedor } from '../types';
 type Mode = 'login' | 'register';
 
 export function LoginPage() {
-  const { loginProveedor, registerProveedor, error, clearError } = useAuth();
+  const { loginProveedorWithGoogle, error, clearError } = useAuth();
   const navigate = useNavigate();
 
   const [mode, setMode] = useState<Mode>('login');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
 
   // Registro: selección de proveedor
@@ -26,6 +22,7 @@ export function LoginPage() {
 
   const switchMode = async (m: Mode) => {
     clearError();
+    setProvError('');
     setMode(m);
     if (m === 'register' && proveedores.length === 0) {
       setLoadingProvs(true);
@@ -38,37 +35,32 @@ export function LoginPage() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleGoogleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     clearError();
     setProvError('');
 
     if (mode === 'register') {
-      if (password !== confirmPassword) {
-        setProvError('Las contraseñas no coinciden.');
-        return;
-      }
       if (!selectedProveedorId) {
         setProvError('Debe seleccionar su empresa de la lista.');
         return;
       }
-      const prov = proveedores.find(p => p.id === selectedProveedorId)!;
       setLoading(true);
       try {
-        await registerProveedor(email, password, prov.razonSocial, selectedProveedorId);
+        await loginProveedorWithGoogle(selectedProveedorId);
         navigate('/portal');
       } catch {
-        // error handled in context
+        // error manejado en el contexto
       } finally {
         setLoading(false);
       }
     } else {
       setLoading(true);
       try {
-        await loginProveedor(email, password);
+        await loginProveedorWithGoogle();
         navigate('/portal');
       } catch {
-        // error handled in context
+        // error manejado en el contexto
       } finally {
         setLoading(false);
       }
@@ -127,7 +119,7 @@ export function LoginPage() {
           ))}
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleGoogleAuth} className="space-y-4">
           {/* Register: selección de empresa */}
           {mode === 'register' && (
             <div>
@@ -162,74 +154,14 @@ export function LoginPage() {
             </div>
           )}
 
-          {/* Email */}
-          <div>
-            <label className="block text-xs font-semibold text-sky-300 mb-1.5">
-              Email de contacto *
-            </label>
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="empresa@correo.cl"
-              className="w-full px-4 py-2.5 rounded-xl text-sm text-white outline-none placeholder:text-slate-500"
-              style={{
-                background: 'rgba(255,255,255,0.08)',
-                border: '1px solid rgba(255,255,255,0.15)',
-              }}
-            />
+          {/* Instrucciones */}
+          <div className="mt-4 rounded-2xl border border-sky-300/20 bg-sky-300/10 p-4 text-xs text-sky-100">
+            {mode === 'login' ? (
+              <p>Ingrese al portal utilizando su cuenta de Google registrada.</p>
+            ) : (
+              <p>Seleccione la empresa a la que pertenece y regístrese con su cuenta de Google corporativa o personal.</p>
+            )}
           </div>
-
-          {/* Password */}
-          <div>
-            <label className="block text-xs font-semibold text-sky-300 mb-1.5">
-              Contraseña *
-            </label>
-            <div className="relative">
-              <input
-                type={showPass ? 'text' : 'password'}
-                required
-                minLength={6}
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="Mínimo 6 caracteres"
-                className="w-full px-4 py-2.5 pr-10 rounded-xl text-sm text-white outline-none placeholder:text-slate-500"
-                style={{
-                  background: 'rgba(255,255,255,0.08)',
-                  border: '1px solid rgba(255,255,255,0.15)',
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPass(!showPass)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-              >
-                {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-
-          {/* Confirm Password (register only) */}
-          {mode === 'register' && (
-            <div>
-              <label className="block text-xs font-semibold text-sky-300 mb-1.5">
-                Confirmar Contraseña *
-              </label>
-              <input
-                type={showPass ? 'text' : 'password'}
-                required
-                value={confirmPassword}
-                onChange={e => setConfirmPassword(e.target.value)}
-                placeholder="Repita su contraseña"
-                className="w-full px-4 py-2.5 rounded-xl text-sm text-white outline-none placeholder:text-slate-500"
-                style={{
-                  background: 'rgba(255,255,255,0.08)',
-                  border: '1px solid rgba(255,255,255,0.15)',
-                }}
-              />
-            </div>
-          )}
 
           {/* Errors */}
           {(error || provError) && (
@@ -246,30 +178,26 @@ export function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-3 rounded-xl font-bold text-sm text-white transition-all flex items-center justify-center gap-2"
-            style={{
-              background: loading
-                ? 'rgba(56,189,248,0.3)'
-                : 'linear-gradient(135deg, #38bdf8, #1d4ed8)',
-              boxShadow: loading ? 'none' : '0 4px 16px -2px rgba(29,78,216,0.5)',
-            }}
+            className="w-full py-3 rounded-xl font-bold text-sm text-slate-900 bg-white transition-all flex items-center justify-center gap-3 mt-4 hover:bg-sky-50 shadow-lg disabled:opacity-60"
           >
             {loading ? (
-              <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
-                <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-              </svg>
-            ) : mode === 'login' ? (
-              <><LogIn className="w-4 h-4" /> Ingresar al Portal</>
+              <Loader2 className="w-5 h-5 animate-spin" />
             ) : (
-              <><UserPlus className="w-4 h-4" /> Crear mi Cuenta</>
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white font-black text-blue-600 ring-1 ring-slate-200">G</span>
+            )}
+            {loading ? (
+              <span>Validando...</span>
+            ) : mode === 'login' ? (
+              <span>Ingresar con Google</span>
+            ) : (
+              <span>Registrarse con Google</span>
             )}
           </button>
         </form>
 
         {mode === 'register' && (
-          <p className="text-[11px] text-slate-500 text-center leading-relaxed">
-            Su cuenta será vinculada a la empresa que seleccione. Solo podrá ver las licitaciones a las que haya sido invitado por la UCT.
+          <p className="text-[11px] text-slate-400 text-center leading-relaxed">
+            Su cuenta será vinculada a la empresa que seleccione. Solo podrá ver las licitaciones a las que haya sido invitado.
           </p>
         )}
       </div>

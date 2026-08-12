@@ -4,12 +4,14 @@ import {
   Trash2, Building, User, DollarSign,
   MapPin, ShieldCheck, CheckSquare, Square, Printer, FolderCheck, Edit3, Cloud, AlertCircle, CalendarDays
 } from 'lucide-react';
-import type { Cotizacion, LicitacionProyecto, ProyectoMaestro, Proveedor } from '../types';
+import type { AumentoObra, Cotizacion, LicitacionProyecto, ProyectoMaestro, Proveedor } from '../types';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { normalizarNombreProyecto, corregirOrtografiaEspanol } from '../utils/spellCorrector';
 import { rewriteTextWithAI, isAIConfigured } from '../services/aiService';
 import { updateLicitacion, updateProyectoMaestro } from '../services/firestoreService';
 import { uploadFileToProjectFolder, deleteFileFromDrive } from '../services/driveService';
+import { AumentosObraPanel } from './AumentosObraPanel';
+import { BitacoraProyectoPanel } from './BitacoraProyectoPanel';
 
 interface DocumentoProyecto {
   id: string;
@@ -97,8 +99,21 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
     (licitacionProyecto?.estado === 'Adjudicado' || Boolean(licitacionProyecto?.proveedorAdjudicadoId)),
   );
   const montoOficial = tieneMontoAdjudicado ? montoAdjudicado! : montoEstimado;
+  const [aumentosObra, setAumentosObra] = useState<AumentoObra[]>([]);
+  const aumentosAprobados = aumentosObra.filter(aumento => aumento.estado === 'Aprobado');
+  const montoAumentosAprobados = aumentosAprobados.reduce((total, aumento) => total + aumento.montoTotal, 0);
+  const diasAumentoAprobados = aumentosAprobados.reduce((total, aumento) => total + aumento.ampliacionPlazoDias, 0);
+  const montoVigente = montoOficial + montoAumentosAprobados;
+  const plazoVigenteDias = (plazoAdjudicadoDias || 0) + diasAumentoAprobados;
   const fechaInicioObra = licitacionProyecto?.fechaInicioObra;
   const fechaTerminoProgramada = licitacionProyecto?.fechaTerminoProgramada;
+  const fechaTerminoVigente = fechaInicioObra && plazoVigenteDias > 0
+    ? (() => {
+      const fecha = new Date(`${fechaInicioObra}T12:00:00`);
+      fecha.setDate(fecha.getDate() + plazoVigenteDias - 1);
+      return fecha.toISOString().split('T')[0];
+    })()
+    : fechaTerminoProgramada;
   const campusSigla = proyecto.campusSigla || 'CJP';
   const edificioSigla = proyecto.edificioSigla || '';
   const responsableNombre = proyecto.responsableNombre || 'David Silva Roco';
@@ -520,11 +535,11 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
               <div className="bg-slate-700/60 p-4 rounded-xl border border-slate-600">
                 <p className="text-slate-300 text-xs font-bold uppercase mb-2 flex items-center gap-1">
                   <DollarSign className="w-3 h-3" />
-                  {tieneMontoAdjudicado ? 'Monto adjudicado' : 'Monto estimado'}
+                  {montoAumentosAprobados > 0 ? 'Contrato vigente' : tieneMontoAdjudicado ? 'Monto adjudicado' : 'Monto estimado'}
                 </p>
-                <p className="text-white text-lg font-extrabold">{formatoMonedaCLP(montoOficial)}</p>
+                <p className="text-white text-lg font-extrabold">{formatoMonedaCLP(montoVigente)}</p>
                 {tieneMontoAdjudicado && (
-                  <p className="text-slate-300 text-[10px] mt-1">Estimado inicial: {formatoMonedaCLP(montoEstimado)}</p>
+                  <p className="text-slate-300 text-[10px] mt-1">Original: {formatoMonedaCLP(montoOficial)}{montoAumentosAprobados > 0 ? ` · Aumentos: +${formatoMonedaCLP(montoAumentosAprobados)}` : ''}</p>
                 )}
               </div>
 
@@ -549,11 +564,11 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
                 <div className="grid grid-cols-2 gap-2 text-right shrink-0">
                   <div className="bg-white/5 rounded-xl px-3 py-2 border border-white/10">
                     <span className="block text-[9px] uppercase text-emerald-200">Monto oficial</span>
-                    <strong className="text-sm text-white">{formatoMonedaCLP(montoOficial)}</strong>
+                    <strong className="text-sm text-white">{formatoMonedaCLP(montoVigente)}</strong>
                   </div>
                   <div className="bg-white/5 rounded-xl px-3 py-2 border border-white/10">
                     <span className="block text-[9px] uppercase text-emerald-200">Plazo adjudicado</span>
-                    <strong className="text-sm text-white">{plazoAdjudicadoDias ? `${plazoAdjudicadoDias} días` : 'Por informar'}</strong>
+                    <strong className="text-sm text-white">{plazoVigenteDias ? `${plazoVigenteDias} días` : 'Por informar'}</strong>
                   </div>
                 </div>
               </div>
@@ -589,6 +604,21 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
       </div>
 
       {/* Grid Principal: Carátula Oficial (Izquierda) + CheckList y Documentos (Derecha) */}
+      {licitacionProyecto && estaAdjudicado && (
+        <AumentosObraPanel
+          licitacion={licitacionProyecto}
+          oferta={cotizacionAdjudicada}
+          onChange={setAumentosObra}
+        />
+      )}
+
+      <BitacoraProyectoPanel
+        proyectoId={id}
+        coleccionProyecto={licitacionProyecto ? 'licitaciones' : 'proyectos'}
+        responsableNombre={responsableNombre}
+        responsableEmail={responsableEmail}
+      />
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
         {/* COLUMNA IZQUIERDA: CARÁTULA OFICIAL DEL PROYECTO SGC */}
@@ -649,8 +679,8 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
                 <div className="flex items-center gap-2">
                   <DollarSign className="w-4 h-4 text-emerald-600 shrink-0" />
                   <span>
-                    <strong>{tieneMontoAdjudicado ? 'Monto oficial adjudicado:' : 'Monto estimado:'}</strong>{' '}
-                    <strong className="text-emerald-800 font-extrabold">{formatoMonedaCLP(montoOficial)}</strong>
+                    <strong>{montoAumentosAprobados > 0 ? 'Contrato vigente:' : tieneMontoAdjudicado ? 'Monto oficial adjudicado:' : 'Monto estimado:'}</strong>{' '}
+                    <strong className="text-emerald-800 font-extrabold">{formatoMonedaCLP(montoVigente)}</strong>
                   </span>
                 </div>
                 {tieneMontoAdjudicado && (
@@ -666,14 +696,14 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
                       <strong>Proveedor adjudicado:</strong>{' '}
                       <strong className="text-emerald-900">{proveedorAdjudicadoNombre || 'Pendiente de identificar'}</strong>
                       {proveedorAdjudicadoRut && <span className="block text-[10px] text-slate-600 mt-0.5">RUT: {proveedorAdjudicadoRut}</span>}
-                      {plazoAdjudicadoDias && <span className="block text-[10px] text-slate-600">Plazo contractual: {plazoAdjudicadoDias} días corridos</span>}
+                      {plazoVigenteDias > 0 && <span className="block text-[10px] text-slate-600">Plazo vigente: {plazoVigenteDias} días corridos{diasAumentoAprobados > 0 ? ` (${plazoAdjudicadoDias || 0} originales + ${diasAumentoAprobados} de aumento)` : ''}</span>}
                     </span>
                   </div>
                 )}
                 {fechaInicioObra && (
                   <div className="flex items-center gap-2">
                     <CalendarDays className="w-4 h-4 text-sky-600 shrink-0" />
-                    <span><strong>Programa contractual:</strong> {new Intl.DateTimeFormat('es-CL').format(new Date(`${fechaInicioObra}T12:00:00`))} – {fechaTerminoProgramada ? new Intl.DateTimeFormat('es-CL').format(new Date(`${fechaTerminoProgramada}T12:00:00`)) : 'Término pendiente'}</span>
+                    <span><strong>Programa contractual vigente:</strong> {new Intl.DateTimeFormat('es-CL').format(new Date(`${fechaInicioObra}T12:00:00`))} – {fechaTerminoVigente ? new Intl.DateTimeFormat('es-CL').format(new Date(`${fechaTerminoVigente}T12:00:00`)) : 'Término pendiente'}</span>
                   </div>
                 )}
                 <div className="flex items-center gap-2">

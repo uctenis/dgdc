@@ -186,11 +186,14 @@ export interface LicitacionProyecto {
   fechaTerminoProgramada?: string;
   cotizacionAdjudicadaId?: string;
   actaFirmaDigital?: {
-    archivoNombre: string;
-    archivoURL: string;
-    archivoDriveId: string;
+    archivoNombre?: string;
+    archivoURL?: string;
+    archivoDriveId?: string;
+    adobeAgreementId?: string;
+    adobeStatus?: string;
+    fechaInicioAdobe?: string;
     version: number;
-    estado: 'En firma' | 'Firmada';
+    estado: 'En firma' | 'Firmada' | 'Cancelada';
     fechaActualizacion: string;
     sha256: string;
     firmas: {
@@ -282,6 +285,58 @@ export interface ItemEstadoPago {
   montoPeriodo: number;
 }
 
+export interface ItemAumentoObra {
+  id: string;
+  item: string;
+  descripcion: string;
+  unidad: string;
+  cantidad: number;
+  precioUnitario: number;
+  precioTotal: number;
+  tipo: 'Nueva partida' | 'Aumento de cantidad';
+  itemOriginalId?: string;
+}
+
+export interface AumentoObra {
+  id: string;
+  licitacionId: string;
+  numero: number;
+  titulo: string;
+  motivo: string;
+  ordenCompraNumero: string;
+  fechaOrdenCompra: string;
+  items: ItemAumentoObra[];
+  montoNeto: number;
+  montoIva: number;
+  montoTotal: number;
+  ampliacionPlazoDias: number;
+  observaciones?: string;
+  archivoOCNombre?: string;
+  archivoOCURL?: string;
+  archivoOCDriveId?: string;
+  estado: 'Borrador' | 'Aprobado' | 'Rechazado' | 'Anulado';
+  creadoPor?: string;
+  fechaCreacion: string;
+  aprobadoPor?: string;
+  fechaAprobacion?: string;
+}
+
+export interface HitoDesarrolloProyecto {
+  id: string;
+  proyectoId: string;
+  fecha: string;
+  tipo: 'Hito' | 'Reunión' | 'Inspección' | 'Decisión' | 'Riesgo' | 'Incidencia' | 'Recepción';
+  titulo: string;
+  detalle: string;
+  responsableNombre: string;
+  responsableEmail?: string;
+  estado: 'Abierto' | 'En seguimiento' | 'Cerrado';
+  impactoCosto?: number;
+  impactoPlazoDias?: number;
+  creadoPor?: string;
+  fechaCreacion: string;
+}
+
 export interface EstadoPago {
   id: string;
   licitacionId: string;
@@ -300,6 +355,14 @@ export interface EstadoPago {
   archivoURL?: string;
   archivoDriveId?: string;
   estado: 'Borrador' | 'Ingresado' | 'Aprobado' | 'Pagado';
+  firmaResponsable?: {
+    uid: string;
+    email: string;
+    nombre: string;
+    cargo: string;
+    fecha: string;
+    sha256: string;
+  };
 }
 
 // ─── EVALUACIÓN ────────────────────────────────────────────────────────────
@@ -331,7 +394,7 @@ export interface EvaluacionResultado {
 export interface UserProfile {
   uid: string;
   email: string;
-  role: 'admin' | 'proveedor';
+  role: 'admin' | 'responsable' | 'proveedor';
   proveedorId?: string;  // Si es proveedor, referencia al doc en /proveedores
   displayName: string;
   fechaRegistro: string;

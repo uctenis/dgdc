@@ -15,6 +15,7 @@ import { LicitacionWorkspacePage } from './components/LicitacionWorkspacePage';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LoginPage } from './pages/LoginPage';
+import { InternalLoginPage } from './pages/InternalLoginPage';
 import { PortalDashboard } from './pages/PortalDashboard';
 import { LicitacionDetalle } from './pages/LicitacionDetalle';
 
@@ -335,13 +336,21 @@ function ProtectedProveedorRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function ProtectedInternalRoute({ children }: { children: React.ReactNode }) {
+  const { user, isInternalUser, loading } = useAuth();
+  if (loading) return <div className="min-h-screen bg-slate-950" />;
+  if (!user || !isInternalUser) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
 export function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
         <Routes>
-          {/* Admin routes */}
-          <Route path="/" element={<AdminApp />} />
+          {/* Rutas internas */}
+          <Route path="/login" element={<InternalLoginPage />} />
+          <Route path="/" element={<ProtectedInternalRoute><AdminApp /></ProtectedInternalRoute>} />
 
           {/* Provider routes */}
           <Route path="/portal/login" element={<LoginPage />} />

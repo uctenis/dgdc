@@ -7,8 +7,11 @@ import {
   FileText,
   Settings,
   Download,
+  LogOut,
+  UserCircle2,
 } from 'lucide-react';
 import { generarPlantillaCotizacionExcel } from '../services/templateGenerator';
+import { useAuth } from '../context/AuthContext';
 
 interface NavbarProps {
   activeTab: string;
@@ -17,19 +20,20 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, openSettings }) => {
+  const { user, profile, isAdmin, logout } = useAuth();
   const allTabs = [
     { id: 'licitaciones', label: 'Licitaciones', icon: FolderKanban },
     { id: 'proyectos-maestros', label: 'Cartera de Proyectos 2026', icon: FileText },
-    { id: 'proveedores',  label: 'Proveedores', icon: Building2 },
-    { id: 'cotizaciones', label: 'Cotizaciones', icon: FileSpreadsheet, contextual: true },
+    { id: 'proveedores',  label: 'Proveedores', icon: Building2, adminOnly: true },
+    { id: 'cotizaciones', label: 'Cotizaciones', icon: FileSpreadsheet, contextual: true, adminOnly: true },
     { id: 'ficha-proyecto', label: 'Ficha del Proyecto', icon: FileText, contextual: true },
     { id: 'evaluacion',   label: 'Evaluación', icon: FileCheck2 },
     { id: 'documentos',   label: 'Actas SGC', icon: FileText },
     { id: 'diagrama-sgc', label: 'Flujo SGC 0021', icon: FileCheck2 },
-    { id: 'configuracion', label: 'Configuración SGC', icon: Settings },
+    { id: 'configuracion', label: 'Configuración SGC', icon: Settings, adminOnly: true },
   ];
 
-  const tabs = allTabs.filter(t => !t.contextual || activeTab === t.id);
+  const tabs = allTabs.filter(t => (!t.contextual || activeTab === t.id) && (!t.adminOnly || isAdmin));
 
   return (
     <header
@@ -78,7 +82,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, openSet
 
           {/* ── Actions ────────────────────────────────────────────────── */}
           <div className="flex items-center gap-2 shrink-0">
-            <button
+            {isAdmin && <button
               onClick={() => generarPlantillaCotizacionExcel()}
               title="Descargar plantilla Excel oficial para enviar a proveedores"
               className="hidden sm:flex items-center gap-2 text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition border"
@@ -95,9 +99,9 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, openSet
             >
               <Download className="w-3.5 h-3.5 text-emerald-400" />
               <span className="text-emerald-200">Plantilla Excel</span>
-            </button>
+            </button>}
 
-            <button
+            {isAdmin && <button
               onClick={openSettings}
               title="Configuración de Firmas y Parámetros SGC"
               className="p-2.5 rounded-lg transition"
@@ -110,7 +114,13 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, openSet
               }}
             >
               <Settings className="w-5 h-5 text-slate-300" />
-            </button>
+            </button>}
+
+            <div className="hidden lg:flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-[10px] text-slate-300">
+              <UserCircle2 className="h-4 w-4 text-sky-300" />
+              <span><strong className="block text-white">{profile?.displayName || user?.displayName || 'Usuario UCT'}</strong>{user?.email}</span>
+            </div>
+            <button onClick={() => void logout()} title="Cerrar sesión" className="rounded-lg bg-white/5 p-2.5 text-slate-300 transition hover:bg-white/15 hover:text-white"><LogOut className="h-5 w-5" /></button>
           </div>
         </div>
 

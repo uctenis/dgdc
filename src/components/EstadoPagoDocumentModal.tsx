@@ -159,12 +159,22 @@ export function EstadoPagoDocumentModal({ licitacion, oferta, estadoPago, estado
           <section className="estado-pago-firma mt-6 border border-slate-900">
             <div className="border-b border-slate-900 bg-slate-100 px-3 py-2 text-center font-black uppercase">Certificación del responsable del proyecto</div>
             <p className="px-5 pt-4 text-center leading-relaxed">Se certifica que el avance indicado fue revisado respecto de las partidas contratadas y corresponde al período informado en este estado de pago.</p>
-            <div className="mx-auto flex min-h-[120px] max-w-md flex-col items-center justify-end px-8 pb-4">
-              <div className="w-full border-b-2 border-slate-900"></div>
-              <strong className="mt-2 text-xs uppercase">{responsable}</strong>
-              <span className="text-[9px] text-slate-600">Responsable del Proyecto / Inspección Técnica de Obra</span>
-              <span className="mt-1 text-[9px] text-slate-500">Firma y fecha</span>
-            </div>
+            {estadoPago.firmaResponsable ? (
+              <div className="mx-auto my-4 max-w-xl border-2 border-emerald-700 bg-emerald-50 px-5 py-4 text-center text-emerald-950">
+                <div className="flex items-center justify-center gap-2 text-sm font-black uppercase"><FileSignature className="h-5 w-5" /> Firmado electrónicamente</div>
+                <strong className="mt-2 block text-xs uppercase">{estadoPago.firmaResponsable.nombre}</strong>
+                <span className="block text-[9px]">{estadoPago.firmaResponsable.cargo}</span>
+                <span className="block text-[9px]">{estadoPago.firmaResponsable.email} · {new Date(estadoPago.firmaResponsable.fecha).toLocaleString('es-CL')}</span>
+                <span className="mt-2 block break-all font-mono text-[7px] text-slate-600">SHA-256: {estadoPago.firmaResponsable.sha256}</span>
+              </div>
+            ) : (
+              <div className="mx-auto flex min-h-[120px] max-w-md flex-col items-center justify-end px-8 pb-4">
+                <div className="w-full border-b-2 border-slate-900"></div>
+                <strong className="mt-2 text-xs uppercase">{responsable}</strong>
+                <span className="text-[9px] text-slate-600">Responsable del Proyecto / Inspección Técnica de Obra</span>
+                <span className="mt-1 text-[9px] font-bold text-amber-700">PENDIENTE DE FIRMA ELECTRÓNICA</span>
+              </div>
+            )}
           </section>
 
           <footer className="mt-4 flex justify-between border-t border-slate-400 pt-2 text-[8px] text-slate-500"><span>Control de avance físico y financiero · Subdirección de Infraestructura</span><span>ESTADO DE PAGO N° {estadoPago.numero}</span></footer>
