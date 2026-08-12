@@ -8,8 +8,11 @@ import type { AumentoObra, Cotizacion, LicitacionProyecto, ProyectoMaestro, Prov
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { normalizarNombreProyecto, corregirOrtografiaEspanol } from '../utils/spellCorrector';
 import { rewriteTextWithAI, isAIConfigured } from '../services/aiService';
-import { updateLicitacion, updateProyectoMaestro } from '../services/firestoreService';
+import { updateLicitacion, updateProyectoMaestro, deleteLicitacion, deleteProyectoMaestro } from '../services/firestoreService';
 import { uploadFileToProjectFolder, deleteFileFromDrive } from '../services/driveService';
+import { CAMPUS_UCT, obtenerEdificiosDeCampus } from '../data/campusData';
+import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
+import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
 import { AumentosObraPanel } from './AumentosObraPanel';
 import { BitacoraProyectoPanel } from './BitacoraProyectoPanel';
 
@@ -208,6 +211,38 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
   const [isEditingDesc, setIsEditingDesc] = useState(false);
   const [aiProcessing, setAiProcessing] = useState(false);
   const [hasChanges, setHasChanges] = useState(false); // Track cambios
+
+  const [mainData, setMainData] = useState({
+    nombreProyecto: nombreProyectoUpper,
+    codigoCP: codigoCP,
+    codigoOT: codigoOT,
+    codigoOP: codigoOP,
+    codigoProyecto: codigoProyecto || id,
+    campusSigla: campusSigla,
+    edificioSigla: edificioSigla,
+    responsableNombre: responsableNombre,
+    responsableEmail: responsableEmail,
+    uso: uso,
+    montoEstimado: montoEstimado,
+    fechaInicioObra: fechaInicioObra || '',
+    fechaTerminoProgramada: fechaTerminoProgramada || '',
+    plazoAdjudicadoDias: plazoAdjudicadoDias || 0,
+  });
+
+  const saveInlineUpdate = async (updates: Partial<typeof mainData>) => {
+    try {
+      if ('montoEstimado' in proyecto) {
+        await updateLicitacion(id, updates);
+      } else {
+        await updateProyectoMaestro(id, updates);
+      }
+      setHasChanges(true);
+    } catch (e) {
+      console.error(e);
+      alert('Error guardando cambios.');
+    }
+  };
+
 
   const completadosCount = checklistItems.filter(i => i.completado).length;
   const porcentajeAvance = Math.round((completadosCount / checklistItems.length) * 100);
@@ -475,29 +510,62 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
           <div className="flex flex-col gap-6">
             {/* Fila de Códigos */}
             <div className="flex flex-wrap gap-2">
-              <span className="text-[11px] font-extrabold uppercase bg-slate-700 text-slate-100 px-3 py-1.5 rounded-full font-mono border border-slate-600 hover:bg-slate-600 transition">
-                CP: {codigoCP}
-              </span>
-              <span className="text-[11px] font-extrabold uppercase bg-slate-700 text-slate-100 px-3 py-1.5 rounded-full font-mono border border-slate-600 hover:bg-slate-600 transition">
-                Cód: {codigoProyecto || id}
-              </span>
-              {codigoOT && (
-                <span className="text-[11px] font-extrabold uppercase bg-slate-700 text-slate-100 px-3 py-1.5 rounded-full font-mono border border-slate-600 hover:bg-slate-600 transition">
-                  OT: {codigoOT}
-                </span>
-              )}
-              {codigoOP && (
-                <span className="text-[11px] font-extrabold uppercase bg-slate-700 text-slate-100 px-3 py-1.5 rounded-full font-mono border border-slate-600 hover:bg-slate-600 transition">
-                  OP: {codigoOP}
-                </span>
-              )}
+              <div className="flex items-center gap-1 bg-slate-700 text-slate-100 px-3 py-1.5 rounded-full font-mono border border-slate-600 transition">
+                <span className="text-[11px] font-extrabold uppercase">CP:</span>
+                <input 
+                  type="text" 
+                  value={mainData.codigoCP}
+                  onChange={e => setMainData({...mainData, codigoCP: e.target.value})}
+                  onBlur={() => saveInlineUpdate({ codigoCP: mainData.codigoCP })}
+                  className="bg-transparent text-[11px] font-extrabold uppercase outline-none w-20 placeholder-slate-400"
+                  placeholder="Ej: 409-1722"
+                />
+              </div>
+              <div className="flex items-center gap-1 bg-slate-700 text-slate-100 px-3 py-1.5 rounded-full font-mono border border-slate-600 transition">
+                <span className="text-[11px] font-extrabold uppercase">Cód:</span>
+                <input 
+                  type="text" 
+                  value={mainData.codigoProyecto}
+                  onChange={e => setMainData({...mainData, codigoProyecto: e.target.value})}
+                  onBlur={() => saveInlineUpdate({ codigoProyecto: mainData.codigoProyecto })}
+                  className="bg-transparent text-[11px] font-extrabold uppercase outline-none w-24 placeholder-slate-400"
+                  placeholder="ID Proyecto"
+                />
+              </div>
+              <div className="flex items-center gap-1 bg-slate-700 text-slate-100 px-3 py-1.5 rounded-full font-mono border border-slate-600 transition">
+                <span className="text-[11px] font-extrabold uppercase">OT:</span>
+                <input 
+                  type="text" 
+                  value={mainData.codigoOT}
+                  onChange={e => setMainData({...mainData, codigoOT: e.target.value})}
+                  onBlur={() => saveInlineUpdate({ codigoOT: mainData.codigoOT })}
+                  className="bg-transparent text-[11px] font-extrabold uppercase outline-none w-16 placeholder-slate-400"
+                  placeholder="OT..."
+                />
+              </div>
+              <div className="flex items-center gap-1 bg-slate-700 text-slate-100 px-3 py-1.5 rounded-full font-mono border border-slate-600 transition">
+                <span className="text-[11px] font-extrabold uppercase">OP:</span>
+                <input 
+                  type="text" 
+                  value={mainData.codigoOP}
+                  onChange={e => setMainData({...mainData, codigoOP: e.target.value})}
+                  onBlur={() => saveInlineUpdate({ codigoOP: mainData.codigoOP })}
+                  className="bg-transparent text-[11px] font-extrabold uppercase outline-none w-16 placeholder-slate-400"
+                  placeholder="OP..."
+                />
+              </div>
             </div>
 
             {/* Nombre Principal del Proyecto */}
-            <div className="space-y-3">
-              <h1 className="text-4xl sm:text-5xl font-black text-white leading-tight tracking-tight uppercase">
-                {nombreProyectoUpper}
-              </h1>
+            <div className="space-y-3 print:space-y-8 print:text-center w-full">
+              <textarea
+                value={mainData.nombreProyecto}
+                onChange={e => setMainData({...mainData, nombreProyecto: e.target.value})}
+                onBlur={() => saveInlineUpdate({ nombreProyecto: mainData.nombreProyecto, nombre: mainData.nombreProyecto })}
+                className="w-full bg-transparent text-2xl sm:text-3xl lg:text-4xl font-black text-white print:text-slate-900 leading-tight tracking-tight uppercase resize-none outline-none focus:bg-slate-800/50 rounded-xl p-2 -ml-2 transition border border-transparent focus:border-slate-600"
+                rows={2}
+                placeholder="Nombre del Proyecto Institucional..."
+              />
               
               {/* Descripción del Proyecto */}
               <div className="flex items-start gap-3 bg-slate-700/50 p-4 rounded-2xl border border-slate-600">
@@ -522,14 +590,52 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               <div className="bg-slate-700/60 p-4 rounded-xl border border-slate-600">
                 <p className="text-slate-300 text-xs font-bold uppercase mb-2">Campus</p>
-                <p className="text-white text-lg font-extrabold">{campusSigla}</p>
-                {edificioSigla && <p className="text-slate-300 text-xs mt-1">Edificio {edificioSigla}</p>}
+                <select
+                  value={mainData.campusSigla}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setMainData({ ...mainData, campusSigla: val, edificioSigla: '' });
+                    saveInlineUpdate({ campusSigla: val, edificioSigla: '' });
+                  }}
+                  className="w-full bg-slate-800 text-white text-sm font-extrabold border border-slate-600 rounded p-1 mb-1 outline-none focus:ring-1 focus:ring-indigo-500"
+                >
+                  <option value="">UCT Central</option>
+                  {CAMPUS_UCT.map(c => <option key={c.sigla} value={c.sigla}>{c.sigla}</option>)}
+                </select>
+                <select
+                  value={mainData.edificioSigla}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setMainData({ ...mainData, edificioSigla: val });
+                    saveInlineUpdate({ edificioSigla: val });
+                  }}
+                  disabled={!mainData.campusSigla}
+                  className="w-full bg-slate-800 text-slate-300 text-xs border border-slate-600 rounded p-1 outline-none focus:ring-1 focus:ring-indigo-500"
+                >
+                  <option value="">Edificio (Todos)</option>
+                  {mainData.campusSigla && obtenerEdificiosDeCampus(mainData.campusSigla).map(ed => (
+                    <option key={ed} value={ed}>Edificio {ed}</option>
+                  ))}
+                </select>
               </div>
               
               <div className="bg-slate-700/60 p-4 rounded-xl border border-slate-600">
                 <p className="text-slate-300 text-xs font-bold uppercase mb-2">Responsable</p>
-                <p className="text-white text-sm font-extrabold truncate">{responsableNombre}</p>
-                <p className="text-slate-300 text-[11px] font-mono mt-1">{responsableEmail}</p>
+                <select
+                  value={mainData.responsableNombre}
+                  onChange={(e) => {
+                    const nombre = e.target.value;
+                    const r = RESPONSABLES_INFRAESTRUCTURA.find(resp => resp.nombre === nombre);
+                    const email = r ? r.email : '';
+                    setMainData({ ...mainData, responsableNombre: nombre, responsableEmail: email });
+                    saveInlineUpdate({ responsableNombre: nombre, responsableEmail: email });
+                  }}
+                  className="w-full bg-slate-800 text-white text-sm font-extrabold border border-slate-600 rounded p-1 mb-1 outline-none focus:ring-1 focus:ring-indigo-500 truncate"
+                >
+                  <option value="">Sin Asignar</option>
+                  {RESPONSABLES_INFRAESTRUCTURA.map(r => <option key={r.codigo} value={r.nombre}>{r.nombre}</option>)}
+                </select>
+                <p className="text-slate-300 text-[11px] font-mono mt-1 truncate">{mainData.responsableEmail}</p>
               </div>
 
               <div className="bg-slate-700/60 p-4 rounded-xl border border-slate-600">
@@ -537,15 +643,133 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
                   <DollarSign className="w-3 h-3" />
                   {montoAumentosAprobados > 0 ? 'Contrato vigente' : tieneMontoAdjudicado ? 'Monto adjudicado' : 'Monto estimado'}
                 </p>
-                <p className="text-white text-lg font-extrabold">{formatoMonedaCLP(montoVigente)}</p>
-                {tieneMontoAdjudicado && (
-                  <p className="text-slate-300 text-[10px] mt-1">Original: {formatoMonedaCLP(montoOficial)}{montoAumentosAprobados > 0 ? ` · Aumentos: +${formatoMonedaCLP(montoAumentosAprobados)}` : ''}</p>
+                {tieneMontoAdjudicado ? (
+                  <p className="text-white text-lg font-black">{formatoMonedaCLP(montoVigente)}</p>
+                ) : (
+                  <div className="flex items-center gap-1 bg-slate-800 p-1 rounded border border-slate-600">
+                    <span className="text-slate-400 font-bold ml-1">$</span>
+                    <input
+                      type="text"
+                      value={formatearEnteroConMiles(mainData.montoEstimado)}
+                      onChange={e => setMainData({...mainData, montoEstimado: desformatearEntero(e.target.value)})}
+                      onBlur={() => saveInlineUpdate({ montoEstimado: mainData.montoEstimado, valorAprox: mainData.montoEstimado })}
+                      className="bg-transparent text-white font-black w-full outline-none"
+                    />
+                  </div>
                 )}
+                <select
+                  value={mainData.uso}
+                  onChange={(e) => {
+                    setMainData({...mainData, uso: e.target.value});
+                    saveInlineUpdate({ uso: e.target.value });
+                  }}
+                  className="w-full mt-2 bg-slate-800 text-slate-300 text-[11px] border border-slate-600 rounded p-1 outline-none focus:ring-1 focus:ring-indigo-500"
+                >
+                  <option value="">Uso General</option>
+                  <option value="Docencia">Docencia</option>
+                  <option value="Investigación">Investigación</option>
+                  <option value="Administración">Administración</option>
+                  <option value="Bienestar Estudiantil">Bienestar Estudiantil</option>
+                  <option value="Laboratorio">Laboratorio</option>
+                  <option value="Deportivo">Deportivo</option>
+                  <option value="Otro">Otro</option>
+                </select>
               </div>
 
-              <div className="bg-slate-700/60 p-4 rounded-xl border border-slate-600">
-                <p className="text-slate-300 text-xs font-bold uppercase mb-2">Uso</p>
-                <p className="text-white text-sm font-extrabold">{uso}</p>
+              <div className="bg-slate-700/60 p-4 rounded-xl border border-slate-600 col-span-2 sm:col-span-3 lg:col-span-1">
+                <div className="flex items-center gap-2 mb-3">
+                  <CalendarDays className="w-4 h-4 text-indigo-400" />
+                  <p className="text-slate-300 text-xs font-bold uppercase">Calendario y Plazos</p>
+                </div>
+                
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2 bg-slate-800 p-2 rounded-lg border border-slate-600/50">
+                    <span className="text-[11px] font-bold text-slate-400 w-12">INICIO</span>
+                    <input
+                      type="date"
+                      value={mainData.fechaInicioObra || ''}
+                      onChange={e => {
+                        const nuevaFecha = e.target.value;
+                        const nuevosDatos = { ...mainData, fechaInicioObra: nuevaFecha };
+                        
+                        // Cálculo automático de término
+                        if (nuevaFecha && mainData.plazoAdjudicadoDias) {
+                          const date = new Date(nuevaFecha);
+                          date.setDate(date.getDate() + Number(mainData.plazoAdjudicadoDias));
+                          nuevosDatos.fechaTerminoProgramada = date.toISOString().split('T')[0];
+                        }
+                        
+                        setMainData(nuevosDatos);
+                        saveInlineUpdate({ 
+                          fechaInicioObra: nuevosDatos.fechaInicioObra,
+                          fechaTerminoProgramada: nuevosDatos.fechaTerminoProgramada 
+                        });
+                      }}
+                      className="bg-transparent text-sm font-bold text-white outline-none w-full cursor-pointer text-right"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 bg-slate-800 p-2 rounded-lg border border-slate-600/50">
+                    <span className="text-[11px] font-bold text-slate-400 w-12">PLAZO</span>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        value={mainData.plazoAdjudicadoDias || ''}
+                        onChange={e => {
+                          const nuevoPlazo = parseInt(e.target.value) || 0;
+                          const nuevosDatos = { ...mainData, plazoAdjudicadoDias: nuevoPlazo };
+                          
+                          // Cálculo automático de término
+                          if (mainData.fechaInicioObra && nuevoPlazo > 0) {
+                            const date = new Date(mainData.fechaInicioObra);
+                            date.setDate(date.getDate() + nuevoPlazo);
+                            nuevosDatos.fechaTerminoProgramada = date.toISOString().split('T')[0];
+                          }
+                          
+                          setMainData(nuevosDatos);
+                        }}
+                        onBlur={() => saveInlineUpdate({ 
+                          plazoAdjudicadoDias: mainData.plazoAdjudicadoDias,
+                          fechaTerminoProgramada: mainData.fechaTerminoProgramada
+                        })}
+                        className="bg-transparent text-sm font-bold text-indigo-400 outline-none w-16 text-right"
+                        placeholder="0"
+                        min="0"
+                      />
+                      <span className="text-[10px] text-slate-500 font-bold uppercase">Días</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2 bg-slate-800 p-2 rounded-lg border border-slate-600/50">
+                    <span className="text-[11px] font-bold text-slate-400 w-12">FIN</span>
+                    <input
+                      type="date"
+                      value={mainData.fechaTerminoProgramada || ''}
+                      onChange={e => {
+                        const nuevaFechaFin = e.target.value;
+                        const nuevosDatos = { ...mainData, fechaTerminoProgramada: nuevaFechaFin };
+                        
+                        // Cálculo automático de plazo (viceversa)
+                        if (nuevaFechaFin && mainData.fechaInicioObra) {
+                          const start = new Date(mainData.fechaInicioObra);
+                          const end = new Date(nuevaFechaFin);
+                          const diffTime = Math.abs(end.getTime() - start.getTime());
+                          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                          if (end >= start) {
+                            nuevosDatos.plazoAdjudicadoDias = diffDays;
+                          }
+                        }
+                        
+                        setMainData(nuevosDatos);
+                        saveInlineUpdate({ 
+                          fechaTerminoProgramada: nuevosDatos.fechaTerminoProgramada,
+                          plazoAdjudicadoDias: nuevosDatos.plazoAdjudicadoDias
+                        });
+                      }}
+                      className="bg-transparent text-sm font-bold text-emerald-400 outline-none w-full cursor-pointer text-right"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
 

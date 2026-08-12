@@ -48,6 +48,13 @@ export interface ProyectoMaestro {
   estado: 'Pendiente' | 'En Proceso' | 'Completado';
   fechaCreacion: string;
 
+  // Datos financieros y de programación (PPTO)
+  montoAdjudicado?: number;
+  gastoEfectivo?: number;
+  prioridad?: 'Alta' | 'Media' | 'Baja';
+  fechaInicio?: string;
+  fechaTermino?: string;
+
   // Ubicación y Metadatos Institucionales (Filtros Avanzados)
   campusSigla?: string;      // ej: CSF, CJP, CRC
   campusNombre?: string;     // ej: Campus San Francisco

@@ -199,7 +199,7 @@ export function subscribeToProyectos(
 }
 
 export async function addProyectoMaestro(
-  data: Omit<ProyectoMaestro, 'id' | 'correlativo'>
+  data: Omit<ProyectoMaestro, 'id' | 'correlativo' | 'codigoProyecto'>
 ): Promise<string> {
   // Usar counter para asignar correlativo único
   const counterRef = doc(db, '_counters', 'proyectos');
@@ -215,10 +215,14 @@ export async function addProyectoMaestro(
     }
   });
 
+  const year = new Date().getFullYear();
+  const codigoProyecto = `${year}_${String(correlativo).padStart(3, '0')}`;
+
   const ref = await addDoc(collection(db, 'proyectos'), {
     ...data,
     nombre: normalizarNombreProyecto(data.nombre),
     correlativo,
+    codigoProyecto,
     fechaCreacion: new Date().toISOString(),
     _createdAt: serverTimestamp(),
   });
@@ -254,6 +258,12 @@ export function subscribeToLicitaciones(
       return { ...licitacion, nombreProyecto: normalizarNombreProyecto(licitacion.nombreProyecto) };
     }));
   });
+}
+
+export async function getAllLicitaciones(): Promise<LicitacionProyecto[]> {
+  const q = query(collection(db, 'licitaciones'));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<LicitacionProyecto, 'id'>) }));
 }
 
 export async function addLicitacion(
@@ -668,5 +678,28 @@ export async function adjudicarLicitacion(params: {
       fecha,
       puntajeObtenido: puntajes[cot.proveedorId],
     });
+  }
+
+  // 4. Actualizar estado del Proyecto Maestro correspondiente en la Cartera
+  try {
+    const proyectosRef = collection(db, 'proyectos');
+    const qProy = query(proyectosRef, where('codigoCP', '==', codigoCP));
+    const querySnapshot = await getDocs(qProy);
+    
+    if (!querySnapshot.empty) {
+      const docProy = querySnapshot.docs[0];
+      const proyData = docProy.data();
+      const cotGanadora = cotizaciones.find(c => c.proveedorId === proveedorGanadorId);
+      
+      await updateDoc(docProy.ref, {
+        estado: 'En Proceso',
+        montoAdjudicado: cotGanadora?.montoTotal || proyData.montoAdjudicado || 0,
+        plazoAdjudicadoDias: cotGanadora?.plazoDias || proyData.plazoAdjudicadoDias || 0,
+        fechaInicioObra: fecha,
+        _updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (err) {
+    console.error('Error al actualizar Proyecto Maestro durante la adjudicación:', err);
   }
 }

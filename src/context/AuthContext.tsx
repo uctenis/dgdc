@@ -121,7 +121,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const code = (loginError as { code?: string }).code;
         setError(code === 'auth/popup-closed-by-user'
           ? 'El inicio de sesión fue cancelado.'
-          : 'No fue posible iniciar sesión con Google. Verifique que Google esté habilitado en Firebase.');
+          : `Error (${code || 'Desconocido'}): Verifique que Google esté habilitado en Firebase.`);
       }
       throw loginError;
     }
@@ -176,7 +176,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (msg.code === 'auth/popup-closed-by-user') {
           setError('El inicio de sesión fue cancelado.');
         } else {
-          setError('Error al iniciar sesión con Google. Intente nuevamente.');
+          setError(`Error de Google (${msg.code || 'Desconocido'}): Asegúrese de que Google Auth esté habilitado en Firebase.`);
         }
       }
       throw e;

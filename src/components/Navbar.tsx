@@ -27,8 +27,8 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, openSet
     { id: 'proveedores',  label: 'Proveedores', icon: Building2, adminOnly: true },
     { id: 'cotizaciones', label: 'Cotizaciones', icon: FileSpreadsheet, contextual: true, adminOnly: true },
     { id: 'ficha-proyecto', label: 'Ficha del Proyecto', icon: FileText, contextual: true },
-    { id: 'evaluacion',   label: 'Evaluación', icon: FileCheck2 },
-    { id: 'documentos',   label: 'Actas SGC', icon: FileText },
+    { id: 'evaluacion',   label: 'Evaluación', icon: FileCheck2, contextual: true },
+    { id: 'documentos',   label: 'Actas SGC', icon: FileText, contextual: true },
     { id: 'diagrama-sgc', label: 'Flujo SGC 0021', icon: FileCheck2 },
     { id: 'configuracion', label: 'Configuración SGC', icon: Settings, adminOnly: true },
   ];
