@@ -674,310 +674,300 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
         </button>
       </div>
 
-      {/* SECCIÓN DE ENCABEZADO PROMINENTE DEL PROYECTO */}
-      <div className="bg-gradient-to-br from-slate-800 via-slate-700 to-slate-800 rounded-3xl shadow-md overflow-hidden caratula-print border border-slate-600">
-        <div className="p-8 sm:p-10 md:p-12">
-          <div className="flex flex-col gap-6">
-            {/* Fila de Códigos */}
-            <div className="flex flex-wrap gap-2">
-              <div className="flex items-center gap-1 bg-slate-700 text-slate-100 px-3 py-1.5 rounded-full font-mono border border-slate-600 transition">
-                <span className="text-[11px] font-extrabold uppercase">CP:</span>
-                <input 
-                  type="text" 
-                  value={mainData.codigoCP}
-                  onChange={e => setMainData({...mainData, codigoCP: e.target.value})}
-                  onBlur={() => saveInlineUpdate({ codigoCP: mainData.codigoCP })}
-                  className="bg-transparent text-[11px] font-extrabold uppercase outline-none w-20 placeholder-slate-400"
-                  placeholder="Ej: 409-1722"
-                />
-              </div>
-              <div className="flex items-center gap-1 bg-slate-700 text-slate-100 px-3 py-1.5 rounded-full font-mono border border-slate-600 transition">
-                <span className="text-[11px] font-extrabold uppercase">Cód:</span>
-                <input 
-                  type="text" 
-                  value={mainData.codigoProyecto}
-                  onChange={e => setMainData({...mainData, codigoProyecto: e.target.value})}
-                  onBlur={() => saveInlineUpdate({ codigoProyecto: mainData.codigoProyecto })}
-                  className="bg-transparent text-[11px] font-extrabold uppercase outline-none w-24 placeholder-slate-400"
-                  placeholder="ID Proyecto"
-                />
-              </div>
-              <div className="flex items-center gap-1 bg-purple-900/80 text-purple-200 px-3 py-1.5 rounded-full font-mono border border-purple-600 transition">
-                <span className="text-[11px] font-extrabold uppercase">OC:</span>
-                <input 
-                  type="text" 
-                  value={mainData.codigoOC}
-                  onChange={e => setMainData({...mainData, codigoOC: e.target.value})}
-                  onBlur={() => saveInlineUpdate({ codigoOC: mainData.codigoOC })}
-                  className="bg-transparent text-[11px] font-extrabold uppercase outline-none w-28 placeholder-purple-400 text-purple-200 font-extrabold"
-                  placeholder="OC..."
-                />
-              </div>
-              <div className="flex items-center gap-1 bg-slate-700 text-slate-100 px-3 py-1.5 rounded-full font-mono border border-slate-600 transition">
-                <span className="text-[11px] font-extrabold uppercase">OT:</span>
-                <input 
-                  type="text" 
-                  value={mainData.codigoOT}
-                  onChange={e => setMainData({...mainData, codigoOT: e.target.value})}
-                  onBlur={() => saveInlineUpdate({ codigoOT: mainData.codigoOT })}
-                  className="bg-transparent text-[11px] font-extrabold uppercase outline-none w-16 placeholder-slate-400"
-                  placeholder="OT..."
-                />
-              </div>
-              <div className="flex items-center gap-1 bg-slate-700 text-slate-100 px-3 py-1.5 rounded-full font-mono border border-slate-600 transition">
-                <span className="text-[11px] font-extrabold uppercase">OP:</span>
-                <input 
-                  type="text" 
-                  value={mainData.codigoOP}
-                  onChange={e => setMainData({...mainData, codigoOP: e.target.value})}
-                  onBlur={() => saveInlineUpdate({ codigoOP: mainData.codigoOP })}
-                  className="bg-transparent text-[11px] font-extrabold uppercase outline-none w-16 placeholder-slate-400"
-                  placeholder="OP..."
-                />
-              </div>
-            </div>
-
-            {/* Nombre Principal del Proyecto */}
-            <div className="space-y-3 print:space-y-8 print:text-center w-full">
-              <textarea
-                value={mainData.nombreProyecto}
-                onChange={e => setMainData({...mainData, nombreProyecto: e.target.value})}
-                onBlur={() => saveInlineUpdate({ nombreProyecto: mainData.nombreProyecto })}
-                className="w-full bg-transparent text-2xl sm:text-3xl lg:text-4xl font-black text-white print:text-slate-900 leading-tight tracking-tight uppercase resize-none outline-none focus:bg-slate-800/50 rounded-xl p-2 -ml-2 transition border border-transparent focus:border-slate-600"
-                rows={2}
-                placeholder="Nombre del Proyecto Institucional..."
+      {/* SECCIÓN DE ENCABEZADO PROMINENTE DEL PROYECTO (COMPACTA) */}
+      <div className="bg-gradient-to-br from-slate-800 via-slate-700 to-slate-800 rounded-2xl shadow-sm overflow-hidden caratula-print border border-slate-600">
+        <div className="p-4 sm:p-5 space-y-3.5">
+          {/* Fila de Códigos */}
+          <div className="flex flex-wrap gap-1.5">
+            <div className="flex items-center gap-1 bg-slate-700 text-slate-100 px-2.5 py-1 rounded-full font-mono border border-slate-600 transition">
+              <span className="text-[10px] font-extrabold uppercase">CP:</span>
+              <input 
+                type="text" 
+                value={mainData.codigoCP}
+                onChange={e => setMainData({...mainData, codigoCP: e.target.value})}
+                onBlur={() => saveInlineUpdate({ codigoCP: mainData.codigoCP })}
+                className="bg-transparent text-[10px] font-extrabold uppercase outline-none w-16 placeholder-slate-400"
+                placeholder="CP..."
               />
-              
-              {/* Descripción del Proyecto */}
-              <div className="flex items-start gap-3 bg-slate-700/50 p-4 rounded-2xl border border-slate-600">
-                <div className="flex-1">
-                  <p className="text-slate-100 text-base leading-relaxed font-medium">
-                    {descripcionLocal || 'Sin descripción. Pulse el botón Editar para agregar detalles del proyecto.'}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingDesc(true)}
-                    className="mt-3 px-4 py-2 bg-slate-600 hover:bg-slate-500 text-white font-bold rounded-lg text-sm transition flex items-center gap-2 inline-flex"
-                    title="Editar descripción"
-                  >
-                    <Edit3 className="w-4 h-4" />
-                    <span>Editar Descripción</span>
-                  </button>
-                </div>
+            </div>
+            <div className="flex items-center gap-1 bg-slate-700 text-slate-100 px-2.5 py-1 rounded-full font-mono border border-slate-600 transition">
+              <span className="text-[10px] font-extrabold uppercase">Cód:</span>
+              <input 
+                type="text" 
+                value={mainData.codigoProyecto}
+                onChange={e => setMainData({...mainData, codigoProyecto: e.target.value})}
+                onBlur={() => saveInlineUpdate({ codigoProyecto: mainData.codigoProyecto })}
+                className="bg-transparent text-[10px] font-extrabold uppercase outline-none w-20 placeholder-slate-400"
+                placeholder="ID Proy"
+              />
+            </div>
+            <div className="flex items-center gap-1 bg-purple-900/80 text-purple-200 px-2.5 py-1 rounded-full font-mono border border-purple-600 transition">
+              <span className="text-[10px] font-extrabold uppercase">OC:</span>
+              <input 
+                type="text" 
+                value={mainData.codigoOC}
+                onChange={e => setMainData({...mainData, codigoOC: e.target.value})}
+                onBlur={() => saveInlineUpdate({ codigoOC: mainData.codigoOC })}
+                className="bg-transparent text-[10px] font-extrabold uppercase outline-none w-24 placeholder-purple-400 text-purple-200 font-extrabold"
+                placeholder="OC..."
+              />
+            </div>
+            <div className="flex items-center gap-1 bg-slate-700 text-slate-100 px-2.5 py-1 rounded-full font-mono border border-slate-600 transition">
+              <span className="text-[10px] font-extrabold uppercase">OT:</span>
+              <input 
+                type="text" 
+                value={mainData.codigoOT}
+                onChange={e => setMainData({...mainData, codigoOT: e.target.value})}
+                onBlur={() => saveInlineUpdate({ codigoOT: mainData.codigoOT })}
+                className="bg-transparent text-[10px] font-extrabold uppercase outline-none w-14 placeholder-slate-400"
+                placeholder="OT..."
+              />
+            </div>
+            <div className="flex items-center gap-1 bg-slate-700 text-slate-100 px-2.5 py-1 rounded-full font-mono border border-slate-600 transition">
+              <span className="text-[10px] font-extrabold uppercase">OP:</span>
+              <input 
+                type="text" 
+                value={mainData.codigoOP}
+                onChange={e => setMainData({...mainData, codigoOP: e.target.value})}
+                onBlur={() => saveInlineUpdate({ codigoOP: mainData.codigoOP })}
+                className="bg-transparent text-[10px] font-extrabold uppercase outline-none w-14 placeholder-slate-400"
+                placeholder="OP..."
+              />
+            </div>
+          </div>
+
+          {/* Nombre Principal y Descripción */}
+          <div className="space-y-2">
+            <textarea
+              value={mainData.nombreProyecto}
+              onChange={e => setMainData({...mainData, nombreProyecto: e.target.value})}
+              onBlur={() => saveInlineUpdate({ nombreProyecto: mainData.nombreProyecto })}
+              className="w-full bg-transparent text-xl sm:text-2xl font-black text-white leading-snug tracking-tight uppercase resize-none outline-none focus:bg-slate-800/50 rounded-lg p-1 -ml-1 transition border border-transparent focus:border-slate-600"
+              rows={1}
+              placeholder="Nombre del Proyecto..."
+            />
+            
+            {/* Descripción del Proyecto */}
+            <div className="bg-slate-700/40 p-2.5 rounded-xl border border-slate-600/70 flex items-start gap-2">
+              <div className="flex-1 min-w-0">
+                <p className="text-slate-200 text-xs sm:text-sm leading-relaxed font-normal">
+                  {descripcionLocal || 'Sin descripción. Pulse Editar para agregar detalles del proyecto.'}
+                </p>
               </div>
+              <button
+                type="button"
+                onClick={() => setIsEditingDesc(true)}
+                className="px-2.5 py-1 bg-slate-600/80 hover:bg-slate-500 text-white font-bold rounded-md text-[11px] transition flex items-center gap-1 shrink-0"
+                title="Editar descripción"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Editar</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Información Clave del Proyecto (4 Tarjetas Compactas) */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="bg-slate-700/50 p-2.5 rounded-xl border border-slate-600/80 space-y-1">
+              <p className="text-slate-300 text-[10px] font-extrabold uppercase">Campus / Edificio</p>
+              <select
+                value={mainData.campusSigla}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setMainData({ ...mainData, campusSigla: val, edificioSigla: '' });
+                  saveInlineUpdate({ campusSigla: val, edificioSigla: '' });
+                }}
+                className="w-full bg-slate-800 text-white text-xs font-bold border border-slate-600 rounded p-1 outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="">UCT Central</option>
+                {CAMPUS_UCT.map(c => <option key={c.sigla} value={c.sigla}>{c.sigla}</option>)}
+              </select>
+              <select
+                value={mainData.edificioSigla}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setMainData({ ...mainData, edificioSigla: val });
+                  saveInlineUpdate({ edificioSigla: val });
+                }}
+                disabled={!mainData.campusSigla}
+                className="w-full bg-slate-800 text-slate-300 text-[11px] border border-slate-600 rounded p-1 outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="">Edificio (Todos)</option>
+                {mainData.campusSigla && obtenerEdificiosDeCampus(mainData.campusSigla).map(ed => (
+                  <option key={ed} value={ed}>Edificio {ed}</option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="bg-slate-700/50 p-2.5 rounded-xl border border-slate-600/80 space-y-1">
+              <p className="text-slate-300 text-[10px] font-extrabold uppercase">Responsable UCT</p>
+              <select
+                value={mainData.responsableNombre}
+                onChange={(e) => {
+                  const nombre = e.target.value;
+                  const r = RESPONSABLES_INFRAESTRUCTURA.find(resp => resp.nombre === nombre);
+                  const email = r ? r.email : '';
+                  setMainData({ ...mainData, responsableNombre: nombre, responsableEmail: email });
+                  saveInlineUpdate({ responsableNombre: nombre, responsableEmail: email });
+                }}
+                className="w-full bg-slate-800 text-white text-xs font-bold border border-slate-600 rounded p-1 outline-none focus:ring-1 focus:ring-indigo-500 truncate"
+              >
+                <option value="">Sin Asignar</option>
+                {RESPONSABLES_INFRAESTRUCTURA.map(r => <option key={r.codigo} value={r.nombre}>{r.nombre}</option>)}
+              </select>
+              <p className="text-slate-300 text-[10px] font-mono truncate pt-0.5">{mainData.responsableEmail}</p>
             </div>
 
-            {/* Información Clave del Proyecto */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              <div className="bg-slate-700/60 p-4 rounded-xl border border-slate-600">
-                <p className="text-slate-300 text-xs font-bold uppercase mb-2">Campus</p>
-                <select
-                  value={mainData.campusSigla}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setMainData({ ...mainData, campusSigla: val, edificioSigla: '' });
-                    saveInlineUpdate({ campusSigla: val, edificioSigla: '' });
-                  }}
-                  className="w-full bg-slate-800 text-white text-sm font-extrabold border border-slate-600 rounded p-1 mb-1 outline-none focus:ring-1 focus:ring-indigo-500"
-                >
-                  <option value="">UCT Central</option>
-                  {CAMPUS_UCT.map(c => <option key={c.sigla} value={c.sigla}>{c.sigla}</option>)}
-                </select>
-                <select
-                  value={mainData.edificioSigla}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setMainData({ ...mainData, edificioSigla: val });
-                    saveInlineUpdate({ edificioSigla: val });
-                  }}
-                  disabled={!mainData.campusSigla}
-                  className="w-full bg-slate-800 text-slate-300 text-xs border border-slate-600 rounded p-1 outline-none focus:ring-1 focus:ring-indigo-500"
-                >
-                  <option value="">Edificio (Todos)</option>
-                  {mainData.campusSigla && obtenerEdificiosDeCampus(mainData.campusSigla).map(ed => (
-                    <option key={ed} value={ed}>Edificio {ed}</option>
-                  ))}
-                </select>
+            <div className="bg-slate-700/50 p-2.5 rounded-xl border border-slate-600/80 space-y-1">
+              <p className="text-slate-300 text-[10px] font-extrabold uppercase flex items-center gap-1">
+                <DollarSign className="w-3 h-3 text-emerald-400" />
+                {montoAumentosAprobados > 0 ? 'Contrato vigente' : tieneMontoAdjudicado ? 'Monto adjudicado' : 'Monto estimado'}
+              </p>
+              {tieneMontoAdjudicado ? (
+                <p className="text-emerald-300 text-base font-black truncate">{formatoMonedaCLP(montoVigente)}</p>
+              ) : (
+                <div className="flex items-center gap-1 bg-slate-800 p-1 rounded border border-slate-600">
+                  <span className="text-slate-400 font-bold ml-1 text-xs">$</span>
+                  <input
+                    type="text"
+                    value={formatearEnteroConMiles(mainData.montoEstimado)}
+                    onChange={e => setMainData({...mainData, montoEstimado: desformatearEntero(e.target.value)})}
+                    onBlur={() => saveInlineUpdate({ montoEstimado: mainData.montoEstimado })}
+                    className="bg-transparent text-white font-black w-full text-xs outline-none"
+                  />
+                </div>
+              )}
+              <select
+                value={mainData.uso}
+                onChange={(e) => {
+                  setMainData({...mainData, uso: e.target.value});
+                  saveInlineUpdate({ uso: e.target.value });
+                }}
+                className="w-full bg-slate-800 text-slate-300 text-[10px] border border-slate-600 rounded p-1 outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="">Uso General</option>
+                <option value="Docencia">Docencia</option>
+                <option value="Investigación">Investigación</option>
+                <option value="Administración">Administración</option>
+                <option value="Bienestar Estudiantil">Bienestar Estudiantil</option>
+                <option value="Laboratorio">Laboratorio</option>
+                <option value="Deportivo">Deportivo</option>
+                <option value="Otro">Otro</option>
+              </select>
+            </div>
+
+            <div className="bg-slate-700/50 p-2.5 rounded-xl border border-slate-600/80 space-y-1">
+              <div className="flex items-center gap-1 mb-1">
+                <CalendarDays className="w-3.5 h-3.5 text-indigo-400" />
+                <p className="text-slate-300 text-[10px] font-extrabold uppercase">Calendario y Plazos</p>
               </div>
               
-              <div className="bg-slate-700/60 p-4 rounded-xl border border-slate-600">
-                <p className="text-slate-300 text-xs font-bold uppercase mb-2">Responsable</p>
-                <select
-                  value={mainData.responsableNombre}
-                  onChange={(e) => {
-                    const nombre = e.target.value;
-                    const r = RESPONSABLES_INFRAESTRUCTURA.find(resp => resp.nombre === nombre);
-                    const email = r ? r.email : '';
-                    setMainData({ ...mainData, responsableNombre: nombre, responsableEmail: email });
-                    saveInlineUpdate({ responsableNombre: nombre, responsableEmail: email });
-                  }}
-                  className="w-full bg-slate-800 text-white text-sm font-extrabold border border-slate-600 rounded p-1 mb-1 outline-none focus:ring-1 focus:ring-indigo-500 truncate"
-                >
-                  <option value="">Sin Asignar</option>
-                  {RESPONSABLES_INFRAESTRUCTURA.map(r => <option key={r.codigo} value={r.nombre}>{r.nombre}</option>)}
-                </select>
-                <p className="text-slate-300 text-[11px] font-mono mt-1 truncate">{mainData.responsableEmail}</p>
-              </div>
-
-              <div className="bg-slate-700/60 p-4 rounded-xl border border-slate-600">
-                <p className="text-slate-300 text-xs font-bold uppercase mb-2 flex items-center gap-1">
-                  <DollarSign className="w-3 h-3" />
-                  {montoAumentosAprobados > 0 ? 'Contrato vigente' : tieneMontoAdjudicado ? 'Monto adjudicado' : 'Monto estimado'}
-                </p>
-                {tieneMontoAdjudicado ? (
-                  <p className="text-white text-lg font-black">{formatoMonedaCLP(montoVigente)}</p>
-                ) : (
-                  <div className="flex items-center gap-1 bg-slate-800 p-1 rounded border border-slate-600">
-                    <span className="text-slate-400 font-bold ml-1">$</span>
-                    <input
-                      type="text"
-                      value={formatearEnteroConMiles(mainData.montoEstimado)}
-                      onChange={e => setMainData({...mainData, montoEstimado: desformatearEntero(e.target.value)})}
-                      onBlur={() => saveInlineUpdate({ montoEstimado: mainData.montoEstimado })}
-                      className="bg-transparent text-white font-black w-full outline-none"
-                    />
-                  </div>
-                )}
-                <select
-                  value={mainData.uso}
-                  onChange={(e) => {
-                    setMainData({...mainData, uso: e.target.value});
-                    saveInlineUpdate({ uso: e.target.value });
-                  }}
-                  className="w-full mt-2 bg-slate-800 text-slate-300 text-[11px] border border-slate-600 rounded p-1 outline-none focus:ring-1 focus:ring-indigo-500"
-                >
-                  <option value="">Uso General</option>
-                  <option value="Docencia">Docencia</option>
-                  <option value="Investigación">Investigación</option>
-                  <option value="Administración">Administración</option>
-                  <option value="Bienestar Estudiantil">Bienestar Estudiantil</option>
-                  <option value="Laboratorio">Laboratorio</option>
-                  <option value="Deportivo">Deportivo</option>
-                  <option value="Otro">Otro</option>
-                </select>
-              </div>
-
-              <div className="bg-slate-700/60 p-4 rounded-xl border border-slate-600 col-span-2 sm:col-span-3 lg:col-span-1">
-                <div className="flex items-center gap-2 mb-3">
-                  <CalendarDays className="w-4 h-4 text-indigo-400" />
-                  <p className="text-slate-300 text-xs font-bold uppercase">Calendario y Plazos</p>
+              <div className="space-y-1 text-[11px]">
+                <div className="flex items-center justify-between gap-1 bg-slate-800 px-2 py-0.5 rounded border border-slate-600/50">
+                  <span className="font-extrabold text-slate-400 text-[10px]">INICIO</span>
+                  <input
+                    type="date"
+                    value={mainData.fechaInicioObra || ''}
+                    onChange={e => {
+                      const nuevaFecha = e.target.value;
+                      const nuevosDatos = { ...mainData, fechaInicioObra: nuevaFecha };
+                      if (nuevaFecha && mainData.plazoAdjudicadoDias) {
+                        const date = new Date(nuevaFecha);
+                        date.setDate(date.getDate() + Number(mainData.plazoAdjudicadoDias));
+                        nuevosDatos.fechaTerminoProgramada = date.toISOString().split('T')[0];
+                      }
+                      setMainData(nuevosDatos);
+                      saveInlineUpdate({ 
+                        fechaInicioObra: nuevosDatos.fechaInicioObra,
+                        fechaTerminoProgramada: nuevosDatos.fechaTerminoProgramada 
+                      });
+                    }}
+                    className="bg-transparent font-bold text-white outline-none text-[11px] cursor-pointer text-right w-24"
+                  />
                 </div>
-                
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-2 bg-slate-800 p-2 rounded-lg border border-slate-600/50">
-                    <span className="text-[11px] font-bold text-slate-400 w-12">INICIO</span>
+
+                <div className="flex items-center justify-between gap-1 bg-slate-800 px-2 py-0.5 rounded border border-slate-600/50">
+                  <span className="font-extrabold text-slate-400 text-[10px]">PLAZO</span>
+                  <div className="flex items-center gap-1">
                     <input
-                      type="date"
-                      value={mainData.fechaInicioObra || ''}
+                      type="number"
+                      value={mainData.plazoAdjudicadoDias || ''}
                       onChange={e => {
-                        const nuevaFecha = e.target.value;
-                        const nuevosDatos = { ...mainData, fechaInicioObra: nuevaFecha };
-                        
-                        // Cálculo automático de término
-                        if (nuevaFecha && mainData.plazoAdjudicadoDias) {
-                          const date = new Date(nuevaFecha);
-                          date.setDate(date.getDate() + Number(mainData.plazoAdjudicadoDias));
+                        const nuevoPlazo = parseInt(e.target.value) || 0;
+                        const nuevosDatos = { ...mainData, plazoAdjudicadoDias: nuevoPlazo };
+                        if (mainData.fechaInicioObra && nuevoPlazo > 0) {
+                          const date = new Date(mainData.fechaInicioObra);
+                          date.setDate(date.getDate() + nuevoPlazo);
                           nuevosDatos.fechaTerminoProgramada = date.toISOString().split('T')[0];
                         }
-                        
                         setMainData(nuevosDatos);
-                        saveInlineUpdate({ 
-                          fechaInicioObra: nuevosDatos.fechaInicioObra,
-                          fechaTerminoProgramada: nuevosDatos.fechaTerminoProgramada 
-                        });
                       }}
-                      className="bg-transparent text-sm font-bold text-white outline-none w-full cursor-pointer text-right"
+                      onBlur={() => saveInlineUpdate({ 
+                        plazoAdjudicadoDias: mainData.plazoAdjudicadoDias,
+                        fechaTerminoProgramada: mainData.fechaTerminoProgramada
+                      })}
+                      className="bg-transparent font-extrabold text-indigo-400 outline-none w-10 text-right text-[11px]"
+                      placeholder="0"
+                      min="0"
                     />
+                    <span className="text-[9px] text-slate-400 font-bold">días</span>
                   </div>
+                </div>
 
-                  <div className="flex items-center justify-between gap-2 bg-slate-800 p-2 rounded-lg border border-slate-600/50">
-                    <span className="text-[11px] font-bold text-slate-400 w-12">PLAZO</span>
-                    <div className="flex items-center gap-1">
-                      <input
-                        type="number"
-                        value={mainData.plazoAdjudicadoDias || ''}
-                        onChange={e => {
-                          const nuevoPlazo = parseInt(e.target.value) || 0;
-                          const nuevosDatos = { ...mainData, plazoAdjudicadoDias: nuevoPlazo };
-                          
-                          // Cálculo automático de término
-                          if (mainData.fechaInicioObra && nuevoPlazo > 0) {
-                            const date = new Date(mainData.fechaInicioObra);
-                            date.setDate(date.getDate() + nuevoPlazo);
-                            nuevosDatos.fechaTerminoProgramada = date.toISOString().split('T')[0];
-                          }
-                          
-                          setMainData(nuevosDatos);
-                        }}
-                        onBlur={() => saveInlineUpdate({ 
-                          plazoAdjudicadoDias: mainData.plazoAdjudicadoDias,
-                          fechaTerminoProgramada: mainData.fechaTerminoProgramada
-                        })}
-                        className="bg-transparent text-sm font-bold text-indigo-400 outline-none w-16 text-right"
-                        placeholder="0"
-                        min="0"
-                      />
-                      <span className="text-[10px] text-slate-500 font-bold uppercase">Días</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2 bg-slate-800 p-2 rounded-lg border border-slate-600/50">
-                    <span className="text-[11px] font-bold text-slate-400 w-12">FIN</span>
-                    <input
-                      type="date"
-                      value={mainData.fechaTerminoProgramada || ''}
-                      onChange={e => {
-                        const nuevaFechaFin = e.target.value;
-                        const nuevosDatos = { ...mainData, fechaTerminoProgramada: nuevaFechaFin };
-                        
-                        // Cálculo automático de plazo (viceversa)
-                        if (nuevaFechaFin && mainData.fechaInicioObra) {
-                          const start = new Date(mainData.fechaInicioObra);
-                          const end = new Date(nuevaFechaFin);
-                          const diffTime = Math.abs(end.getTime() - start.getTime());
-                          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                          if (end >= start) {
-                            nuevosDatos.plazoAdjudicadoDias = diffDays;
-                          }
+                <div className="flex items-center justify-between gap-1 bg-slate-800 px-2 py-0.5 rounded border border-slate-600/50">
+                  <span className="font-extrabold text-slate-400 text-[10px]">FIN</span>
+                  <input
+                    type="date"
+                    value={mainData.fechaTerminoProgramada || ''}
+                    onChange={e => {
+                      const nuevaFechaFin = e.target.value;
+                      const nuevosDatos = { ...mainData, fechaTerminoProgramada: nuevaFechaFin };
+                      if (nuevaFechaFin && mainData.fechaInicioObra) {
+                        const start = new Date(mainData.fechaInicioObra);
+                        const end = new Date(nuevaFechaFin);
+                        const diffTime = Math.abs(end.getTime() - start.getTime());
+                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                        if (end >= start) {
+                          nuevosDatos.plazoAdjudicadoDias = diffDays;
                         }
-                        
-                        setMainData(nuevosDatos);
-                        saveInlineUpdate({ 
-                          fechaTerminoProgramada: nuevosDatos.fechaTerminoProgramada,
-                          plazoAdjudicadoDias: nuevosDatos.plazoAdjudicadoDias
-                        });
-                      }}
-                      className="bg-transparent text-sm font-bold text-emerald-400 outline-none w-full cursor-pointer text-right"
-                    />
-                  </div>
+                      }
+                      setMainData(nuevosDatos);
+                      saveInlineUpdate({ 
+                        fechaTerminoProgramada: nuevosDatos.fechaTerminoProgramada,
+                        plazoAdjudicadoDias: nuevosDatos.plazoAdjudicadoDias
+                      });
+                    }}
+                    className="bg-transparent font-bold text-emerald-400 outline-none text-[11px] cursor-pointer text-right w-24"
+                  />
                 </div>
               </div>
             </div>
+          </div>
 
-            {estaAdjudicado && (
-              <div className="bg-emerald-950/70 p-5 rounded-2xl border border-emerald-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-400/15 border border-emerald-400/20 flex items-center justify-center shrink-0">
-                    <Building className="w-5 h-5 text-emerald-300" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-wider text-emerald-300">Proyecto adjudicado a</p>
-                    <p className="text-lg font-black text-white">{proveedorAdjudicadoNombre || 'Proveedor adjudicado pendiente de identificar'}</p>
-                    {proveedorAdjudicadoRut && <p className="text-xs text-emerald-100 mt-0.5">RUT {proveedorAdjudicadoRut}</p>}
-                  </div>
+          {estaAdjudicado && (
+            <div className="bg-emerald-950/70 p-3 rounded-xl border border-emerald-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-400/15 border border-emerald-400/20 flex items-center justify-center shrink-0">
+                  <Building className="w-4 h-4 text-emerald-300" />
                 </div>
-                <div className="grid grid-cols-2 gap-2 text-right shrink-0">
-                  <div className="bg-white/5 rounded-xl px-3 py-2 border border-white/10">
-                    <span className="block text-[9px] uppercase text-emerald-200">Monto oficial</span>
-                    <strong className="text-sm text-white">{formatoMonedaCLP(montoVigente)}</strong>
-                  </div>
-                  <div className="bg-white/5 rounded-xl px-3 py-2 border border-white/10">
-                    <span className="block text-[9px] uppercase text-emerald-200">Plazo adjudicado</span>
-                    <strong className="text-sm text-white">{plazoVigenteDias ? `${plazoVigenteDias} días` : 'Por informar'}</strong>
-                  </div>
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-wider text-emerald-300">Proyecto adjudicado a</p>
+                  <p className="text-sm font-black text-white">{proveedorAdjudicadoNombre || 'Proveedor adjudicado'}</p>
+                  {proveedorAdjudicadoRut && <p className="text-[11px] text-emerald-100 font-mono">RUT {proveedorAdjudicadoRut}</p>}
                 </div>
               </div>
-            )}
+              <div className="flex gap-2 text-right shrink-0">
+                <div className="bg-white/5 rounded-lg px-2.5 py-1 border border-white/10">
+                  <span className="block text-[8px] uppercase text-emerald-200">Monto oficial</span>
+                  <strong className="text-xs text-white">{formatoMonedaCLP(montoVigente)}</strong>
+                </div>
+                <div className="bg-white/5 rounded-lg px-2.5 py-1 border border-white/10">
+                  <span className="block text-[8px] uppercase text-emerald-200">Plazo adjudicado</span>
+                  <strong className="text-xs text-white">{plazoVigenteDias ? `${plazoVigenteDias} días` : 'Por informar'}</strong>
+                </div>
+              </div>
+            </div>
+          )}
 
             {/* Barra de Progreso del Estado del Expediente */}
             <div className="bg-slate-700/50 p-5 rounded-2xl border border-slate-600">
@@ -1006,7 +996,6 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
             </div>
           </div>
         </div>
-      </div>
 
       {/* Grid Principal: Carátula Oficial (Izquierda) + CheckList y Documentos (Derecha) */}
       {licitacionEfectiva && estaAdjudicado && (
