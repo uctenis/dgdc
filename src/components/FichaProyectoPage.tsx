@@ -8,7 +8,7 @@ import type { AumentoObra, Cotizacion, LicitacionProyecto, ProyectoMaestro, Prov
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { normalizarNombreProyecto, corregirOrtografiaEspanol } from '../utils/spellCorrector';
 import { rewriteTextWithAI, isAIConfigured } from '../services/aiService';
-import { updateLicitacion, updateProyectoMaestro } from '../services/firestoreService';
+import { updateLicitacion, updateProyectoMaestro, syncOCToProyectoMaestro } from '../services/firestoreService';
 import { uploadFileToProjectFolder, deleteFileFromDrive } from '../services/driveService';
 import { CAMPUS_UCT, obtenerEdificiosDeCampus } from '../data/campusData';
 import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
@@ -244,6 +244,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
       }
       if ('montoEstimado' in proyecto) {
         await updateLicitacion(id, payload);
+        await syncOCToProyectoMaestro({ ...proyecto, id }, payload);
       } else {
         await updateProyectoMaestro(id, payload);
       }

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Upload, CheckCircle2, X, Sparkles, AlertCircle } from 'lucide-react';
 import type { LicitacionProyecto } from '../types';
 import { parseOrdenDeCompra } from '../utils/ocParser';
-import { updateLicitacion, updateProyectoMaestro } from '../services/firestoreService';
+import { updateLicitacion, syncOCToProyectoMaestro } from '../services/firestoreService';
 
 interface CargaOrdenCompraModalProps {
   licitacion: LicitacionProyecto;
@@ -78,18 +78,8 @@ export const CargaOrdenCompraModal: React.FC<CargaOrdenCompraModalProps> = ({
         console.warn('Licitación no encontrada en colección licitaciones:', errLic);
       }
 
-      // 2. Actualizar Proyecto Maestro en Cartera
-      const proyMaestroId = licitacion.proyectoMaestroId || licitacion.id;
-      try {
-        await updateProyectoMaestro(proyMaestroId, {
-          ordenCompraNumero: numeroOCDetectado.trim(),
-          codigoOC: numeroOCDetectado.trim(),
-          codigoOP: numeroOP.trim(),
-          codigoOT: numeroOT.trim(),
-        });
-      } catch (errProy) {
-        console.warn('Proyecto no encontrado en colección proyectos:', errProy);
-      }
+      // 2. Sincronizar y actualizar Proyecto Maestro en Cartera de Proyectos
+      await syncOCToProyectoMaestro(licitacion, datosOC);
 
       alert(`¡Orden de Compra ${numeroOCDetectado.trim()} asociada y leída correctamente en la ficha del proyecto!`);
       if (onSuccess) onSuccess();

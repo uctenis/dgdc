@@ -17,7 +17,7 @@ import { EstadoPagoDocumentModal } from './EstadoPagoDocumentModal';
 import { parseOrdenDeCompra } from '../utils/ocParser';
 import { uploadFileToProjectFolder } from '../services/driveService';
 import {
-  addEstadoPago, subscribeToAumentosObra, subscribeToEstadosPago, updateLicitacion,
+  addEstadoPago, subscribeToAumentosObra, subscribeToEstadosPago, updateLicitacion, syncOCToProyectoMaestro
 } from '../services/firestoreService';
 import { useAuth } from '../context/AuthContext';
 import { isProjectResponsible } from '../services/internalAccessService';
@@ -219,14 +219,22 @@ function OrdenCompraTab({ licitacion, oferta }: { licitacion: LicitacionProyecto
         }
         archivoActualizado = { archivoOCNombre: file.name, archivoOCURL: uploaded.url, archivoOCDriveId: uploaded.id };
       }
-      await updateLicitacion(licitacion.id, {
-        ordenCompraNumero: numero.trim(), numeroContrato: numeroContrato.trim(),
-        codigoOT: numeroOT.trim(), ordenTrabajoNumero: numeroOT.trim(),
-        codigoOP: numeroOP.trim(), ordenPedidoNumero: numeroOP.trim(),
+      const datosOC = {
+        ordenCompraNumero: numero.trim(),
+        codigoOC: numero.trim(),
+        numeroContrato: numeroContrato.trim(),
+        codigoOT: numeroOT.trim(),
+        ordenTrabajoNumero: numeroOT.trim(),
+        codigoOP: numeroOP.trim(),
+        ordenPedidoNumero: numeroOP.trim(),
         ...archivoActualizado,
-        fechaCargaOC: new Date().toISOString().split('T')[0], estadoLifecycle: 'OC_Emitida',
-      });
-      alert('Orden de compra guardada en la carpeta de la licitación.');
+        fechaCargaOC: new Date().toISOString().split('T')[0],
+        estadoLifecycle: 'OC_Emitida' as LicitacionProyecto['estadoLifecycle'],
+      };
+
+      await updateLicitacion(licitacion.id, datosOC);
+      await syncOCToProyectoMaestro(licitacion, datosOC);
+      alert('Orden de compra guardada y asociada exitosamente a la Ficha y Cartera de Proyectos.');
     } finally { setSaving(false); }
   };
 

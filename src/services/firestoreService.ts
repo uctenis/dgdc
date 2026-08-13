@@ -244,6 +244,69 @@ export async function deleteProyectoMaestro(id: string): Promise<void> {
   await deleteDoc(doc(db, 'proyectos', id));
 }
 
+export async function syncOCToProyectoMaestro(
+  licitacion: Partial<LicitacionProyecto> & { id: string },
+  datosOC: {
+    ordenCompraNumero: string;
+    codigoOC?: string;
+    codigoOP?: string;
+    codigoOT?: string;
+    archivoOCNombre?: string;
+    archivoOCURL?: string;
+    archivoOCDriveId?: string;
+    fechaCargaOC?: string;
+  }
+): Promise<void> {
+  const ocVal = datosOC.ordenCompraNumero || datosOC.codigoOC || '';
+  if (!ocVal) return;
+
+  const updateFields: Record<string, any> = {
+    ordenCompraNumero: ocVal,
+    codigoOC: ocVal,
+    _updatedAt: serverTimestamp(),
+  };
+
+  if (datosOC.codigoOP) updateFields.codigoOP = datosOC.codigoOP;
+  if (datosOC.codigoOT) updateFields.codigoOT = datosOC.codigoOT;
+  if (datosOC.archivoOCNombre) updateFields.archivoOCNombre = datosOC.archivoOCNombre;
+  if (datosOC.archivoOCURL) updateFields.archivoOCURL = datosOC.archivoOCURL;
+  if (datosOC.archivoOCDriveId) updateFields.archivoOCDriveId = datosOC.archivoOCDriveId;
+  if (datosOC.fechaCargaOC) updateFields.fechaCargaOC = datosOC.fechaCargaOC;
+
+  // 1. Si la licitación tiene proyectoMaestroId explícito
+  if (licitacion.proyectoMaestroId) {
+    try {
+      await updateDoc(doc(db, 'proyectos', licitacion.proyectoMaestroId), updateFields);
+    } catch (e) {
+      console.warn('Error actualizando por proyectoMaestroId:', e);
+    }
+  }
+
+  // 2. Buscar por codigoProyecto o por codigoCP en la colección 'proyectos'
+  try {
+    const proyectosRef = collection(db, 'proyectos');
+    let snap: any = null;
+
+    if (licitacion.codigoProyecto) {
+      const q = query(proyectosRef, where('codigoProyecto', '==', licitacion.codigoProyecto));
+      snap = await getDocs(q);
+    }
+
+    if ((!snap || snap.empty) && licitacion.codigoCP) {
+      const q = query(proyectosRef, where('codigoCP', '==', licitacion.codigoCP));
+      snap = await getDocs(q);
+    }
+
+    if (snap && !snap.empty) {
+      for (const docProy of snap.docs) {
+        await updateDoc(docProy.ref, updateFields);
+      }
+    }
+  } catch (err) {
+    console.error('Error al sincronizar OC con Proyecto Maestro:', err);
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // LICITACIONES (migrado a Firestore)
 // ═══════════════════════════════════════════════════════════════════
