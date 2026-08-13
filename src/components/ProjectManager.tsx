@@ -251,7 +251,12 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                       Cód: {lic.codigoProyecto}
                     </span>
 
-                    {/* OT y OP solo si ya se adjudicó el proyecto */}
+                    {/* OC, OT y OP si existen */}
+                    {lic.ordenCompraNumero ? (
+                      <span className="font-extrabold text-purple-900 bg-purple-100 px-2 py-0.5 rounded font-mono border border-purple-200">
+                        {lic.ordenCompraNumero}
+                      </span>
+                    ) : null}
                     {lic.codigoOT ? (
                       <span className="font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded font-mono">
                         OT: {lic.codigoOT}

@@ -42,6 +42,8 @@ export interface ProyectoMaestro {
   codigoOP: string;          // OP-XXX
   codigoOT: string;          // OT-XXXX
   codigoProyecto: string;    // 2X_0XX
+  ordenCompraNumero?: string; // NRO OC (ej: OC-6790 or 6790)
+  codigoOC?: string;
   nombre: string;
   descripcion: string;
   valorAprox: number;

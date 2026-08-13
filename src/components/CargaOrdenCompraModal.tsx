@@ -60,6 +60,7 @@ export const CargaOrdenCompraModal: React.FC<CargaOrdenCompraModalProps> = ({
     try {
       const datosOC = {
         ordenCompraNumero: numeroOCDetectado.trim(),
+        codigoOC: numeroOCDetectado.trim(),
         numeroContrato: numeroContrato.trim(),
         codigoOT: numeroOT.trim(),
         ordenTrabajoNumero: numeroOT.trim(),
@@ -76,6 +77,8 @@ export const CargaOrdenCompraModal: React.FC<CargaOrdenCompraModalProps> = ({
       // 2. Si está vinculada a un proyecto en Cartera, actualizar también el proyecto maestro
       if (licitacion.proyectoMaestroId) {
         await updateProyectoMaestro(licitacion.proyectoMaestroId, {
+          ordenCompraNumero: numeroOCDetectado.trim(),
+          codigoOC: numeroOCDetectado.trim(),
           codigoOP: numeroOP.trim(),
           codigoOT: numeroOT.trim(),
         });

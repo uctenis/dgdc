@@ -8,7 +8,7 @@ import type { AumentoObra, Cotizacion, LicitacionProyecto, ProyectoMaestro, Prov
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { normalizarNombreProyecto, corregirOrtografiaEspanol } from '../utils/spellCorrector';
 import { rewriteTextWithAI, isAIConfigured } from '../services/aiService';
-import { updateLicitacion, updateProyectoMaestro, deleteLicitacion, deleteProyectoMaestro } from '../services/firestoreService';
+import { updateLicitacion, updateProyectoMaestro } from '../services/firestoreService';
 import { uploadFileToProjectFolder, deleteFileFromDrive } from '../services/driveService';
 import { CAMPUS_UCT, obtenerEdificiosDeCampus } from '../data/campusData';
 import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
@@ -81,6 +81,9 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
   const codigoOT = 'codigoOT' in proyecto ? proyecto.codigoOT : '';
   const codigoOP = 'codigoOP' in proyecto ? proyecto.codigoOP : '';
   const codigoProyecto = 'codigoProyecto' in proyecto ? proyecto.codigoProyecto : '';
+  const ordenCompraNumero = 'ordenCompraNumero' in proyecto
+    ? (proyecto.ordenCompraNumero || (proyecto as any).codigoOC || '')
+    : ((proyecto as any).codigoOC || (proyecto as any).ordenCompraNumero || '');
   const nombreProyecto = normalizarNombreProyecto('nombreProyecto' in proyecto ? proyecto.nombreProyecto : (proyecto as ProyectoMaestro).nombre || '');
   const nombreProyectoUpper = nombreProyecto;
   const licitacionProyecto = 'montoEstimado' in proyecto ? proyecto : undefined;
@@ -217,6 +220,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
     codigoCP: codigoCP,
     codigoOT: codigoOT,
     codigoOP: codigoOP,
+    codigoOC: ordenCompraNumero,
     codigoProyecto: codigoProyecto || id,
     campusSigla: campusSigla,
     edificioSigla: edificioSigla,
@@ -231,10 +235,15 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
 
   const saveInlineUpdate = async (updates: Partial<typeof mainData>) => {
     try {
+      const payload: any = { ...updates };
+      if (updates.codigoOC !== undefined) {
+        payload.ordenCompraNumero = updates.codigoOC;
+        payload.codigoOC = updates.codigoOC;
+      }
       if ('montoEstimado' in proyecto) {
-        await updateLicitacion(id, updates);
+        await updateLicitacion(id, payload);
       } else {
-        await updateProyectoMaestro(id, updates);
+        await updateProyectoMaestro(id, payload);
       }
       setHasChanges(true);
     } catch (e) {
@@ -532,6 +541,17 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
                   placeholder="ID Proyecto"
                 />
               </div>
+              <div className="flex items-center gap-1 bg-purple-900/80 text-purple-200 px-3 py-1.5 rounded-full font-mono border border-purple-600 transition">
+                <span className="text-[11px] font-extrabold uppercase">OC:</span>
+                <input 
+                  type="text" 
+                  value={mainData.codigoOC}
+                  onChange={e => setMainData({...mainData, codigoOC: e.target.value})}
+                  onBlur={() => saveInlineUpdate({ codigoOC: mainData.codigoOC })}
+                  className="bg-transparent text-[11px] font-extrabold uppercase outline-none w-28 placeholder-purple-400 text-purple-200 font-extrabold"
+                  placeholder="OC..."
+                />
+              </div>
               <div className="flex items-center gap-1 bg-slate-700 text-slate-100 px-3 py-1.5 rounded-full font-mono border border-slate-600 transition">
                 <span className="text-[11px] font-extrabold uppercase">OT:</span>
                 <input 
@@ -561,7 +581,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
               <textarea
                 value={mainData.nombreProyecto}
                 onChange={e => setMainData({...mainData, nombreProyecto: e.target.value})}
-                onBlur={() => saveInlineUpdate({ nombreProyecto: mainData.nombreProyecto, nombre: mainData.nombreProyecto })}
+                onBlur={() => saveInlineUpdate({ nombreProyecto: mainData.nombreProyecto })}
                 className="w-full bg-transparent text-2xl sm:text-3xl lg:text-4xl font-black text-white print:text-slate-900 leading-tight tracking-tight uppercase resize-none outline-none focus:bg-slate-800/50 rounded-xl p-2 -ml-2 transition border border-transparent focus:border-slate-600"
                 rows={2}
                 placeholder="Nombre del Proyecto Institucional..."
@@ -652,7 +672,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
                       type="text"
                       value={formatearEnteroConMiles(mainData.montoEstimado)}
                       onChange={e => setMainData({...mainData, montoEstimado: desformatearEntero(e.target.value)})}
-                      onBlur={() => saveInlineUpdate({ montoEstimado: mainData.montoEstimado, valorAprox: mainData.montoEstimado })}
+                      onBlur={() => saveInlineUpdate({ montoEstimado: mainData.montoEstimado })}
                       className="bg-transparent text-white font-black w-full outline-none"
                     />
                   </div>
@@ -880,6 +900,10 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
                 <div>
                   <span className="text-[10px] font-bold text-slate-500 block">Código Proyecto:</span>
                   <span className="font-extrabold text-indigo-700 text-xs">{codigoProyecto || id}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-purple-700 block">Orden Compra (OC):</span>
+                  <span className="font-extrabold text-purple-900 text-xs">{mainData.codigoOC || ordenCompraNumero || 'Pendiente'}</span>
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-slate-500 block">Orden Trabajo (OT):</span>

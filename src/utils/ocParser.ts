@@ -66,19 +66,25 @@ function extraerNumeroOC(text: string, fileName: string): string | null {
 
   // 1. Patrones explícitos en el contenido del documento
   const patronesOC = [
-    /(?:Orden\s*de\s*Compra|Orden\s*Compra)\s*(?:N[°ºo]|Nro|Num|N°|#)?\s*[:.]?\s*([A-Z0-9\-_]{4,25})/i,
-    /(?:O\.?C\.?|OC)\s*(?:N[°ºo]|Nro|Num|N°|#)?\s*[:.]?\s*([A-Z0-9\-_]{4,25})/i,
-    /(?:Purchase\s*Order|P\.?O\.?)\s*(?:N[°ºo]|Nro|Num|N°|#)?\s*[:.]?\s*([A-Z0-9\-_]{4,25})/i,
+    /(?:N[°ºo]|Nro|Num|N°|#)?\s*(?:Orden\s*de\s*Compra|Orden\s*Compra|O\.?C\.?|OC)\s*(?:N[°ºo]|Nro|Num|N°|#)?\s*[:.]?\s*([A-Z0-9\-_]{3,25})/i,
+    /(?:Purchase\s*Order|P\.?O\.?)\s*(?:N[°ºo]|Nro|Num|N°|#)?\s*[:.]?\s*([A-Z0-9\-_]{3,25})/i,
     /\b(45\d{8,10})\b/, // Patrón estándar SAP UCT / MercadoPúblico: 4500XXXXXX
-    /\b(OC[-_]\d{4}[-_]\d{3,6})\b/i, // Patrón OC-2026-XXXX
+    /\b(OC[-_]\d{3,10})\b/i, // Patrón OC-2026-XXXX o OC-6790
   ];
 
   for (const regex of patronesOC) {
     const match = cleanText.match(regex);
     if (match && match[1]) {
       const candidato = match[1].trim().toUpperCase();
-      // Descartar palabras comunes o RUTs
-      if (candidato.length >= 3 && !candidato.includes('RUT') && !candidato.includes('FECHA')) {
+      // Descartar palabras comunes, RUTs, fechas o SOL
+      if (
+        candidato.length >= 3 &&
+        !candidato.includes('RUT') &&
+        !candidato.includes('FECHA') &&
+        !candidato.includes('SOL') &&
+        !candidato.includes('COMPRA') &&
+        !candidato.includes('ORDEN')
+      ) {
         return candidato.startsWith('OC') ? candidato : `OC-${candidato}`;
       }
     }

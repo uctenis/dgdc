@@ -7,7 +7,6 @@ import {
   addProyectoMaestro,
   updateProyectoMaestro
 } from '../services/firestoreService';
-import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
 import { corregirOrtografiaEspanol, normalizarNombreProyecto, ATRIBUTOS_ORTOGRAFIA_ES } from '../utils/spellCorrector';
 import { CAMPUS_UCT, obtenerEdificiosDeCampus, obtenerCampusPorSigla } from '../data/campusData';

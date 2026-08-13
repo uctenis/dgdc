@@ -28,6 +28,8 @@ const EMPTY_FORM = {
   codigoCP: '409-1722',
   codigoOP: '',
   codigoOT: '',
+  ordenCompraNumero: '',
+  codigoOC: '',
   codigoProyecto: '2026_099',
   nombre: '',
   descripcion: '',
@@ -58,7 +60,6 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filtroCampus, setFiltroCampus] = useState('Todos');
-  const [filtroResponsable, setFiltroResponsable] = useState('Todos');
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -97,6 +98,8 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
       codigoCP: p.codigoCP || '409-',
       codigoOP: p.codigoOP || '',
       codigoOT: p.codigoOT || '',
+      ordenCompraNumero: p.ordenCompraNumero || p.codigoOC || '',
+      codigoOC: p.codigoOC || p.ordenCompraNumero || '',
       codigoProyecto: p.codigoProyecto || '',
       nombre: p.nombre || '',
       descripcion: p.descripcion || '',
@@ -159,6 +162,8 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
         await updateProyectoMaestro(editingId, {
           codigoCP: form.codigoCP,
           codigoProyecto: form.codigoProyecto,
+          ordenCompraNumero: form.ordenCompraNumero,
+          codigoOC: form.codigoOC,
           nombre: normalizarNombreProyecto(form.nombre),
           descripcion: form.descripcion,
           valorAprox: form.valorAprox,
@@ -177,7 +182,8 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           codigoCP: form.codigoCP,
           codigoOP: '',
           codigoOT: '',
-          codigoProyecto: form.codigoProyecto,
+          ordenCompraNumero: form.ordenCompraNumero,
+          codigoOC: form.codigoOC,
           nombre: normalizarNombreProyecto(form.nombre),
           descripcion: form.descripcion,
           valorAprox: form.valorAprox,
@@ -231,14 +237,15 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
       p.nombre.toLowerCase().includes(q) ||
       p.codigoCP.toLowerCase().includes(q) ||
       p.codigoProyecto.toLowerCase().includes(q) ||
+      (p.ordenCompraNumero && p.ordenCompraNumero.toLowerCase().includes(q)) ||
+      (p.codigoOC && p.codigoOC.toLowerCase().includes(q)) ||
       (p.responsableNombre && p.responsableNombre.toLowerCase().includes(q));
 
     const matchCampus = filtroCampus === 'Todos' || p.campusSigla === filtroCampus;
-    const matchResponsable = filtroResponsable === 'Todos' || p.responsableNombre === filtroResponsable;
     const matchPrioridad = filtroPrioridad === 'Todas' || (p.prioridad || 'Media') === filtroPrioridad;
     const matchEstado = filtroEstado === 'Todos' || p.estado === filtroEstado;
 
-    return matchSearch && matchCampus && matchResponsable && matchPrioridad && matchEstado;
+    return matchSearch && matchCampus && matchPrioridad && matchEstado;
   });
 
   return (
@@ -343,7 +350,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
           <input
             type="text"
-            placeholder="Buscar por nombre, CP, Cód. Proyecto o responsable..."
+            placeholder="Buscar por nombre, CP, OC, Cód. Proyecto o responsable..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
@@ -405,6 +412,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                 <th className="px-3 py-3 text-left font-bold w-12">N°</th>
                 <th className="px-3 py-3 text-center font-bold">Cód. Proyecto</th>
                 <th className="px-3 py-3 text-center font-bold">Centro Costo (CC)</th>
+                <th className="px-3 py-3 text-center font-bold">Orden Compra (OC)</th>
                 <th className="px-3 py-3 text-left font-bold">Proyecto Institucional</th>
                 <th className="px-3 py-3 text-left font-bold">Ubicación UCT</th>
                 <th className="px-3 py-3 text-center font-bold">Prioridad</th>
@@ -447,6 +455,15 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                       <span className="font-bold text-slate-800 bg-amber-50 text-amber-900 border border-amber-200 px-2 py-0.5 rounded w-fit font-mono inline-block">
                         {p.codigoCP || '-'}
                       </span>
+                    </td>
+                    <td className="px-3 py-3 text-center">
+                      {p.ordenCompraNumero || p.codigoOC ? (
+                        <span className="font-bold text-purple-900 bg-purple-100 border border-purple-200 px-2 py-0.5 rounded w-fit font-mono inline-block">
+                          {p.ordenCompraNumero || p.codigoOC}
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">-</span>
+                      )}
                     </td>
                     <td className="px-3 py-3">
                       <p className="font-bold text-slate-800 line-clamp-1">{(p.nombre || '').toUpperCase()}</p>
@@ -628,7 +645,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
               {tabActivaModal === 'datos' && (
                 <form onSubmit={handleSubmit} className="space-y-4">
                   {/* Codificación Oficial */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
                     <div>
                       <label className="block font-semibold text-slate-700 mb-1">Centro de Costo (CC) *</label>
                       <select
@@ -660,6 +677,18 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                         className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-indigo-700"
                       />
                       <span className="text-[10px] text-slate-400 mt-0.5 block">Identificador correlativo 2026</span>
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">N° Orden Compra (OC)</label>
+                      <input
+                        type="text"
+                        placeholder="Ej: OC-6790"
+                        value={form.ordenCompraNumero || form.codigoOC || ''}
+                        onChange={e => setForm(f => ({ ...f, ordenCompraNumero: e.target.value.toUpperCase(), codigoOC: e.target.value.toUpperCase() }))}
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none font-extrabold text-purple-900"
+                      />
+                      <span className="text-[10px] text-purple-700 font-semibold mt-0.5 block">N° OC de la universidad</span>
                     </div>
 
                     <div>
