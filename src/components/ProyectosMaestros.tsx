@@ -207,6 +207,23 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
     await deleteProyectoMaestro(p.id);
   };
 
+  const [filtroPrioridad, setFiltroPrioridad] = useState('Todas');
+  const [filtroEstado, setFiltroEstado] = useState('Todos');
+
+  // Cálculos de Resumen por Prioridad y Financiero
+  const totalAltaVal = proyectos.filter(p => p.prioridad === 'Alta').reduce((sum, p) => sum + (p.valorAprox || 0), 0);
+  const totalAltaCount = proyectos.filter(p => p.prioridad === 'Alta').length;
+
+  const totalMediaVal = proyectos.filter(p => p.prioridad === 'Media' || !p.prioridad).reduce((sum, p) => sum + (p.valorAprox || 0), 0);
+  const totalMediaCount = proyectos.filter(p => p.prioridad === 'Media' || !p.prioridad).length;
+
+  const totalBajaVal = proyectos.filter(p => p.prioridad === 'Baja').reduce((sum, p) => sum + (p.valorAprox || 0), 0);
+  const totalBajaCount = proyectos.filter(p => p.prioridad === 'Baja').length;
+
+  const totalPresupuestoGeneral = proyectos.reduce((sum, p) => sum + (p.valorAprox || 0), 0);
+  const totalAdjudicadoGeneral = proyectos.reduce((sum, p) => sum + (p.montoAdjudicado || 0), 0);
+  const totalGastoEfectivoGeneral = proyectos.reduce((sum, p) => sum + (p.gastoEfectivo || 0), 0);
+
   const filtered = proyectos.filter(p => {
     const q = search.toLowerCase().trim();
     const matchSearch =
@@ -218,36 +235,110 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
 
     const matchCampus = filtroCampus === 'Todos' || p.campusSigla === filtroCampus;
     const matchResponsable = filtroResponsable === 'Todos' || p.responsableNombre === filtroResponsable;
+    const matchPrioridad = filtroPrioridad === 'Todas' || (p.prioridad || 'Media') === filtroPrioridad;
+    const matchEstado = filtroEstado === 'Todos' || p.estado === filtroEstado;
 
-    return matchSearch && matchCampus && matchResponsable;
+    return matchSearch && matchCampus && matchResponsable && matchPrioridad && matchEstado;
   });
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-            <BookOpen className="w-6 h-6 text-indigo-600" />
-            Cartera de Proyectos 2026 (Presupuesto Anual)
-          </h2>
-          <p className="text-xs text-slate-500 mt-1">
-            Gestión oficial de la cartera de iniciativas 2026, centros de costos (CC) y expedientes técnicos de obras.
-          </p>
+      {/* Header & KPI Summary Cards */}
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+          <div>
+            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+              <BookOpen className="w-6 h-6 text-indigo-600" />
+              Cartera de Proyectos 2026 (Presupuesto Anual)
+            </h2>
+            <p className="text-xs text-slate-500 mt-1">
+              Gestión oficial de la cartera de iniciativas 2026, centros de costos (CC), priorización financiera y avance de obras.
+            </p>
+          </div>
+          {!modoSelector && (
+            <button
+              onClick={openAdd}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2.5 rounded-xl shadow-sm transition text-xs shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Nuevo Proyecto Cartera 2026</span>
+            </button>
+          )}
         </div>
-        {!modoSelector && (
-          <button
-            onClick={openAdd}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2.5 rounded-xl shadow-sm transition text-xs"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Nuevo Proyecto Cartera 2026</span>
-          </button>
-        )}
+
+        {/* Tarjetas de Resumen por Prioridad y Totales */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="bg-red-50/70 border border-red-200 rounded-xl p-3.5 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-red-800 uppercase flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-red-600"></span>
+                Prioridad Alta (P1)
+              </span>
+              <span className="text-[10px] font-extrabold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                {totalAltaCount} proj
+              </span>
+            </div>
+            <div className="mt-2">
+              <span className="text-base font-black text-red-900 block">{formatoMonedaCLP(totalAltaVal)}</span>
+              <span className="text-[10px] text-red-600 font-medium">Presupuesto estimado crítico</span>
+            </div>
+          </div>
+
+          <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3.5 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-amber-800 uppercase flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                Prioridad Media (P2)
+              </span>
+              <span className="text-[10px] font-extrabold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                {totalMediaCount} proj
+              </span>
+            </div>
+            <div className="mt-2">
+              <span className="text-base font-black text-amber-900 block">{formatoMonedaCLP(totalMediaVal)}</span>
+              <span className="text-[10px] text-amber-600 font-medium">Presupuesto regular</span>
+            </div>
+          </div>
+
+          <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3.5 flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-emerald-800 uppercase flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                Prioridad Baja (P3)
+              </span>
+              <span className="text-[10px] font-extrabold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                {totalBajaCount} proj
+              </span>
+            </div>
+            <div className="mt-2">
+              <span className="text-base font-black text-emerald-900 block">{formatoMonedaCLP(totalBajaVal)}</span>
+              <span className="text-[10px] text-emerald-600 font-medium">Proyectos complementarios</span>
+            </div>
+          </div>
+
+          <div className="bg-slate-900 text-white rounded-xl p-3.5 flex flex-col justify-between shadow-md">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-slate-300 uppercase flex items-center gap-1.5">
+                <DollarSign className="w-3.5 h-3.5 text-indigo-400" />
+                Total Cartera 2026
+              </span>
+              <span className="text-[10px] font-extrabold bg-indigo-500 text-white px-2 py-0.5 rounded-full">
+                {proyectos.length} Proyectos
+              </span>
+            </div>
+            <div className="mt-2">
+              <span className="text-base font-black text-white block">{formatoMonedaCLP(totalPresupuestoGeneral)}</span>
+              <div className="flex justify-between text-[10px] text-slate-300 mt-0.5">
+                <span>Adj: <strong className="text-emerald-400">{formatoMonedaCLP(totalAdjudicadoGeneral)}</strong></span>
+                <span>Pagado: <strong className="text-sky-300">{formatoMonedaCLP(totalGastoEfectivoGeneral)}</strong></span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Search & Location Filters */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+      {/* Search & Location / Priority Filters */}
+      <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
         <div className="sm:col-span-2 relative">
           <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
           <input
@@ -274,16 +365,26 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
         </div>
         <div>
           <select
-            value={filtroResponsable}
-            onChange={e => setFiltroResponsable(e.target.value)}
-            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm"
+            value={filtroPrioridad}
+            onChange={e => setFiltroPrioridad(e.target.value)}
+            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm font-semibold"
           >
-            <option value="Todos">Todos los Responsables</option>
-            {RESPONSABLES_INFRAESTRUCTURA.map(r => (
-              <option key={r.codigo} value={r.nombre}>
-                {r.nombre}
-              </option>
-            ))}
+            <option value="Todas">Todas las Prioridades</option>
+            <option value="Alta">🔴 Alta (P1)</option>
+            <option value="Media">🟡 Media (P2)</option>
+            <option value="Baja">🟢 Baja (P3)</option>
+          </select>
+        </div>
+        <div>
+          <select
+            value={filtroEstado}
+            onChange={e => setFiltroEstado(e.target.value)}
+            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm font-semibold"
+          >
+            <option value="Todos">Todos los Estados</option>
+            <option value="Pendiente">⏳ Pendiente</option>
+            <option value="En Proceso">🚧 En Proceso / Ejecución</option>
+            <option value="Completado">✅ Completado</option>
           </select>
         </div>
       </div>
@@ -297,9 +398,9 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           <p className="text-slate-500 text-sm">No se encontraron proyectos en la Cartera 2026 con ese criterio de búsqueda.</p>
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <table className="w-full text-xs">
-            <thead className="bg-slate-900 text-white border-b border-slate-800">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-x-auto">
+          <table className="w-full text-xs min-w-[1000px]">
+            <thead className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-10">
               <tr>
                 <th className="px-3 py-3 text-left font-bold w-12">N°</th>
                 <th className="px-3 py-3 text-center font-bold">Cód. Proyecto</th>
@@ -307,17 +408,23 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                 <th className="px-3 py-3 text-left font-bold">Proyecto Institucional</th>
                 <th className="px-3 py-3 text-left font-bold">Ubicación UCT</th>
                 <th className="px-3 py-3 text-center font-bold">Prioridad</th>
-                <th className="px-3 py-3 text-right font-bold">Ppto. Aprox.</th>
+                <th className="px-3 py-3 text-center font-bold">Estado / Avance</th>
+                <th className="px-3 py-3 text-right font-bold">Ppto. Estimado</th>
                 <th className="px-3 py-3 text-right font-bold">Ppto. Adjudicado</th>
+                <th className="px-3 py-3 text-right font-bold">Gasto Efectivo</th>
                 <th className="px-3 py-3 text-center font-bold">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filtered.map(p => {
+                const pctGasto = p.montoAdjudicado && p.montoAdjudicado > 0
+                  ? Math.min(100, Math.round(((p.gastoEfectivo || 0) / p.montoAdjudicado) * 100))
+                  : p.estado === 'Completado' ? 100 : p.estado === 'En Proceso' ? 50 : 0;
+
                 return (
                   <tr
                     key={p.id}
-                    className={`hover:bg-slate-50 transition ${(modoSelector || onOpenFicha) ? 'cursor-pointer' : ''}`}
+                    className={`hover:bg-slate-50/80 transition ${(modoSelector || onOpenFicha) ? 'cursor-pointer' : ''}`}
                     onClick={() => {
                       if (modoSelector) {
                         onSelectProyecto?.(p);
@@ -342,9 +449,14 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                       </span>
                     </td>
                     <td className="px-3 py-3">
-                      <p className="font-semibold text-slate-800 line-clamp-1">{(p.nombre || '').toUpperCase()}</p>
-                      {p.responsableNombre && (
-                        <p className="text-slate-500 text-[10px] line-clamp-1 mt-0.5">Resp: {p.responsableNombre}</p>
+                      <p className="font-bold text-slate-800 line-clamp-1">{(p.nombre || '').toUpperCase()}</p>
+                      {p.responsableNombre ? (
+                        <p className="text-slate-500 text-[10px] line-clamp-1 mt-0.5 flex items-center gap-1">
+                          <User className="w-3 h-3 text-slate-400" />
+                          <span>Resp: {p.responsableNombre}</span>
+                        </p>
+                      ) : (
+                        <p className="text-slate-400 text-[10px] italic">Sin responsable asignado</p>
                       )}
                     </td>
                     <td className="px-3 py-3">
@@ -357,22 +469,60 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                         <span className="text-slate-400 text-[10px]">UCT Central</span>
                       )}
                     </td>
+                    <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
+                      <select
+                        value={p.prioridad || 'Media'}
+                        onChange={async (e) => {
+                          const val = e.target.value as ProyectoMaestro['prioridad'];
+                          await updateProyectoMaestro(p.id, { prioridad: val });
+                        }}
+                        className={`text-[10px] font-bold outline-none cursor-pointer rounded px-2 py-1 border transition ${
+                          p.prioridad === 'Alta' ? 'bg-red-50 text-red-700 border-red-200' :
+                          p.prioridad === 'Baja' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                          'bg-amber-50 text-amber-700 border-amber-200'
+                        }`}
+                      >
+                        <option value="Alta">🔴 Alta (P1)</option>
+                        <option value="Media">🟡 Media (P2)</option>
+                        <option value="Baja">🟢 Baja (P3)</option>
+                      </select>
+                    </td>
                     <td className="px-3 py-3 text-center">
-                       {p.prioridad === 'Alta' ? (
-                          <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded font-bold text-[10px] inline-block">Alta</span>
-                       ) : p.prioridad === 'Media' ? (
-                          <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-bold text-[10px] inline-block">Media</span>
-                       ) : p.prioridad === 'Baja' ? (
-                          <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-bold text-[10px] inline-block">Baja</span>
-                       ) : (
-                          <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded font-bold text-[10px] inline-block">Normal</span>
-                       )}
+                      <div className="flex flex-col items-center gap-1">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                          p.estado === 'Completado' ? 'bg-emerald-100 text-emerald-800' :
+                          p.estado === 'En Proceso' ? 'bg-sky-100 text-sky-800' :
+                          'bg-slate-100 text-slate-600'
+                        }`}>
+                          {p.estado}
+                        </span>
+                        <div className="w-20 bg-slate-100 h-1.5 rounded-full overflow-hidden border border-slate-200">
+                          <div
+                            className={`h-full transition-all ${
+                              pctGasto >= 100 ? 'bg-emerald-500' : pctGasto > 50 ? 'bg-sky-500' : 'bg-amber-500'
+                            }`}
+                            style={{ width: `${pctGasto}%` }}
+                          />
+                        </div>
+                        <span className="text-[9px] font-bold text-slate-400">{pctGasto}% Avance</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-right font-medium text-slate-600">
+                      {formatoMonedaCLP(p.valorAprox)}
                     </td>
                     <td className="px-3 py-3 text-right">
-                      <span className="font-medium text-slate-600">{formatoMonedaCLP(p.valorAprox)}</span>
+                      {p.montoAdjudicado ? (
+                        <span className="font-extrabold text-indigo-700">{formatoMonedaCLP(p.montoAdjudicado)}</span>
+                      ) : (
+                        <span className="text-slate-300">-</span>
+                      )}
                     </td>
                     <td className="px-3 py-3 text-right">
-                      <span className="font-extrabold text-emerald-700">{p.montoAdjudicado ? formatoMonedaCLP(p.montoAdjudicado) : '-'}</span>
+                      {p.gastoEfectivo ? (
+                        <span className="font-extrabold text-emerald-700">{formatoMonedaCLP(p.gastoEfectivo)}</span>
+                      ) : (
+                        <span className="text-slate-300">-</span>
+                      )}
                     </td>
                     <td className="px-3 py-3 text-center">
                       {!modoSelector && (
