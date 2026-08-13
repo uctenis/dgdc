@@ -302,20 +302,18 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
             <thead className="bg-slate-900 text-white border-b border-slate-800">
               <tr>
                 <th className="px-3 py-3 text-left font-bold w-12">N°</th>
-                <th className="px-3 py-3 text-left font-bold">Centro de Costo (CC) / Cód.</th>
-                <th className="px-3 py-3 text-left font-bold">Ubicación UCT</th>
+                <th className="px-3 py-3 text-center font-bold">Cód. Proyecto</th>
+                <th className="px-3 py-3 text-center font-bold">Centro Costo (CC)</th>
                 <th className="px-3 py-3 text-left font-bold">Proyecto Institucional</th>
-                <th className="px-3 py-3 text-center font-bold">Antecedentes</th>
-                <th className="px-3 py-3 text-left font-bold">Responsable</th>
-                <th className="px-3 py-3 text-right font-bold">Presupuesto Aprox.</th>
+                <th className="px-3 py-3 text-left font-bold">Ubicación UCT</th>
+                <th className="px-3 py-3 text-center font-bold">Prioridad</th>
+                <th className="px-3 py-3 text-right font-bold">Ppto. Aprox.</th>
+                <th className="px-3 py-3 text-right font-bold">Ppto. Adjudicado</th>
                 <th className="px-3 py-3 text-center font-bold">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filtered.map(p => {
-                const planosCount = (p.documentosAntecedentes || []).filter(d => d.tipo === 'Plano').length;
-                const docsCount = (p.documentosAntecedentes || []).filter(d => d.tipo !== 'Plano').length;
-
                 return (
                   <tr
                     key={p.id}
@@ -333,56 +331,48 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                         {String(p.correlativo).padStart(3, '0')}
                       </span>
                     </td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="font-bold text-slate-800 bg-amber-50 text-amber-900 border border-amber-200 px-2 py-0.5 rounded w-fit font-mono">
-                          CC: {p.codigoCP}
-                        </span>
-                        <span className="font-semibold text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded w-fit text-[10px]">
-                          Cód: {p.codigoProyecto}
-                        </span>
-                      </div>
+                    <td className="px-3 py-3 text-center">
+                      <span className="font-bold text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded w-fit font-mono inline-block">
+                        {p.codigoProyecto || '-'}
+                      </span>
                     </td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-col gap-1">
-                        {p.campusSigla ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded w-fit">
-                            <MapPin className="w-3 h-3 text-indigo-500" />
-                            {p.campusSigla}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400 text-[10px]">UCT Central</span>
-                        )}
-                        {p.edificioSigla && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded w-fit">
-                            <Building className="w-2.5 h-2.5 text-slate-400" />
-                            Ed. {p.edificioSigla}
-                          </span>
-                        )}
-                      </div>
+                    <td className="px-3 py-3 text-center">
+                      <span className="font-bold text-slate-800 bg-amber-50 text-amber-900 border border-amber-200 px-2 py-0.5 rounded w-fit font-mono inline-block">
+                        {p.codigoCP || '-'}
+                      </span>
                     </td>
                     <td className="px-3 py-3">
                       <p className="font-semibold text-slate-800 line-clamp-1">{(p.nombre || '').toUpperCase()}</p>
-                      <p className="text-slate-500 text-[11px] line-clamp-1 mt-0.5">{p.descripcion}</p>
-                    </td>
-                    <td className="px-3 py-3 text-center">
-                      <div className="flex items-center justify-center gap-1 text-[10px]">
-                        <span className="bg-sky-100 text-sky-800 font-bold px-1.5 py-0.5 rounded">📐 {planosCount} planos</span>
-                        <span className="bg-slate-100 text-slate-700 font-semibold px-1.5 py-0.5 rounded">📄 {docsCount} docs</span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-3">
-                      {p.responsableNombre ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded w-fit">
-                          <User className="w-3 h-3 text-slate-500" />
-                          {p.responsableNombre}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400 text-[10px]">Sin asignar</span>
+                      {p.responsableNombre && (
+                        <p className="text-slate-500 text-[10px] line-clamp-1 mt-0.5">Resp: {p.responsableNombre}</p>
                       )}
                     </td>
+                    <td className="px-3 py-3">
+                      {p.campusSigla ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded w-fit">
+                          <MapPin className="w-3 h-3 text-indigo-500" />
+                          {p.campusSigla} {p.edificioSigla ? `• Ed. ${p.edificioSigla}` : ''}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-[10px]">UCT Central</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3 text-center">
+                       {p.prioridad === 'Alta' ? (
+                          <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded font-bold text-[10px] inline-block">Alta</span>
+                       ) : p.prioridad === 'Media' ? (
+                          <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-bold text-[10px] inline-block">Media</span>
+                       ) : p.prioridad === 'Baja' ? (
+                          <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-bold text-[10px] inline-block">Baja</span>
+                       ) : (
+                          <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded font-bold text-[10px] inline-block">Normal</span>
+                       )}
+                    </td>
                     <td className="px-3 py-3 text-right">
-                      <span className="font-extrabold text-emerald-700">{formatoMonedaCLP(p.valorAprox)}</span>
+                      <span className="font-medium text-slate-600">{formatoMonedaCLP(p.valorAprox)}</span>
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <span className="font-extrabold text-emerald-700">{p.montoAdjudicado ? formatoMonedaCLP(p.montoAdjudicado) : '-'}</span>
                     </td>
                     <td className="px-3 py-3 text-center">
                       {!modoSelector && (
