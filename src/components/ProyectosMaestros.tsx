@@ -60,6 +60,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filtroCampus, setFiltroCampus] = useState('Todos');
+  const [filtroResponsable, setFiltroResponsable] = useState('Todos');
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -242,10 +243,11 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
       (p.responsableNombre && p.responsableNombre.toLowerCase().includes(q));
 
     const matchCampus = filtroCampus === 'Todos' || p.campusSigla === filtroCampus;
+    const matchResponsable = filtroResponsable === 'Todos' || p.responsableNombre === filtroResponsable;
     const matchPrioridad = filtroPrioridad === 'Todas' || (p.prioridad || 'Media') === filtroPrioridad;
     const matchEstado = filtroEstado === 'Todos' || p.estado === filtroEstado;
 
-    return matchSearch && matchCampus && matchPrioridad && matchEstado;
+    return matchSearch && matchCampus && matchResponsable && matchPrioridad && matchEstado;
   });
 
   return (
@@ -344,8 +346,8 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
         </div>
       </div>
 
-      {/* Search & Location / Priority Filters */}
-      <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
+      {/* Search & Location / Priority / Responsable Filters */}
+      <div className="grid grid-cols-1 sm:grid-cols-6 gap-3">
         <div className="sm:col-span-2 relative">
           <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
           <input
@@ -355,6 +357,20 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
             onChange={e => setSearch(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
           />
+        </div>
+        <div>
+          <select
+            value={filtroResponsable}
+            onChange={e => setFiltroResponsable(e.target.value)}
+            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm font-semibold"
+          >
+            <option value="Todos">Todos los Responsables</option>
+            {RESPONSABLES_INFRAESTRUCTURA.map(r => (
+              <option key={r.codigo} value={r.nombre}>
+                👤 {r.nombre}
+              </option>
+            ))}
+          </select>
         </div>
         <div>
           <select
