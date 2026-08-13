@@ -15,6 +15,7 @@ import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
 import { AumentosObraPanel } from './AumentosObraPanel';
 import { BitacoraProyectoPanel } from './BitacoraProyectoPanel';
+import { CargaOrdenCompraModal } from './CargaOrdenCompraModal';
 
 interface DocumentoProyecto {
   id: string;
@@ -214,6 +215,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
   const [isEditingDesc, setIsEditingDesc] = useState(false);
   const [aiProcessing, setAiProcessing] = useState(false);
   const [hasChanges, setHasChanges] = useState(false); // Track cambios
+  const [showOCModal, setShowOCModal] = useState(false);
 
   const [mainData, setMainData] = useState({
     nombreProyecto: nombreProyectoUpper,
@@ -954,6 +956,39 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
                     <span><strong>Programa contractual vigente:</strong> {new Intl.DateTimeFormat('es-CL').format(new Date(`${fechaInicioObra}T12:00:00`))} – {fechaTerminoVigente ? new Intl.DateTimeFormat('es-CL').format(new Date(`${fechaTerminoVigente}T12:00:00`)) : 'Término pendiente'}</span>
                   </div>
                 )}
+                {/* Bloque Destacado de Orden de Compra (OC) */}
+                <div className="p-3.5 bg-purple-50/90 rounded-xl border border-purple-200 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="p-1.5 bg-purple-200 text-purple-900 rounded-lg font-bold text-xs">💳 OC</span>
+                      <div>
+                        <span className="text-[10px] font-bold uppercase text-purple-800 block">Número Orden de Compra:</span>
+                        {mainData.codigoOC || ordenCompraNumero ? (
+                          <strong className="text-purple-950 font-black text-sm block font-mono">
+                            {mainData.codigoOC || ordenCompraNumero}
+                          </strong>
+                        ) : (
+                          <span className="text-purple-600 italic text-xs block">
+                            Sin Orden de Compra cargada
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowOCModal(true)}
+                      className="px-3 py-1.5 bg-purple-700 hover:bg-purple-800 text-white font-bold rounded-lg text-xs transition shadow-sm shrink-0"
+                    >
+                      {mainData.codigoOC || ordenCompraNumero ? 'Reemplazar / Ver OC' : 'Cargar OC (PDF/Excel)'}
+                    </button>
+                  </div>
+                  {('archivoOCNombre' in proyecto && (proyecto as any).archivoOCNombre) ? (
+                    <p className="text-[11px] text-purple-900 font-semibold border-t border-purple-200/60 pt-1.5">
+                      📄 Archivo registrado: <strong>{(proyecto as any).archivoOCNombre}</strong> {(proyecto as any).fechaCargaOC ? `(${ (proyecto as any).fechaCargaOC })` : ''}
+                    </p>
+                  ) : null}
+                </div>
+
                 <div className="flex items-center gap-2">
                   <Building className="w-4 h-4 text-purple-600 shrink-0" />
                   <span><strong>Uso Solicitante:</strong> {uso}</span>
@@ -1250,6 +1285,31 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
         </div>
 
       </div>
+
+      {/* Modal Carga Orden de Compra */}
+      {showOCModal && (
+        <CargaOrdenCompraModal
+          licitacion={licitacionProyecto || {
+            id: proyecto.id,
+            codigoCP: proyecto.codigoCP || '409-1722',
+            codigoOP: mainData.codigoOP || ('codigoOP' in proyecto ? (proyecto as any).codigoOP : ''),
+            codigoOT: mainData.codigoOT || ('codigoOT' in proyecto ? (proyecto as any).codigoOT : ''),
+            codigoProyecto: mainData.codigoProyecto || ('codigoProyecto' in proyecto ? (proyecto as any).codigoProyecto : ''),
+            nombreProyecto: nombreProyecto,
+            descripcion: 'descripcion' in proyecto ? ((proyecto as any).descripcion || '') : '',
+            montoEstimado: montoEstimado,
+            fechaEvaluacion: '',
+            estado: 'Adjudicado',
+            ordenCompraNumero: mainData.codigoOC || ordenCompraNumero,
+            proyectoMaestroId: proyecto.id,
+            archivoOCNombre: 'archivoOCNombre' in proyecto ? (proyecto as any).archivoOCNombre : undefined,
+          }}
+          onClose={() => setShowOCModal(false)}
+          onSuccess={() => {
+            onUpdateSuccess?.();
+          }}
+        />
+      )}
 
     </div>
   );

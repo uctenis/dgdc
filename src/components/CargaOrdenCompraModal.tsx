@@ -71,17 +71,24 @@ export const CargaOrdenCompraModal: React.FC<CargaOrdenCompraModalProps> = ({
         estadoLifecycle: 'OC_Emitida' as LicitacionProyecto['estadoLifecycle'],
       };
 
-      // 1. Actualizar Licitación
-      await updateLicitacion(licitacion.id, datosOC);
+      // 1. Actualizar Licitación (si existe en la colección licitaciones)
+      try {
+        await updateLicitacion(licitacion.id, datosOC);
+      } catch (errLic) {
+        console.warn('Licitación no encontrada en colección licitaciones:', errLic);
+      }
 
-      // 2. Si está vinculada a un proyecto en Cartera, actualizar también el proyecto maestro
-      if (licitacion.proyectoMaestroId) {
-        await updateProyectoMaestro(licitacion.proyectoMaestroId, {
+      // 2. Actualizar Proyecto Maestro en Cartera
+      const proyMaestroId = licitacion.proyectoMaestroId || licitacion.id;
+      try {
+        await updateProyectoMaestro(proyMaestroId, {
           ordenCompraNumero: numeroOCDetectado.trim(),
           codigoOC: numeroOCDetectado.trim(),
           codigoOP: numeroOP.trim(),
           codigoOT: numeroOT.trim(),
         });
+      } catch (errProy) {
+        console.warn('Proyecto no encontrado en colección proyectos:', errProy);
       }
 
       alert(`¡Orden de Compra ${numeroOCDetectado.trim()} asociada y leída correctamente en la ficha del proyecto!`);
