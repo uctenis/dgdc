@@ -50,6 +50,14 @@ export interface ProyectoMaestro {
   estado: 'Pendiente' | 'En Proceso' | 'Completado';
   fechaCreacion: string;
 
+  // Datos de adjudicación y proveedor (sincronizados)
+  proveedorAdjudicadoNombre?: string;
+  proveedorAdjudicadoRut?: string;
+  plazoEjecucionDias?: number;
+  archivoOCNombre?: string;
+  archivoOCURL?: string;
+  fechaCargaOC?: string;
+
   // Datos financieros y de programación (PPTO)
   montoAdjudicado?: number;
   gastoEfectivo?: number;

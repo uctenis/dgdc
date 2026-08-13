@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import {
   ArrowLeft, FileText, CheckCircle2, Upload,
   Trash2, Building, User, DollarSign,
@@ -76,34 +78,114 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
   proveedorAdjudicado,
   cotizacionAdjudicada,
 }) => {
-  // Normalización de datos entre LicitacionProyecto y ProyectoMaestro
+  const [licitacionVinculada, setLicitacionVinculada] = useState<LicitacionProyecto | null>(null);
+  const [proyectoMaestroVinculado, setProyectoMaestroVinculado] = useState<ProyectoMaestro | null>(null);
+
+  // Búsqueda cruzada en Firestore para mantener sincronizados Cartera y Licitaciones
+  useEffect(() => {
+    let isMounted = true;
+    const buscarVinculados = async () => {
+      try {
+        const codigoCPTarget = proyecto.codigoCP;
+        const codigoProyectoTarget = 'codigoProyecto' in proyecto ? proyecto.codigoProyecto : '';
+
+        // Si la ficha recibió un ProyectoMaestro, buscar su LicitacionProyecto asociada en Firestore
+        if (!('montoEstimado' in proyecto)) {
+          const licsRef = collection(db, 'licitaciones');
+          let snap = null;
+          if (codigoProyectoTarget) {
+            const q = query(licsRef, where('codigoProyecto', '==', codigoProyectoTarget));
+            snap = await getDocs(q);
+          }
+          if ((!snap || snap.empty) && codigoCPTarget) {
+            const q = query(licsRef, where('codigoCP', '==', codigoCPTarget));
+            snap = await getDocs(q);
+          }
+          if (snap && !snap.empty && isMounted) {
+            const licData = { id: snap.docs[0].id, ...(snap.docs[0].data() as Omit<LicitacionProyecto, 'id'>) };
+            setLicitacionVinculada(licData);
+          }
+        }
+
+        // Si la ficha recibió una LicitacionProyecto, buscar su ProyectoMaestro asociado en Firestore
+        if ('montoEstimado' in proyecto) {
+          const proysRef = collection(db, 'proyectos');
+          let snap = null;
+          if (codigoProyectoTarget) {
+            const q = query(proysRef, where('codigoProyecto', '==', codigoProyectoTarget));
+            snap = await getDocs(q);
+          }
+          if ((!snap || snap.empty) && codigoCPTarget) {
+            const q = query(proysRef, where('codigoCP', '==', codigoCPTarget));
+            snap = await getDocs(q);
+          }
+          if (snap && !snap.empty && isMounted) {
+            const proyData = { id: snap.docs[0].id, ...(snap.docs[0].data() as Omit<ProyectoMaestro, 'id'>) };
+            setProyectoMaestroVinculado(proyData);
+          }
+        }
+      } catch (err) {
+        console.error('Error buscando vinculados en FichaProyectoPage:', err);
+      }
+    };
+
+    buscarVinculados();
+    return () => { isMounted = false; };
+  }, [proyecto]);
+
+  const licitacionEfectiva = 'montoEstimado' in proyecto ? proyecto : (licitacionVinculada || undefined);
+  const proyectoMaestroEfectivo = 'valorAprox' in proyecto ? proyecto : (proyectoMaestroVinculado || undefined);
+
+  // Normalización de datos unificados entre LicitacionProyecto y ProyectoMaestro
   const id = proyecto.id;
-  const codigoCP = proyecto.codigoCP || '409-1722';
-  const codigoOT = 'codigoOT' in proyecto ? proyecto.codigoOT : '';
-  const codigoOP = 'codigoOP' in proyecto ? proyecto.codigoOP : '';
-  const codigoProyecto = 'codigoProyecto' in proyecto ? proyecto.codigoProyecto : '';
-  const ordenCompraNumero = 'ordenCompraNumero' in proyecto
-    ? (proyecto.ordenCompraNumero || (proyecto as any).codigoOC || '')
-    : ((proyecto as any).codigoOC || (proyecto as any).ordenCompraNumero || '');
-  const nombreProyecto = normalizarNombreProyecto('nombreProyecto' in proyecto ? proyecto.nombreProyecto : (proyecto as ProyectoMaestro).nombre || '');
+  const codigoCP = proyecto.codigoCP || licitacionEfectiva?.codigoCP || proyectoMaestroEfectivo?.codigoCP || '409-1722';
+  const codigoOT = proyectoMaestroEfectivo?.codigoOT || licitacionEfectiva?.codigoOT || ('codigoOT' in proyecto ? proyecto.codigoOT : '');
+  const codigoOP = proyectoMaestroEfectivo?.codigoOP || licitacionEfectiva?.codigoOP || ('codigoOP' in proyecto ? proyecto.codigoOP : '');
+  const codigoProyecto = proyectoMaestroEfectivo?.codigoProyecto || licitacionEfectiva?.codigoProyecto || ('codigoProyecto' in proyecto ? proyecto.codigoProyecto : '');
+
+  const ordenCompraNumero = licitacionEfectiva?.ordenCompraNumero
+    || (licitacionEfectiva as any)?.codigoOC
+    || proyectoMaestroEfectivo?.ordenCompraNumero
+    || proyectoMaestroEfectivo?.codigoOC
+    || ('ordenCompraNumero' in proyecto ? (proyecto.ordenCompraNumero || (proyecto as any).codigoOC) : '')
+    || '';
+
+  const nombreProyecto = normalizarNombreProyecto(
+    licitacionEfectiva?.nombreProyecto
+    || proyectoMaestroEfectivo?.nombre
+    || ('nombreProyecto' in proyecto ? proyecto.nombreProyecto : (proyecto as ProyectoMaestro).nombre || '')
+  );
   const nombreProyectoUpper = nombreProyecto;
-  const licitacionProyecto = 'montoEstimado' in proyecto ? proyecto : undefined;
-  const montoEstimado = licitacionProyecto?.montoEstimado ?? (proyecto as ProyectoMaestro).valorAprox ?? 0;
-  const montoAdjudicado = licitacionProyecto?.montoAdjudicadoTotal;
-  const estaAdjudicado = licitacionProyecto?.estado === 'Adjudicado'
-    || licitacionProyecto?.estado === 'Cerrado'
-    || Boolean(licitacionProyecto?.proveedorAdjudicadoId || licitacionProyecto?.proveedorGanadorId);
-  const proveedorAdjudicadoNombre = licitacionProyecto?.proveedorAdjudicadoNombre
+
+  const montoEstimado = licitacionEfectiva?.montoEstimado ?? proyectoMaestroEfectivo?.valorAprox ?? 0;
+  const montoAdjudicado = licitacionEfectiva?.montoAdjudicadoTotal ?? proyectoMaestroEfectivo?.montoAdjudicado;
+
+  const estaAdjudicado = Boolean(
+    licitacionEfectiva?.estado === 'Adjudicado'
+    || licitacionEfectiva?.estado === 'Cerrado'
+    || licitacionEfectiva?.proveedorAdjudicadoId
+    || licitacionEfectiva?.proveedorGanadorId
+    || (proyectoMaestroEfectivo?.montoAdjudicado && proyectoMaestroEfectivo.montoAdjudicado > 0)
+  );
+
+  const proveedorAdjudicadoNombre = licitacionEfectiva?.proveedorAdjudicadoNombre
+    || (licitacionEfectiva as any)?.proveedorGanadorNombre
     || cotizacionAdjudicada?.proveedorNombre
-    || proveedorAdjudicado?.razonSocial;
-  const proveedorAdjudicadoRut = licitacionProyecto?.proveedorAdjudicadoRut
+    || proveedorAdjudicado?.razonSocial
+    || proyectoMaestroEfectivo?.proveedorAdjudicadoNombre;
+
+  const proveedorAdjudicadoRut = licitacionEfectiva?.proveedorAdjudicadoRut
     || cotizacionAdjudicada?.proveedorRut
-    || proveedorAdjudicado?.rut;
-  const plazoAdjudicadoDias = licitacionProyecto?.plazoAdjudicadoDias
-    || cotizacionAdjudicada?.plazoDias;
+    || proveedorAdjudicado?.rut
+    || proyectoMaestroEfectivo?.proveedorAdjudicadoRut;
+
+  const plazoAdjudicadoDias = licitacionEfectiva?.plazoAdjudicadoDias
+    || cotizacionAdjudicada?.plazoDias
+    || proyectoMaestroEfectivo?.plazoEjecucionDias;
+
   const tieneMontoAdjudicado = Boolean(
     montoAdjudicado && montoAdjudicado > 0 &&
-    (licitacionProyecto?.estado === 'Adjudicado' || Boolean(licitacionProyecto?.proveedorAdjudicadoId)),
+    (estaAdjudicado || Boolean(proveedorAdjudicadoNombre)),
   );
   const montoOficial = tieneMontoAdjudicado ? montoAdjudicado! : montoEstimado;
   const [aumentosObra, setAumentosObra] = useState<AumentoObra[]>([]);
@@ -112,8 +194,8 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
   const diasAumentoAprobados = aumentosAprobados.reduce((total, aumento) => total + aumento.ampliacionPlazoDias, 0);
   const montoVigente = montoOficial + montoAumentosAprobados;
   const plazoVigenteDias = (plazoAdjudicadoDias || 0) + diasAumentoAprobados;
-  const fechaInicioObra = licitacionProyecto?.fechaInicioObra;
-  const fechaTerminoProgramada = licitacionProyecto?.fechaTerminoProgramada;
+  const fechaInicioObra = licitacionEfectiva?.fechaInicioObra;
+  const fechaTerminoProgramada = licitacionEfectiva?.fechaTerminoProgramada;
   const fechaTerminoVigente = fechaInicioObra && plazoVigenteDias > 0
     ? (() => {
       const fecha = new Date(`${fechaInicioObra}T12:00:00`);
@@ -121,11 +203,11 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
       return fecha.toISOString().split('T')[0];
     })()
     : fechaTerminoProgramada;
-  const campusSigla = proyecto.campusSigla || 'CJP';
-  const edificioSigla = proyecto.edificioSigla || '';
-  const responsableNombre = proyecto.responsableNombre || 'David Silva Roco';
-  const responsableEmail = proyecto.responsableEmail || 'dsilva@uct.cl';
-  const uso = proyecto.uso || 'Infraestructura Institucional';
+  const campusSigla = proyecto.campusSigla || licitacionEfectiva?.campusSigla || proyectoMaestroEfectivo?.campusSigla || 'CJP';
+  const edificioSigla = proyecto.edificioSigla || licitacionEfectiva?.edificioSigla || proyectoMaestroEfectivo?.edificioSigla || '';
+  const responsableNombre = proyecto.responsableNombre || licitacionEfectiva?.responsableNombre || proyectoMaestroEfectivo?.responsableNombre || 'David Silva Roco';
+  const responsableEmail = proyecto.responsableEmail || licitacionEfectiva?.responsableEmail || proyectoMaestroEfectivo?.responsableEmail || 'dsilva@uct.cl';
+  const uso = proyecto.uso || licitacionEfectiva?.uso || proyectoMaestroEfectivo?.uso || 'Infraestructura Institucional';
 
   // State para Antecedentes y Documentos cargados
   const [documentos, setDocumentos] = useState<DocumentoProyecto[]>(() => {
@@ -180,18 +262,94 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
         } else if (item.id === 'ch-02') {
           completado = docs.some(d => d.tipo === 'EETT');
         } else if (item.id === 'ch-03') {
-          completado = docs.some(d => d.tipo.includes('Planos'));
+          completado = docs.some(d => d.tipo === 'Planos DWG' || d.tipo === 'Planos PDF');
         } else if (item.id === 'ch-04') {
           completado = docs.some(d => d.tipo === 'Presupuesto');
         } else if (item.id === 'ch-05') {
           completado = docs.some(d => d.tipo === 'Carta Gantt');
+        } else if (item.id === 'ch-06' || item.id === 'ch-07') {
+          completado = docs.some(d => d.tipo === 'Anexo');
+        } else if (item.id === 'ch-08' || item.id === 'ch-09' || item.id === 'ch-10') {
+          completado = Boolean(estaAdjudicado || ordenCompraNumero);
         }
-        // ch-06 a ch-10 se pueden marcar manualmente si lo deseas
 
         return { ...item, completado };
       })
     );
   };
+
+  // Sincronizar dinámicamente la lista de documentos y validar el checklist SGC
+  useEffect(() => {
+    const docsBase: DocumentoProyecto[] = [];
+
+    if ('documentosAntecedentes' in proyecto && proyecto.documentosAntecedentes) {
+      proyecto.documentosAntecedentes.forEach(d => {
+        docsBase.push({
+          id: d.id,
+          nombre: d.nombre,
+          tipo: normalizarTipoDocumento(d.tipo),
+          archivoNombre: d.archivoNombre || `${d.nombre.replace(/\s+/g, '_')}.pdf`,
+          fechaCarga: d.fechaCarga || new Date().toLocaleDateString('es-CL'),
+          cargadoPor: responsableNombre,
+        });
+      });
+    }
+
+    if (proyectoMaestroEfectivo?.documentosAntecedentes) {
+      proyectoMaestroEfectivo.documentosAntecedentes.forEach(d => {
+        if (!docsBase.some(x => x.nombre === d.nombre || x.archivoNombre === d.archivoNombre)) {
+          docsBase.push({
+            id: d.id,
+            nombre: d.nombre,
+            tipo: normalizarTipoDocumento(d.tipo),
+            archivoNombre: d.archivoNombre || `${d.nombre.replace(/\s+/g, '_')}.pdf`,
+            fechaCarga: d.fechaCarga || new Date().toLocaleDateString('es-CL'),
+            cargadoPor: responsableNombre,
+          });
+        }
+      });
+    }
+
+    if (licitacionEfectiva?.antecedentesTecnicos) {
+      licitacionEfectiva.antecedentesTecnicos.forEach(d => {
+        if (!docsBase.some(x => x.nombre === d.nombre || x.archivoNombre === d.archivoNombre)) {
+          docsBase.push({
+            id: d.id,
+            nombre: d.nombre,
+            tipo: normalizarTipoDocumento(d.tipo),
+            archivoNombre: d.archivoNombre || `${d.nombre.replace(/\s+/g, '_')}.pdf`,
+            archivoURL: d.archivoURL,
+            driveFileId: (d as any).driveFileId,
+            driveLink: (d as any).driveLink || d.archivoURL,
+            fechaCarga: d.fechaCarga || new Date().toLocaleDateString('es-CL'),
+            cargadoPor: d.cargadoPor || 'Sistema SGC',
+            estado: (d as any).driveFileId ? 'almacenado' : 'local',
+          });
+        }
+      });
+    }
+
+    const ocNombre = licitacionEfectiva?.archivoOCNombre || (proyecto as any).archivoOCNombre || proyectoMaestroEfectivo?.archivoOCNombre;
+    const ocUrl = licitacionEfectiva?.archivoOCURL || (proyecto as any).archivoOCURL || proyectoMaestroEfectivo?.archivoOCURL;
+    if (ocNombre && !docsBase.some(x => x.archivoNombre === ocNombre)) {
+      docsBase.push({
+        id: 'oc_doc_file',
+        nombre: `Orden de Compra ${ordenCompraNumero || ''}`.trim(),
+        tipo: 'Presupuesto',
+        archivoNombre: ocNombre,
+        archivoURL: ocUrl,
+        driveLink: ocUrl,
+        fechaCarga: licitacionEfectiva?.fechaCargaOC || (proyecto as any).fechaCargaOC || new Date().toLocaleDateString('es-CL'),
+        cargadoPor: 'Subdirección Infraestructura',
+        estado: ocUrl ? 'almacenado' : 'local',
+      });
+    }
+
+    if (docsBase.length > 0) {
+      setDocumentos(docsBase);
+      validateChecklistFromDocuments(docsBase);
+    }
+  }, [proyecto, licitacionVinculada, proyectoMaestroVinculado]);
 
   // Formulario de Nuevo Documento
   const [nuevoNombreDoc, setNuevoNombreDoc] = useState('');
@@ -851,9 +1009,9 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
       </div>
 
       {/* Grid Principal: Carátula Oficial (Izquierda) + CheckList y Documentos (Derecha) */}
-      {licitacionProyecto && estaAdjudicado && (
+      {licitacionEfectiva && estaAdjudicado && (
         <AumentosObraPanel
-          licitacion={licitacionProyecto}
+          licitacion={licitacionEfectiva}
           oferta={cotizacionAdjudicada}
           onChange={setAumentosObra}
         />
@@ -861,7 +1019,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
 
       <BitacoraProyectoPanel
         proyectoId={id}
-        coleccionProyecto={licitacionProyecto ? 'licitaciones' : 'proyectos'}
+        coleccionProyecto={licitacionEfectiva ? 'licitaciones' : 'proyectos'}
         responsableNombre={responsableNombre}
         responsableEmail={responsableEmail}
       />
@@ -1290,7 +1448,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
       {/* Modal Carga Orden de Compra */}
       {showOCModal && (
         <CargaOrdenCompraModal
-          licitacion={licitacionProyecto || {
+          licitacion={licitacionEfectiva || {
             id: proyecto.id,
             codigoCP: proyecto.codigoCP || '409-1722',
             codigoOP: mainData.codigoOP || ('codigoOP' in proyecto ? (proyecto as any).codigoOP : ''),

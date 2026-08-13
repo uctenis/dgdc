@@ -38,7 +38,7 @@ interface Props {
 
 const tabs: { id: TabId; label: string; icon: typeof FileText }[] = [
   { id: 'resumen', label: 'Resumen', icon: ClipboardCheck },
-  { id: 'expediente', label: 'Expediente', icon: FolderOpen },
+  { id: 'expediente', label: 'Ficha', icon: FolderOpen },
   { id: 'ofertas', label: 'Ofertas', icon: Receipt },
   { id: 'evaluacion', label: 'Evaluación', icon: Trophy },
   { id: 'actas', label: 'Actas', icon: FileCheck2 },
