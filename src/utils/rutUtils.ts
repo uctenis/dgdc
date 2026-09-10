@@ -75,6 +75,8 @@ export function formatearRUT(rawInput: string): string {
   return bodyFormatted;
 }
 
+export const formatearRut = formatearRUT;
+
 /**
  * Valida si un RUT ingresado es matemáticamente válido con su DV (Módulo 11).
  */

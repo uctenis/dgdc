@@ -70,6 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             verificado: true,
             puedeFirmarActas: true,
             cargoFirma: access.cargo,
+            firmaImagenURL: storedProfile?.firmaImagenURL,
           };
           setProfile(internalProfile);
           if (!storedProfile || storedProfile.email !== internalProfile.email || storedProfile.role !== internalProfile.role) {

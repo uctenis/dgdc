@@ -13,6 +13,7 @@ import { CAMPUS_UCT, obtenerEdificiosDeCampus, obtenerCampusPorSigla } from '../
 import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
 import { getCentrosCostoList } from '../data/centrosCostoData';
 import type { ProyectoMaestro } from '../types';
+import { PremiumDatePicker } from './PremiumDatePicker';
 
 export const EMPTY_FORM = {
   codigoCP: '409-1722',
@@ -470,20 +471,18 @@ export const ProyectoMaestroFormModal: React.FC<ProyectoMaestroFormModalProps> =
                 </div>
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1 text-[11px]">Fecha Inicio</label>
-                  <input
-                    type="date"
+                  <PremiumDatePicker
                     value={form.fechaInicio}
-                    onChange={e => setForm(f => ({ ...f, fechaInicio: e.target.value }))}
-                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium text-slate-700"
+                    onChange={value => setForm(f => ({ ...f, fechaInicio: value }))}
+                    className="flex items-center gap-2 w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium text-slate-700 text-left"
                   />
                 </div>
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1 text-[11px]">Fecha Término</label>
-                  <input
-                    type="date"
+                  <PremiumDatePicker
                     value={form.fechaTermino}
-                    onChange={e => setForm(f => ({ ...f, fechaTermino: e.target.value }))}
-                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium text-slate-700"
+                    onChange={value => setForm(f => ({ ...f, fechaTermino: value }))}
+                    className="flex items-center gap-2 w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium text-slate-700 text-left"
                   />
                 </div>
               </div>

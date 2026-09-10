@@ -11,7 +11,7 @@ interface DocumentGeneratorProps {
   cotizaciones: Cotizacion[];
   proveedores: Proveedor[];
   configFirmas: ConfiguracionFirmas;
-  onAdjudicarLicitacion: (licitacionId: string, proveedorId: string, justificacion: string) => void | Promise<void>;
+  onAdjudicarLicitacion: (licitacionId: string, proveedorId: string, justificacion: string) => Promise<void>;
 }
 
 export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
@@ -115,10 +115,7 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
           proveedores={proveedores}
           configFirmas={configFirmas}
           onClose={() => setActaAbierta(false)}
-          onAdjudicar={(proveedorId, justificacion) => {
-            void onAdjudicarLicitacion(licitacion.id, proveedorId, justificacion);
-            setActaAbierta(false);
-          }}
+          onAdjudicar={(proveedorId, justificacion) => onAdjudicarLicitacion(licitacion.id, proveedorId, justificacion)}
         />
       )}
     </div>

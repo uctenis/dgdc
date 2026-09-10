@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Upload, CheckCircle2, AlertTriangle,
+  ArrowLeft, Upload, CheckCircle2, AlertTriangle, AlertCircle,
   FileText, Save, Send, Clock, DollarSign, Calendar,
   X, FileSpreadsheet, Loader2
 } from 'lucide-react';
@@ -13,6 +13,7 @@ import {
   updateInvitadoEstado,
   getProveedores,
   updateLicitacion,
+  licitacionCerradaParaOfertas,
 } from '../services/firestoreService';
 import { uploadFileToProjectFolder } from '../services/driveService';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
@@ -51,10 +52,7 @@ export function LicitacionDetalle() {
     ? new Date() > new Date(licitacion.fechaEvaluacion)
     : false;
   const yaEnviada = propuesta.estado === 'Enviada';
-  const procesoCerrado = licitacion?.estado === 'Adjudicado'
-    || licitacion?.estado === 'Cerrado'
-    || Boolean(licitacion?.proveedorAdjudicadoId)
-    || Boolean(licitacion?.proveedorGanadorId);
+  const procesoCerrado = licitacion ? licitacionCerradaParaOfertas(licitacion) : false;
   const canEdit = !vencida && !yaEnviada && licitacion?.estado === 'En Evaluacion';
 
   const [proveedorRut, setProveedorRut] = useState('');
@@ -206,7 +204,9 @@ export function LicitacionDetalle() {
       setSavedMsg(estado === 'Enviada' ? '¡Propuesta enviada exitosamente!' : 'Borrador guardado.');
       setTimeout(() => setSavedMsg(''), 3000);
     } catch (error) {
-      const mensaje = error instanceof Error && error.message.includes('PROCESO_CERRADO')
+      const mensaje = error instanceof Error && error.message.includes('PLAZO_VENCIDO')
+        ? 'El plazo de entrega de propuestas para esta licitación ya venció. No es posible enviar ni modificar su propuesta.'
+        : error instanceof Error && error.message.includes('PROCESO_CERRADO')
         ? 'Proceso cerrado: la licitación fue adjudicada mientras esta página estaba abierta.'
         : 'No fue posible guardar la propuesta. Intente nuevamente.';
       alert(mensaje);
@@ -291,6 +291,29 @@ export function LicitacionDetalle() {
               </span>
             )}
           </div>
+
+          {(licitacion.fechaVisitaTerreno || licitacion.fechaRecepcionConsultas || licitacion.fechaRespuestaConsultas) && (
+            <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/10 text-[10px]">
+              {licitacion.fechaVisitaTerreno && (
+                <div>
+                  <span className="text-slate-500 block">Visita a Terreno</span>
+                  <strong className="text-slate-200">{new Date(`${licitacion.fechaVisitaTerreno}T12:00:00`).toLocaleDateString('es-CL')}</strong>
+                </div>
+              )}
+              {licitacion.fechaRecepcionConsultas && (
+                <div>
+                  <span className="text-slate-500 block">Recepción Consultas</span>
+                  <strong className="text-slate-200">{new Date(`${licitacion.fechaRecepcionConsultas}T12:00:00`).toLocaleDateString('es-CL')}</strong>
+                </div>
+              )}
+              {licitacion.fechaRespuestaConsultas && (
+                <div>
+                  <span className="text-slate-500 block">Respuesta Consultas</span>
+                  <strong className="text-slate-200">{new Date(`${licitacion.fechaRespuestaConsultas}T12:00:00`).toLocaleDateString('es-CL')}</strong>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Status overlay */}
@@ -590,24 +613,36 @@ export function LicitacionDetalle() {
                 Recepción Conforme Solicitada el {licitacion.recepcionConforme.fechaSolicitud}. En revisión por {licitacion.responsableNombre || 'el Responsable UCT'}.
               </div>
             ) : (
-              <button
-                onClick={async () => {
-                  if (!licitacionId) return;
-                  await updateLicitacion(licitacionId, {
-                    recepcionConforme: {
-                      solicitada: true,
-                      fechaSolicitud: new Date().toISOString().split('T')[0],
-                      aprobada: false,
-                    },
-                    estadoLifecycle: 'Recepcion_Solicitada',
-                  });
-                  alert('¡Solicitud de Recepción Conforme enviada con éxito al Responsable del Proyecto!');
-                }}
-                className="w-full py-2.5 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-sm flex items-center justify-center gap-2"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                Solicitar Recepción Conforme al Responsable UCT
-              </button>
+              <div className="space-y-2">
+                {licitacion.recepcionConforme?.objetada && (
+                  <div className="bg-rose-950/60 border border-rose-500/40 p-3 rounded-xl text-rose-300 text-xs">
+                    <span className="font-semibold flex items-center gap-2 mb-1">
+                      <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                      Solicitud objetada el {licitacion.recepcionConforme.fechaObjecion}
+                    </span>
+                    <span>Motivo: "{licitacion.recepcionConforme.observaciones}". Corrija y vuelva a solicitar.</span>
+                  </div>
+                )}
+                <button
+                  onClick={async () => {
+                    if (!licitacionId) return;
+                    await updateLicitacion(licitacionId, {
+                      recepcionConforme: {
+                        solicitada: true,
+                        fechaSolicitud: new Date().toISOString().split('T')[0],
+                        aprobada: false,
+                        objetada: false,
+                      },
+                      estadoLifecycle: 'Recepcion_Solicitada',
+                    });
+                    alert('¡Solicitud de Recepción Conforme enviada con éxito al Responsable del Proyecto!');
+                  }}
+                  className="w-full py-2.5 rounded-xl font-bold text-xs bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-sm flex items-center justify-center gap-2"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  Solicitar Recepción Conforme al Responsable UCT
+                </button>
+              </div>
             )}
           </div>
         )}

@@ -34,6 +34,30 @@ export interface HistorialObra {
   activo?: boolean;
 }
 
+// ─── EVALUACIÓN DE DESEMPEÑO POR PROVEEDOR (post-ejecución) ───────────────
+// Criterios ponderados 1-5. Se registra al cierre de una obra (Recepción
+// Conforme), a diferencia de HistorialObra.puntajeObtenido que califica la
+// OFERTA al momento de licitar, no la ejecución real.
+export interface CriterioDesempeno {
+  id: 'calidad' | 'plazo' | 'seguridad' | 'garantias' | 'comunicacion';
+  etiqueta: string;
+  puntaje: number; // 1 a 5
+  ponderacion: number; // 0 a 1, suma 1 entre todos los criterios
+}
+
+export interface EvaluacionDesempeno {
+  id: string;
+  licitacionId: string;
+  codigoProyecto?: string;
+  nombreProyecto: string;
+  fecha: string;
+  evaluadorEmail: string;
+  evaluadorNombre: string;
+  criterios: CriterioDesempeno[];
+  puntajeFinal: number; // promedio ponderado, 1 a 5
+  observaciones?: string;
+}
+
 // ─── PROYECTO MAESTRO ──────────────────────────────────────────────────────
 export interface ProyectoMaestro {
   id: string;
@@ -71,10 +95,40 @@ export interface ProyectoMaestro {
   edificioSigla?: string;    // ej: CSF10, CRC16, CJP08
   uso?: string;              // ej: DOCENCIA, ESPACIOS COMUNES
   tipoObra?: string;         // ej: REMODELACION, ALHAJAMIENTO
+  rubro?: string;            // Rubro del proveedor asociado (ver rubrosData.ts)
 
   // Responsable de Infraestructura
   responsableNombre?: string; // ej: Arturo Meza, David Silva Roco
   responsableEmail?: string;  // ej: ameza@uct.cl, dsilva@uct.cl
+
+  // Modalidad contractual (para estandarizar Bases Administrativas y Técnicas)
+  modalidadContrato?: 'Suma Alzada' | 'Serie de Precios' | 'Administración Directa';
+
+  // Política de garantías del contrato — depende del monto, se decide por proyecto (no es texto fijo de plantilla)
+  politicaGarantias?: 'Sin Garantías' | 'Retención sobre Estados de Pago' | 'Boletas de Garantía Completas';
+
+  // Bases Administrativas y Técnicas estandarizadas
+  bases?: {
+    version: number;
+    estado: 'Borrador' | 'En Revisión Legal' | 'Aprobada';
+    secciones: { id: string; titulo: string; contenido: string }[];
+    fechaActualizacion: string;
+    actualizadoPor?: string;
+    fechaAprobacion?: string;
+    aprobadoPor?: string;
+  };
+
+  // Contrato de Adjudicación — se genera al adjudicar, con los datos reales del proveedor ganador
+  // (distinto de "bases": bases son las reglas pre-adjudicación, el contrato es el documento bilateral post-adjudicación)
+  contrato?: {
+    version: number;
+    estado: 'Borrador' | 'En Revisión Legal' | 'Firmado';
+    secciones: { id: string; titulo: string; contenido: string }[];
+    fechaActualizacion: string;
+    actualizadoPor?: string;
+    fechaFirma?: string;
+    firmadoPor?: string;
+  };
 
   // Antecedentes y Documentos del Proyecto (Planos y Documentos)
   documentosAntecedentes?: {
@@ -198,6 +252,7 @@ export interface LicitacionProyecto {
   montoAdjudicadoNeto?: number;
   montoAdjudicadoIva?: number;
   montoAdjudicadoTotal?: number;
+  gastoEfectivo?: number; // reflejado también en ProyectoMaestro.gastoEfectivo vía syncGastoEfectivoToProyectoMaestro
   plazoAdjudicadoDias?: number;
   fechaInicioObra?: string;
   fechaTerminoProgramada?: string;
@@ -222,6 +277,7 @@ export interface LicitacionProyecto {
       fecha: string;
       version: number;
       sha256: string;
+      firmaImagenURL?: string; // Copia de la firma manuscrita del firmante al momento de firmar
     }[];
   };
   esUnicoProveedor?: boolean;
@@ -239,9 +295,10 @@ export interface LicitacionProyecto {
   responsableEmail?: string;
 
   // Calendario SGC de la Licitación
-  fechaVisitaTerreno?: string;      // Fecha de visita obligatoria / optativa a terreno
-  fechaRecepcionConsultas?: string; // Fecha límite para recepción de consultas
-  fechaEntregaPropuestas?: string;  // Fecha límite de entrega de ofertas
+  fechaVisitaTerreno?: string;       // Fecha de visita obligatoria / optativa a terreno
+  fechaRecepcionConsultas?: string;  // Fecha límite para recepción de consultas de los oferentes
+  fechaRespuestaConsultas?: string;  // Fecha en que la Universidad publica las respuestas a las consultas
+  fechaEntregaPropuestas?: string;   // Fecha límite de entrega de ofertas — no se aceptan propuestas después de esta fecha
   // Empresas Invitadas
   proveedoresInvitadosIds?: string[];
 
@@ -277,14 +334,50 @@ export interface LicitacionProyecto {
   // Estado del Ciclo de Vida Operativo
   estadoLifecycle?: 'Bases' | 'Invitando' | 'Evaluando' | 'Adjudicado' | 'OT_Emitida' | 'OP_Emitida' | 'OC_Emitida' | 'En_Ejecucion' | 'Recepcion_Solicitada' | 'Finalizado';
 
+  // Indicadores de Gestión y Riesgo
+  nivelRiesgo?: 'Bajo' | 'Medio' | 'Alto' | 'Crítico';
+  motivoRiesgo?: string;        // Descripción breve del factor de riesgo
+  superficieM2?: number;        // Superficie en m² para análisis costo/m²
+
   // Recepción Conforme de Obras
   recepcionConforme?: {
     solicitada: boolean;
     fechaSolicitud?: string;
     aprobada: boolean;
     fechaAprobacion?: string;
+    objetada?: boolean;
+    fechaObjecion?: string;
     observaciones?: string;
     aprobadoPor?: string;
+  };
+
+  // Acta de Recepción — firma digital avanzada (Adobe Acrobat Sign)
+  actaRecepcionAdobe?: {
+    agreementId: string;
+    status: 'DRAFT' | 'AUTHORING' | 'OUT_FOR_SIGNATURE' | 'SIGNED' | 'APPROVED' | 'CANCELLED' | 'EXPIRED' | 'ARCHIVED' | 'UNKNOWN';
+    nombreDocumento: string;
+    fechaEnvio: string;
+    enviadoPor: string;
+    fechaUltimaVerificacion?: string;
+  };
+
+  // Acta de Recepción — firma interna provisoria (hash + identidad Google),
+  // mismo mecanismo que actaFirmaDigital, mientras se habilita Acrobat Sign.
+  actaRecepcionFirmaInterna?: {
+    version: number;
+    estado: 'En firma' | 'Firmada' | 'Cancelada';
+    fechaActualizacion: string;
+    firmas: {
+      uid: string;
+      email: string;
+      nombre: string;
+      cargo: string;
+      rolFirma: 'director' | 'subdirector' | 'responsable' | 'vrae';
+      fecha: string;
+      version: number;
+      sha256: string;
+      firmaImagenURL?: string; // Copia de la firma manuscrita del firmante al momento de firmar
+    }[];
   };
 }
 
@@ -371,6 +464,14 @@ export interface EstadoPago {
   archivoNombre?: string;
   archivoURL?: string;
   archivoDriveId?: string;
+  // Evidencia fotográfica del avance o de la obra terminada (obligatoria al ingresar el estado)
+  fotos?: { url: string; nombre: string }[];
+  // Hasta 5 observaciones puntuales, cada una respaldada con su propia fotografía
+  observacionesDetalle?: { texto: string; fotoURL: string; fotoNombre?: string }[];
+  // Snapshot de datos de la obra al momento del registro de avance
+  tipoObra?: string;
+  superficieM2?: number;
+  usoEspacio?: string;
   estado: 'Borrador' | 'Ingresado' | 'Aprobado' | 'Pagado';
   firmaResponsable?: {
     uid: string;
@@ -379,6 +480,17 @@ export interface EstadoPago {
     cargo: string;
     fecha: string;
     sha256: string;
+  };
+  factura?: {
+    numeroFactura: string;
+    montoFactura: number;
+    glosaOficial: string;
+    archivoNombre?: string;
+    archivoURL?: string;
+    archivoDriveId?: string;
+    fechaCarga: string;
+    verificada: boolean; // true solo si montoFactura coincide con el Estado de Pago aprobado
+    observacionDiferencia?: string; // obligatoria cuando verificada es false
   };
 }
 
@@ -418,6 +530,7 @@ export interface UserProfile {
   verificado: boolean;
   puedeFirmarActas?: boolean;
   cargoFirma?: string;
+  firmaImagenURL?: string; // Imagen de la firma manuscrita (enrolada por el usuario), estampada en las actas al firmar digitalmente
 }
 
 // ─── CONFIGURACIÓN DE FIRMAS Y PARÁMETROS SGC ──────────────────────────────

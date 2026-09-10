@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, FilePlus2, Loader2, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import type { AumentoObra, Cotizacion, ItemAumentoObra, LicitacionProyecto } from '../types';
+import { PremiumDatePicker } from './PremiumDatePicker';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { addAumentoObra, subscribeToAumentosObra, updateAumentoObraEstado } from '../services/firestoreService';
 import { uploadFileToProjectFolder } from '../services/driveService';
@@ -83,6 +84,19 @@ export function AumentosObraPanel({ licitacion, oferta, onChange }: Props) {
     if (!partidasValidas.length || partidasValidas.length !== items.length) {
       return alert('Cada partida debe tener descripción, cantidad y precio unitario mayor que cero.');
     }
+    const ocDuplicada = aumentos.some(a => a.ordenCompraNumero.trim().toUpperCase() === ordenCompraNumero.trim().toUpperCase());
+    if (ocDuplicada) {
+      return alert(`El número de Orden de Compra "${ordenCompraNumero.trim()}" ya está registrado en otro aumento de obra de esta licitación. Verifique el número antes de continuar.`);
+    }
+    const pctSobreContratoOriginal = montoOriginal > 0 ? ((montoAumentos + aumentoTotal) / montoOriginal) * 100 : 0;
+    if (pctSobreContratoOriginal > 30) {
+      const continuar = confirm(
+        `Este aumento deja el total de modificaciones contractuales en ${pctSobreContratoOriginal.toFixed(1)}% del contrato original ` +
+        `(${formatoMonedaCLP(montoOriginal)}), sobre el 30% habitualmente usado como referencia de control interno para modificaciones de obra. ` +
+        `¿Confirma que corresponde continuar de todas formas?`
+      );
+      if (!continuar) return;
+    }
     setGuardando(true);
     try {
       let respaldo: { id: string; url: string } | undefined;
@@ -145,7 +159,7 @@ export function AumentosObraPanel({ licitacion, oferta, onChange }: Props) {
           <div className="grid gap-3 md:grid-cols-2">
             <label className="text-xs font-bold">Nombre de la modificación *<input value={titulo} onChange={e => setTitulo(e.target.value)} placeholder="Ej: Aumento obras eléctricas sector norte" className="mt-1 w-full rounded-lg border p-2.5 font-normal" /></label>
             <label className="text-xs font-bold">Orden de compra asociada *<input value={ordenCompraNumero} onChange={e => setOrdenCompraNumero(e.target.value)} placeholder="OC-4500..." className="mt-1 w-full rounded-lg border p-2.5 font-mono font-normal" /></label>
-            <label className="text-xs font-bold">Fecha de la OC *<input type="date" value={fechaOrdenCompra} onChange={e => setFechaOrdenCompra(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5 font-normal" /></label>
+            <label className="text-xs font-bold">Fecha de la OC *<PremiumDatePicker value={fechaOrdenCompra} onChange={setFechaOrdenCompra} className="mt-1 flex items-center gap-2 w-full rounded-lg border p-2.5 font-normal text-left" /></label>
             <label className="text-xs font-bold">Ampliación de plazo (días corridos)<input type="number" min="0" value={ampliacionPlazoDias} onChange={e => setAmpliacionPlazoDias(Math.max(0, Number(e.target.value)))} className="mt-1 w-full rounded-lg border p-2.5 font-normal" /></label>
           </div>
           <label className="block text-xs font-bold">Fundamento técnico/administrativo *<textarea value={motivo} onChange={e => setMotivo(e.target.value)} rows={3} placeholder="Explique necesidad, alcance, impacto y autorización..." className="mt-1 w-full rounded-lg border p-2.5 font-normal" /></label>

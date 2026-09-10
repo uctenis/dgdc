@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { Upload, CheckCircle2, X, Sparkles, AlertCircle } from 'lucide-react';
-import type { LicitacionProyecto } from '../types';
+import { Upload, CheckCircle2, X, Sparkles, AlertCircle, ExternalLink } from 'lucide-react';
+import type { LicitacionProyecto, ProyectoMaestro } from '../types';
 import { parseOrdenDeCompra } from '../utils/ocParser';
 import { updateLicitacion, syncOCToProyectoMaestro } from '../services/firestoreService';
 
 interface CargaOrdenCompraModalProps {
-  licitacion: LicitacionProyecto;
+  licitacion: LicitacionProyecto | ProyectoMaestro;
   onClose: () => void;
   onSuccess?: () => void;
 }
@@ -17,12 +17,26 @@ export const CargaOrdenCompraModal: React.FC<CargaOrdenCompraModalProps> = ({
 }) => {
   const [file, setFile] = useState<File | null>(null);
   const [parsing, setParsing] = useState(false);
-  const [numeroOCDetectado, setNumeroOCDetectado] = useState<string>(licitacion.ordenCompraNumero || '');
-  const [numeroContrato, setNumeroContrato] = useState<string>(licitacion.numeroContrato || '');
-  const [numeroOT, setNumeroOT] = useState<string>(licitacion.codigoOT || licitacion.ordenTrabajoNumero || '');
-  const [numeroOP, setNumeroOP] = useState<string>(licitacion.codigoOP || licitacion.ordenPedidoNumero || '');
+  const [numeroOCDetectado, setNumeroOCDetectado] = useState<string>(
+    licitacion.ordenCompraNumero || (licitacion as any).codigoOC || ''
+  );
+  const [numeroContrato, setNumeroContrato] = useState<string>(
+    (licitacion as any).numeroContrato || ''
+  );
+  const [numeroOT, setNumeroOT] = useState<string>(
+    licitacion.codigoOT || (licitacion as any).ordenTrabajoNumero || ''
+  );
+  const [numeroOP, setNumeroOP] = useState<string>(
+    licitacion.codigoOP || (licitacion as any).ordenPedidoNumero || ''
+  );
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const nombreProyectoStr = (
+    'nombreProyecto' in licitacion
+      ? licitacion.nombreProyecto
+      : (licitacion as ProyectoMaestro).nombre || ''
+  ).toLocaleUpperCase('es-CL');
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
@@ -79,7 +93,7 @@ export const CargaOrdenCompraModal: React.FC<CargaOrdenCompraModalProps> = ({
       }
 
       // 2. Sincronizar y actualizar Proyecto Maestro en Cartera de Proyectos
-      await syncOCToProyectoMaestro(licitacion, datosOC);
+      await syncOCToProyectoMaestro(licitacion as any, datosOC);
 
       alert(`¡Orden de Compra ${numeroOCDetectado.trim()} asociada y leída correctamente en la ficha del proyecto!`);
       if (onSuccess) onSuccess();
@@ -103,14 +117,30 @@ export const CargaOrdenCompraModal: React.FC<CargaOrdenCompraModalProps> = ({
               Adjudicación Oficial • Ficha del Proyecto
             </span>
             <h3 className="text-base font-bold text-slate-800 mt-1">
-              Cargar Orden de Compra (OC)
+              Orden de Compra (OC)
             </h3>
-            <p className="text-xs text-slate-500">{licitacion.nombreProyecto.toLocaleUpperCase('es-CL')}</p>
+            <p className="text-xs text-slate-500">{nombreProyectoStr}</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700">
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {licitacion.archivoOCURL && (
+          <div className="p-3 bg-purple-100/70 border border-purple-300 rounded-xl flex items-center justify-between">
+            <span className="font-bold text-purple-950 text-xs">
+              📄 Documento: {licitacion.archivoOCNombre || 'Orden_de_Compra.pdf'}
+            </span>
+            <button
+              type="button"
+              onClick={() => window.open(licitacion.archivoOCURL, '_blank')}
+              className="px-3 py-1 bg-purple-700 hover:bg-purple-800 text-white font-bold rounded-lg text-xs transition flex items-center gap-1"
+            >
+              <span>Abrir PDF / Excel</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
         <form onSubmit={handleGuardarOC} className="space-y-4 text-xs">
           

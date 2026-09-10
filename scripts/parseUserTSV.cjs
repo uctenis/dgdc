@@ -191,7 +191,7 @@ lines.forEach((line, index) => {
         nombreContacto: nombreComercial,
         email: email || 'contacto@' + (razonSocial || nombreComercial).toLowerCase().replace(/[^a-z0-9]/g, '') + '.cl',
         telefono: '+56 9 ' + String(90000000 + index * 1234).substring(0, 8),
-        rubro: 'Obras Menores y Remodelaciones',
+        rubro: 'Obras Civiles y Estructuras',
         cuentaSustentabilidad: true,
         direccion: 'Temuco',
         ciudad: 'Temuco',

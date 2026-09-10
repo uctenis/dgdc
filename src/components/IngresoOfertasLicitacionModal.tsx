@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import type { LicitacionProyecto, Cotizacion, Proveedor } from '../types';
 import { formatoMonedaCLP, ordenarCotizacionesPorResultado } from '../services/evaluationEngine';
-import { addCotizacion, deleteCotizacion } from '../services/firestoreService';
+import { addCotizacion, deleteCotizacion, plazoEntregaVencido, licitacionCerradaParaOfertas } from '../services/firestoreService';
 import { parseCotizacionExcel } from '../utils/excelParser';
 import { parseCotizacionPdf } from '../utils/pdfParser';
 import { SupplierSearchInput } from './SupplierSearchInput';
@@ -28,10 +28,12 @@ export const IngresoOfertasLicitacionModal: React.FC<IngresoOfertasLicitacionMod
     licitacion,
   );
   const cotizacionesExistentes = resultadosOrdenados.map(resultado => resultado.cotizacion);
-  const procesoCerrado = licitacion.estado === 'Adjudicado'
-    || licitacion.estado === 'Cerrado'
-    || Boolean(licitacion.proveedorAdjudicadoId)
-    || Boolean(licitacion.proveedorGanadorId);
+  const procesoCerrado = licitacionCerradaParaOfertas(licitacion);
+  const checklist = licitacion.checklistAntecedentes;
+  const antecedentesCompletos = Boolean(
+    checklist?.basesTecnicasOk && checklist?.basesAdministrativasOk && checklist?.planosOk &&
+    checklist?.calendarioDefinidoOk && checklist?.revisadoSecretariaGeneralOk
+  );
 
   const [ofertaActivaIndex, setOfertaActivaIndex] = useState<number>(0);
 
@@ -39,10 +41,14 @@ export const IngresoOfertasLicitacionModal: React.FC<IngresoOfertasLicitacionMod
   const [proveedorId, setProveedorId] = useState<string>('');
   const [montoNeto, setMontoNeto] = useState<number | ''>('');
   const [plazoDias, setPlazoDias] = useState<number | ''>('');
+  const [ajustaRequerimientos, setAjustaRequerimientos] = useState<boolean>(false);
+  const [cuentaExperiencia, setCuentaExperiencia] = useState<boolean>(false);
+  const [cumplePlazoRequerido, setCumplePlazoRequerido] = useState<boolean>(false);
   const [declaraSustentabilidad, setDeclaraSustentabilidad] = useState<boolean>(false);
   const [observaciones, setObservaciones] = useState<string>('');
   const [uploadPct, setUploadPct] = useState<number | null>(null);
   const [parsedFeedback, setParsedFeedback] = useState<string[] | null>(null);
+  const [parseError, setParseError] = useState<string>('');
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
   const iva = typeof montoNeto === 'number' ? Math.round(montoNeto * 0.19) : 0;
@@ -56,6 +62,7 @@ export const IngresoOfertasLicitacionModal: React.FC<IngresoOfertasLicitacionMod
     const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
     const isPdf = file.name.toLowerCase().endsWith('.pdf');
     setUploadPct(10);
+    setParseError('');
 
     try {
       let parsedData: any = null;
@@ -97,6 +104,7 @@ export const IngresoOfertasLicitacionModal: React.FC<IngresoOfertasLicitacionMod
       setParsedFeedback(feedback);
     } catch (err) {
       console.error('Error al leer archivo:', err);
+      setParseError('No se pudo leer el archivo. Ingrese los datos de la oferta manualmente.');
     } finally {
       setTimeout(() => setUploadPct(null), 500);
     }
@@ -106,6 +114,10 @@ export const IngresoOfertasLicitacionModal: React.FC<IngresoOfertasLicitacionMod
     e.preventDefault();
     if (procesoCerrado) {
       alert('Proceso cerrado: no es posible registrar ofertas después de la adjudicación.');
+      return;
+    }
+    if (!antecedentesCompletos) {
+      alert('No se puede registrar una oferta: el checklist de "Bases & Planos" (Antecedentes Técnicos) de esta licitación no está completo.');
       return;
     }
     if (!proveedorId) {
@@ -124,6 +136,16 @@ export const IngresoOfertasLicitacionModal: React.FC<IngresoOfertasLicitacionMod
     const prov = proveedores.find(p => p.id === proveedorId);
     if (!prov) return;
 
+    if (plazoEntregaVencido(licitacion)) {
+      const fechaLimite = licitacion.fechaEntregaPropuestas || licitacion.fechaEvaluacion;
+      const continuar = confirm(
+        `El plazo de entrega de propuestas de esta licitación venció el ${fechaLimite}. ` +
+        `Solo continúe si esta oferta llegó por otro medio antes de esa fecha y recién ahora se está registrando. ` +
+        `¿Confirma registrarla de todas formas?`
+      );
+      if (!continuar) return;
+    }
+
     setIsSaving(true);
     try {
       await addCotizacion({
@@ -135,9 +157,9 @@ export const IngresoOfertasLicitacionModal: React.FC<IngresoOfertasLicitacionMod
         montoIva: iva,
         montoTotal: total,
         plazoDias: Number(plazoDias),
-        ajustaRequerimientos: true,
-        cuentaExperiencia: true,
-        cumplePlazoRequerido: true,
+        ajustaRequerimientos,
+        cuentaExperiencia,
+        cumplePlazoRequerido,
         declaraSustentabilidad,
         observaciones: observaciones || `Oferta ${cotizacionesExistentes.length + 1} ingresada directamente`,
       });
@@ -147,11 +169,16 @@ export const IngresoOfertasLicitacionModal: React.FC<IngresoOfertasLicitacionMod
       setProveedorId('');
       setMontoNeto('');
       setPlazoDias('');
+      setAjustaRequerimientos(false);
+      setCuentaExperiencia(false);
+      setCumplePlazoRequerido(false);
       setDeclaraSustentabilidad(false);
       setObservaciones('');
       setParsedFeedback(null);
     } catch (error) {
-      alert(error instanceof Error && error.message.includes('PROCESO_CERRADO')
+      alert(error instanceof Error && error.message.includes('COTIZACION_DUPLICADA')
+        ? 'Este proveedor ya tiene una oferta registrada en esta licitación. Elimínela primero si desea reemplazarla.'
+        : error instanceof Error && error.message.includes('PROCESO_CERRADO')
         ? 'Proceso cerrado: la licitación fue adjudicada mientras esta ventana estaba abierta.'
         : 'No fue posible registrar la oferta. Intente nuevamente.');
     } finally {
@@ -195,6 +222,13 @@ export const IngresoOfertasLicitacionModal: React.FC<IngresoOfertasLicitacionMod
           <div className="bg-amber-50 border border-amber-300 text-amber-950 rounded-xl px-4 py-3 shrink-0">
             <p className="font-extrabold">Proceso cerrado por adjudicación</p>
             <p className="mt-1 text-[11px]">No se admiten nuevas ofertas ni cambios sobre las ya registradas. Esta vista es únicamente de consulta.</p>
+          </div>
+        )}
+
+        {!procesoCerrado && !antecedentesCompletos && (
+          <div className="bg-amber-50 border border-amber-300 text-amber-950 rounded-xl px-4 py-3 shrink-0">
+            <p className="font-extrabold">Antecedentes Técnicos incompletos</p>
+            <p className="mt-1 text-[11px]">El checklist de "Bases & Planos" de esta licitación no está completo. Complételo antes de registrar ofertas.</p>
           </div>
         )}
 
@@ -291,6 +325,10 @@ export const IngresoOfertasLicitacionModal: React.FC<IngresoOfertasLicitacionMod
                   <div className="text-[10px] text-sky-600 font-semibold">Procesando y extrayendo datos del archivo ({uploadPct}%)...</div>
                 )}
 
+                {parseError && (
+                  <div className="text-[11px] text-red-700 font-semibold">{parseError}</div>
+                )}
+
                 {parsedFeedback && parsedFeedback.length > 0 && (
                   <div className="bg-sky-50 border border-sky-200 p-3 rounded-lg text-[11px] text-sky-900 space-y-1">
                     <span className="font-bold block">✨ Lectura Automática de Oferta:</span>
@@ -382,7 +420,25 @@ export const IngresoOfertasLicitacionModal: React.FC<IngresoOfertasLicitacionMod
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">7. Observaciones de la Oferta</label>
+                <label className="block font-semibold text-slate-700 mb-1.5">7. Verificación Técnica (evaluador debe confirmar cada punto — no se asumen por defecto)</label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <label className="flex items-center gap-2 p-2 bg-white border border-slate-300 rounded-xl cursor-pointer">
+                    <input type="checkbox" checked={ajustaRequerimientos} onChange={e => setAjustaRequerimientos(e.target.checked)} className="w-4 h-4 text-sky-600 rounded" />
+                    <span className="text-[11px] text-slate-700 font-semibold">Se ajusta a requerimientos</span>
+                  </label>
+                  <label className="flex items-center gap-2 p-2 bg-white border border-slate-300 rounded-xl cursor-pointer">
+                    <input type="checkbox" checked={cuentaExperiencia} onChange={e => setCuentaExperiencia(e.target.checked)} className="w-4 h-4 text-sky-600 rounded" />
+                    <span className="text-[11px] text-slate-700 font-semibold">Cuenta con experiencia acreditada</span>
+                  </label>
+                  <label className="flex items-center gap-2 p-2 bg-white border border-slate-300 rounded-xl cursor-pointer">
+                    <input type="checkbox" checked={cumplePlazoRequerido} onChange={e => setCumplePlazoRequerido(e.target.checked)} className="w-4 h-4 text-sky-600 rounded" />
+                    <span className="text-[11px] text-slate-700 font-semibold">Cumple plazo requerido</span>
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">8. Observaciones de la Oferta</label>
                 <textarea
                   rows={2}
                   placeholder="Garantías, validez de la oferta, observaciones adicionales..."
@@ -395,7 +451,8 @@ export const IngresoOfertasLicitacionModal: React.FC<IngresoOfertasLicitacionMod
               <div className="flex justify-end pt-2">
                 <button
                   type="submit"
-                  disabled={isSaving}
+                  disabled={isSaving || !antecedentesCompletos}
+                  title={antecedentesCompletos ? undefined : 'Complete el checklist de Bases & Planos antes de registrar ofertas'}
                   className="px-5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-xl shadow-md transition disabled:opacity-50 flex items-center gap-2"
                 >
                   <Plus className="w-4 h-4" />

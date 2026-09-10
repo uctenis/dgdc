@@ -6,8 +6,9 @@ import { parseCotizacionPdf } from '../utils/pdfParser';
 import { uploadFileToProjectFolder } from '../services/driveService';
 import { uploadLicitacionDocument } from '../services/storageService';
 import { formatoMonedaCLP, ordenarCotizacionesPorResultado } from '../services/evaluationEngine';
-import { subscribeToPropuestas, convertirPropuestaACotizacion } from '../services/firestoreService';
+import { subscribeToPropuestas, convertirPropuestaACotizacion, plazoEntregaVencido } from '../services/firestoreService';
 import { SupplierSearchInput } from './SupplierSearchInput';
+import { PremiumDatePicker } from './PremiumDatePicker';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
 
 const OnlinePropuestasList: React.FC<{
@@ -93,11 +94,11 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
   const [montoTotal, setMontoTotal] = useState<number>(0);
   const [plazoDias, setPlazoDias] = useState<number>(15);
 
-  // Technical & Sustainability criteria
-  const [ajustaRequerimientos, setAjustaRequerimientos] = useState<boolean>(true);
-  const [cuentaExperiencia, setCuentaExperiencia] = useState<boolean>(true);
-  const [cumplePlazoRequerido, setCumplePlazoRequerido] = useState<boolean>(true);
-  const [declaraSustentabilidad, setDeclaraSustentabilidad] = useState<boolean>(true);
+  // Technical & Sustainability criteria — nacen sin marcar: el evaluador debe confirmarlas explícitamente.
+  const [ajustaRequerimientos, setAjustaRequerimientos] = useState<boolean>(false);
+  const [cuentaExperiencia, setCuentaExperiencia] = useState<boolean>(false);
+  const [cumplePlazoRequerido, setCumplePlazoRequerido] = useState<boolean>(false);
+  const [declaraSustentabilidad, setDeclaraSustentabilidad] = useState<boolean>(false);
   const [tipoEvidenciaSustentable, setTipoEvidenciaSustentable] = useState<string>('Carta Compromiso Sustentable');
   const [documentoCotizacionNombre, setDocumentoCotizacionNombre] = useState<string>('');
   const [documentoCotizacionURL, setDocumentoCotizacionURL] = useState<string>('');
@@ -125,6 +126,12 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
     || licitacion.estado === 'Cerrado'
     || Boolean(licitacion.proveedorAdjudicadoId)
     || Boolean(licitacion.proveedorGanadorId);
+
+  const checklistLic = licitacion.checklistAntecedentes;
+  const antecedentesCompletos = Boolean(
+    checklistLic?.basesTecnicasOk && checklistLic?.basesAdministrativasOk && checklistLic?.planosOk &&
+    checklistLic?.calendarioDefinidoOk && checklistLic?.revisadoSecretariaGeneralOk
+  );
 
   // Handle Net Amount changes and auto-calculate IVA and Total
   const handleMontoNetoChange = (val: number) => {
@@ -269,6 +276,10 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
       setMensajeNotificacion({ tipo: 'error', texto: 'Proceso cerrado: las ofertas existentes quedan disponibles únicamente como antecedentes.' });
       return;
     }
+    if (!antecedentesCompletos) {
+      setMensajeNotificacion({ tipo: 'error', texto: 'No se puede registrar una cotización: el checklist de "Bases & Planos" (Antecedentes Técnicos) de esta licitación no está completo.' });
+      return;
+    }
 
     const prov = proveedores.find(p => p.id === selectedProveedorId);
     if (!prov) {
@@ -287,6 +298,15 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
     if (itemizado.length === 0 || itemizado.some(item => !item.descripcion || item.cantidad <= 0 || item.precioUnitario <= 0)) {
       alert('La cotización debe incluir un itemizado completo: item, descripción, unidad, cantidad y precio unitario.');
       return;
+    }
+    if (plazoEntregaVencido(licitacion)) {
+      const fechaLimite = licitacion.fechaEntregaPropuestas || licitacion.fechaEvaluacion;
+      const continuar = confirm(
+        `El plazo de entrega de propuestas de esta licitación venció el ${fechaLimite}. ` +
+        `Solo continúe si esta oferta llegó por otro medio (correo, papel) antes de esa fecha y recién ahora se está registrando. ` +
+        `¿Confirma registrarla de todas formas?`
+      );
+      if (!continuar) return;
     }
 
     setGuardandoCotizacion(true);
@@ -326,7 +346,12 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
       setMensajeNotificacion({ tipo: 'exito', texto: `Cotización de ${prov.razonSocial} registrada correctamente en la licitación.` });
     } catch (error) {
       console.error('Error guardando cotización:', error);
-      setMensajeNotificacion({ tipo: 'error', texto: 'No se pudo guardar la cotización. Revise la conexión y los permisos de Firestore.' });
+      const mensaje = error instanceof Error && error.message.includes('COTIZACION_DUPLICADA')
+        ? 'Este proveedor ya tiene una cotización registrada en esta licitación. Elimínela primero desde el listado si desea reemplazarla.'
+        : error instanceof Error && error.message.includes('PROCESO_CERRADO')
+        ? 'Proceso cerrado: la licitación ya fue adjudicada y no acepta nuevas ofertas.'
+        : 'No se pudo guardar la cotización. Revise la conexión y los permisos de Firestore.';
+      setMensajeNotificacion({ tipo: 'error', texto: mensaje });
     } finally {
       setGuardandoCotizacion(false);
     }
@@ -366,6 +391,16 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
           <div>
             <p className="text-sm font-extrabold">Recepción de ofertas cerrada</p>
             <p className="text-xs mt-1">La licitación fue adjudicada. No se pueden cargar, importar, modificar ni eliminar ofertas; los antecedentes registrados permanecen disponibles en modo de consulta.</p>
+          </div>
+        </div>
+      )}
+
+      {!procesoCerrado && !antecedentesCompletos && (
+        <div className="bg-amber-50 border border-amber-300 text-amber-950 rounded-2xl px-5 py-4 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-extrabold">Antecedentes Técnicos incompletos</p>
+            <p className="text-xs mt-1">El checklist de "Bases & Planos" de esta licitación no está completo. Complételo antes de registrar cotizaciones.</p>
           </div>
         </div>
       )}
@@ -448,7 +483,7 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
           {/* Online Proposals from Provider Portal */}
           <OnlinePropuestasList
             licitacionId={licitacion.id}
-            procesoCerrado={procesoCerrado}
+            procesoCerrado={procesoCerrado || !antecedentesCompletos}
             onImportPropuesta={async p => {
               try {
                 await convertirPropuestaACotizacion(p);
@@ -459,7 +494,9 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
               } catch (error) {
                 setMensajeNotificacion({
                   tipo: 'error',
-                  texto: error instanceof Error && error.message.includes('PROCESO_CERRADO')
+                  texto: error instanceof Error && error.message.includes('COTIZACION_DUPLICADA')
+                    ? 'Este proveedor ya tiene una cotización oficial registrada; elimínela primero si desea reemplazarla por esta propuesta.'
+                    : error instanceof Error && error.message.includes('PROCESO_CERRADO')
                     ? 'Proceso cerrado: la licitación ya fue adjudicada.'
                     : 'No fue posible importar la propuesta.',
                 });
@@ -472,9 +509,14 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
             <h3 className="text-sm font-bold text-slate-800 border-b pb-3 flex items-center gap-2">
               <Plus className="w-4 h-4 text-sky-600" />
               <span>Confirmar y Validar Datos de la Cotización</span>
+              {procesoCerrado && (
+                <span className="ml-auto text-[10px] font-black uppercase bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
+                  Solo consulta
+                </span>
+              )}
             </h3>
 
-            <div className="space-y-4 text-xs">
+            <fieldset disabled={procesoCerrado || !antecedentesCompletos} className="space-y-4 text-xs disabled:opacity-60">
               {/* Select Supplier */}
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Buscar y Seleccionar Proveedor (Oferente por RUT o Nombre) *</label>
@@ -488,7 +530,7 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
 
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Fecha de la cotización *</label>
-                <input type="date" required value={fechaCotizacion || new Date().toISOString().split('T')[0]} onChange={e => setFechaCotizacion(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+                <PremiumDatePicker value={fechaCotizacion || new Date().toISOString().split('T')[0]} onChange={setFechaCotizacion} className="flex items-center gap-2 w-full px-3 py-2 border border-slate-300 rounded-lg text-left" />
               </div>
 
               {/* Amounts Grid */}
@@ -645,16 +687,16 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg"
                 />
               </div>
+            </fieldset>
 
-              <button
-                type="submit"
-                disabled={procesoCerrado || guardandoCotizacion || procesandoArchivo}
-                className="w-full py-3 bg-sky-600 hover:bg-sky-700 disabled:bg-slate-400 text-white rounded-xl font-bold shadow-md transition text-xs flex items-center justify-center gap-2"
-              >
-                {guardandoCotizacion && <Loader2 className="w-4 h-4 animate-spin" />}
-                {procesoCerrado ? 'Proceso de ofertas cerrado' : guardandoCotizacion ? 'Guardando cotización...' : 'Guardar y Registrar Cotización en el Proyecto'}
-              </button>
-            </div>
+            <button
+              type="submit"
+              disabled={procesoCerrado || !antecedentesCompletos || guardandoCotizacion || procesandoArchivo}
+              className="w-full py-3 bg-sky-600 hover:bg-sky-700 disabled:bg-slate-400 text-white rounded-xl font-bold shadow-md transition text-xs flex items-center justify-center gap-2"
+            >
+              {guardandoCotizacion && <Loader2 className="w-4 h-4 animate-spin" />}
+              {procesoCerrado ? 'Proceso de ofertas cerrado' : guardandoCotizacion ? 'Guardando cotización...' : 'Guardar y Registrar Cotización en el Proyecto'}
+            </button>
           </form>
         </div>
 
@@ -689,14 +731,29 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
                         <h4 className="text-xs font-bold text-slate-800">{cot.proveedorNombre}</h4>
                         <span className="text-[10px] text-slate-500">RUT: {cot.proveedorRut}</span>
                       </div>
-                      <button
-                        onClick={() => onDeleteCotizacion(cot.id)}
-                        disabled={procesoCerrado}
-                        className="p-1 text-slate-400 hover:text-red-600 disabled:text-slate-300 disabled:cursor-not-allowed rounded transition"
-                        title={procesoCerrado ? 'Las ofertas quedan bloqueadas después de adjudicar' : 'Eliminar cotización'}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {cot.documentoCotizacionURL ? (
+                          <button
+                            onClick={() => window.open(cot.documentoCotizacionURL, '_blank')}
+                            className="p-1 text-sky-600 hover:text-sky-800 hover:bg-sky-50 rounded transition"
+                            title={`Ver oferta adjunta${cot.documentoCotizacionNombre ? `: ${cot.documentoCotizacionNombre}` : ''}`}
+                          >
+                            <FileText className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          <span className="p-1 text-slate-300" title="Sin archivo de oferta adjunto">
+                            <FileText className="w-4 h-4" />
+                          </span>
+                        )}
+                        <button
+                          onClick={() => onDeleteCotizacion(cot.id)}
+                          disabled={procesoCerrado}
+                          className="p-1 text-slate-400 hover:text-red-600 disabled:text-slate-300 disabled:cursor-not-allowed rounded transition"
+                          title={procesoCerrado ? 'Las ofertas quedan bloqueadas después de adjudicar' : 'Eliminar cotización'}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-slate-200/60">

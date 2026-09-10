@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import {
   ArrowLeft, FileText, CheckCircle2, Upload,
@@ -10,14 +10,15 @@ import type { AumentoObra, Cotizacion, LicitacionProyecto, ProyectoMaestro, Prov
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { normalizarNombreProyecto, corregirOrtografiaEspanol } from '../utils/spellCorrector';
 import { rewriteTextWithAI, isAIConfigured } from '../services/aiService';
-import { updateLicitacion, updateProyectoMaestro, syncOCToProyectoMaestro } from '../services/firestoreService';
-import { uploadFileToProjectFolder, deleteFileFromDrive } from '../services/driveService';
+import { updateLicitacion, updateProyectoMaestro, deleteLicitacion, deleteProyectoMaestro, syncOCToProyectoMaestro } from '../services/firestoreService';
+import { uploadProyectoDocumento } from '../services/storageService';
 import { CAMPUS_UCT, obtenerEdificiosDeCampus } from '../data/campusData';
 import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
 import { AumentosObraPanel } from './AumentosObraPanel';
 import { BitacoraProyectoPanel } from './BitacoraProyectoPanel';
 import { CargaOrdenCompraModal } from './CargaOrdenCompraModal';
+import { PremiumDatePicker } from './PremiumDatePicker';
 
 interface DocumentoProyecto {
   id: string;
@@ -86,42 +87,41 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
     let isMounted = true;
     const buscarVinculados = async () => {
       try {
-        const codigoCPTarget = proyecto.codigoCP;
         const codigoProyectoTarget = 'codigoProyecto' in proyecto ? proyecto.codigoProyecto : '';
 
-        // Si la ficha recibió un ProyectoMaestro, buscar su LicitacionProyecto asociada en Firestore
+        // Si la ficha recibió un ProyectoMaestro, buscar su LicitacionProyecto asociada.
+        // Se usa proyectoMaestroId (vínculo explícito) primero, y codigoProyecto como respaldo.
+        // NO se usa codigoCP como respaldo: no es único (muchos proyectos comparten el valor
+        // por defecto "409-1722"), lo que enlazaba proyectos nuevos con licitaciones ajenas.
         if (!('montoEstimado' in proyecto)) {
           const licsRef = collection(db, 'licitaciones');
-          let snap = null;
-          if (codigoProyectoTarget) {
-            const q = query(licsRef, where('codigoProyecto', '==', codigoProyectoTarget));
-            snap = await getDocs(q);
+          let snap = await getDocs(query(licsRef, where('proyectoMaestroId', '==', proyecto.id)));
+          if (snap.empty && codigoProyectoTarget) {
+            snap = await getDocs(query(licsRef, where('codigoProyecto', '==', codigoProyectoTarget)));
           }
-          if ((!snap || snap.empty) && codigoCPTarget) {
-            const q = query(licsRef, where('codigoCP', '==', codigoCPTarget));
-            snap = await getDocs(q);
-          }
-          if (snap && !snap.empty && isMounted) {
+          if (!snap.empty && isMounted) {
             const licData = { id: snap.docs[0].id, ...(snap.docs[0].data() as Omit<LicitacionProyecto, 'id'>) };
             setLicitacionVinculada(licData);
           }
         }
 
-        // Si la ficha recibió una LicitacionProyecto, buscar su ProyectoMaestro asociado en Firestore
+        // Si la ficha recibió una LicitacionProyecto, buscar su ProyectoMaestro asociado.
+        // Mismo criterio: proyectoMaestroId (vínculo directo por id de documento) primero,
+        // codigoProyecto como respaldo, sin fallback por codigoCP.
         if ('montoEstimado' in proyecto) {
-          const proysRef = collection(db, 'proyectos');
-          let snap = null;
+          if (proyecto.proyectoMaestroId) {
+            const directSnap = await getDoc(doc(db, 'proyectos', proyecto.proyectoMaestroId));
+            if (directSnap.exists() && isMounted) {
+              setProyectoMaestroVinculado({ id: directSnap.id, ...(directSnap.data() as Omit<ProyectoMaestro, 'id'>) });
+              return;
+            }
+          }
           if (codigoProyectoTarget) {
-            const q = query(proysRef, where('codigoProyecto', '==', codigoProyectoTarget));
-            snap = await getDocs(q);
-          }
-          if ((!snap || snap.empty) && codigoCPTarget) {
-            const q = query(proysRef, where('codigoCP', '==', codigoCPTarget));
-            snap = await getDocs(q);
-          }
-          if (snap && !snap.empty && isMounted) {
-            const proyData = { id: snap.docs[0].id, ...(snap.docs[0].data() as Omit<ProyectoMaestro, 'id'>) };
-            setProyectoMaestroVinculado(proyData);
+            const snap = await getDocs(query(collection(db, 'proyectos'), where('codigoProyecto', '==', codigoProyectoTarget)));
+            if (!snap.empty && isMounted) {
+              const proyData = { id: snap.docs[0].id, ...(snap.docs[0].data() as Omit<ProyectoMaestro, 'id'>) };
+              setProyectoMaestroVinculado(proyData);
+            }
           }
         }
       } catch (err) {
@@ -458,34 +458,27 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
       return;
     }
 
-    // Subir archivo a Google Drive
+    // Subir archivo a Firebase Storage (almacenamiento propio de la app)
     setIsUploading(true);
-    setUploadProgress(10);
+    setUploadProgress(5);
 
     try {
-      setUploadProgress(30);
-      
-      // Subir archivo a Google Drive
-      const uploadResult = await uploadFileToProjectFolder(
-        archivoSeleccionado,
+      const archivoURL = await uploadProyectoDocumento(
         codigoProyecto || id,
-        nombreProyecto
+        archivoSeleccionado,
+        pct => setUploadProgress(pct)
       );
-
-      setUploadProgress(80);
 
       // Crear registro del documento
       const doc: DocumentoProyecto = {
-        id: uploadResult.id,
+        id: `doc-${Date.now()}`,
         nombre: nuevoNombreDoc.trim(),
         tipo: nuevoTipoDoc,
         archivoNombre: archivoSeleccionado.name,
-        driveFileId: uploadResult.id,
-        driveLink: uploadResult.url,
-        archivoURL: uploadResult.url,
+        archivoURL,
         fechaCarga: new Date().toLocaleDateString('es-CL'),
         cargadoPor: responsableNombre,
-        estado: uploadResult.storage === 'drive' ? 'almacenado' : 'local',
+        estado: 'almacenado',
       };
 
       const newDocs = [...documentos, doc];
@@ -502,10 +495,6 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
         setUploadProgress(0);
         if (fileInputRef.current) fileInputRef.current.value = '';
       }, 500);
-
-      alert(uploadResult.storage === 'drive'
-        ? `Archivo "${archivoSeleccionado.name}" cargado exitosamente a Google Drive.`
-        : `El archivo fue leído, pero no se almacenó en Drive. Configure o autorice Google Drive e intente nuevamente.`);
     } catch (error) {
       console.error('Error cargando archivo:', error);
       alert(`Error al cargar el archivo: ${error instanceof Error ? error.message : 'Error desconocido'}`);
@@ -519,16 +508,6 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
     if (!doc) return;
 
     if (confirm('¿Confirma eliminar este documento del expediente del proyecto?')) {
-      // Si está almacenado en Drive, eliminarlo primero
-      if (doc.estado === 'almacenado' && doc.driveFileId) {
-        try {
-          await deleteFileFromDrive(doc.driveFileId);
-        } catch (error) {
-          console.error('Error eliminando archivo de Drive:', error);
-          // Continuar de todos modos
-        }
-      }
-
       const newDocs = documentos.filter(d => d.id !== docId);
       setDocumentos(newDocs);
       validateChecklistFromDocuments(newDocs);
@@ -639,6 +618,32 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
     validateChecklistFromDocuments(documentos);
   }, [documentos]);
 
+  const handleDeleteProyectoFromFicha = async () => {
+    const nombreProy = nombreProyecto || 'este proyecto';
+    if (!confirm(`¿Confirma que desea eliminar el proyecto "${nombreProy}" de forma definitiva del sistema?`)) {
+      return;
+    }
+
+    try {
+      if ('montoEstimado' in proyecto) {
+        await deleteLicitacion(proyecto.id);
+        if (proyectoMaestroVinculado) {
+          await deleteProyectoMaestro(proyectoMaestroVinculado.id);
+        }
+      } else {
+        await deleteProyectoMaestro(proyecto.id);
+        if (licitacionVinculada) {
+          await deleteLicitacion(licitacionVinculada.id);
+        }
+      }
+      alert('✓ Proyecto eliminado correctamente.');
+      onBack();
+    } catch (err) {
+      console.error('Error al eliminar proyecto desde ficha:', err);
+      alert(err instanceof Error ? err.message : 'No se pudo eliminar el proyecto.');
+    }
+  };
+
   return (
     <div className="space-y-6 text-slate-800">
       
@@ -671,6 +676,14 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
         >
           <FolderCheck className="w-4 h-4" />
           <span>{isSaving ? 'Guardando...' : hasChanges ? 'Guardar Cambios' : 'Guardar Expediente'}</span>
+        </button>
+        <button
+          onClick={handleDeleteProyectoFromFicha}
+          className="px-4 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-xl text-sm transition flex items-center gap-2 border border-rose-200 shadow-sm"
+          title="Eliminar este proyecto de la Cartera"
+        >
+          <Trash2 className="w-4 h-4 text-rose-600" />
+          <span>Eliminar Proyecto</span>
         </button>
       </div>
 
@@ -865,11 +878,10 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
               <div className="space-y-1 text-[11px]">
                 <div className="flex items-center justify-between gap-1 bg-slate-800 px-2 py-0.5 rounded border border-slate-600/50">
                   <span className="font-extrabold text-slate-400 text-[10px]">INICIO</span>
-                  <input
-                    type="date"
+                  <PremiumDatePicker
+                    icon={false}
                     value={mainData.fechaInicioObra || ''}
-                    onChange={e => {
-                      const nuevaFecha = e.target.value;
+                    onChange={nuevaFecha => {
                       const nuevosDatos = { ...mainData, fechaInicioObra: nuevaFecha };
                       if (nuevaFecha && mainData.plazoAdjudicadoDias) {
                         const date = new Date(nuevaFecha);
@@ -877,12 +889,12 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
                         nuevosDatos.fechaTerminoProgramada = date.toISOString().split('T')[0];
                       }
                       setMainData(nuevosDatos);
-                      saveInlineUpdate({ 
+                      saveInlineUpdate({
                         fechaInicioObra: nuevosDatos.fechaInicioObra,
-                        fechaTerminoProgramada: nuevosDatos.fechaTerminoProgramada 
+                        fechaTerminoProgramada: nuevosDatos.fechaTerminoProgramada
                       });
                     }}
-                    className="bg-transparent font-bold text-white outline-none text-[11px] cursor-pointer text-right w-24"
+                    className="bg-transparent border-0 p-0 font-bold text-white outline-none text-[11px] cursor-pointer text-right w-24"
                   />
                 </div>
 
@@ -916,11 +928,10 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
 
                 <div className="flex items-center justify-between gap-1 bg-slate-800 px-2 py-0.5 rounded border border-slate-600/50">
                   <span className="font-extrabold text-slate-400 text-[10px]">FIN</span>
-                  <input
-                    type="date"
+                  <PremiumDatePicker
+                    icon={false}
                     value={mainData.fechaTerminoProgramada || ''}
-                    onChange={e => {
-                      const nuevaFechaFin = e.target.value;
+                    onChange={nuevaFechaFin => {
                       const nuevosDatos = { ...mainData, fechaTerminoProgramada: nuevaFechaFin };
                       if (nuevaFechaFin && mainData.fechaInicioObra) {
                         const start = new Date(mainData.fechaInicioObra);
@@ -932,17 +943,77 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
                         }
                       }
                       setMainData(nuevosDatos);
-                      saveInlineUpdate({ 
+                      saveInlineUpdate({
                         fechaTerminoProgramada: nuevosDatos.fechaTerminoProgramada,
                         plazoAdjudicadoDias: nuevosDatos.plazoAdjudicadoDias
                       });
                     }}
-                    className="bg-transparent font-bold text-emerald-400 outline-none text-[11px] cursor-pointer text-right w-24"
+                    className="bg-transparent border-0 p-0 font-bold text-emerald-400 outline-none text-[11px] cursor-pointer text-right w-24"
                   />
                 </div>
               </div>
             </div>
           </div>
+
+          {/* ─── INDICADORES DE GESTIÓN: RIESGO + SUPERFICIE ─── */}
+          {'montoEstimado' in proyecto && (
+            <div className="grid grid-cols-2 gap-2.5">
+              {/* Nivel de Riesgo */}
+              <div className="bg-slate-700/50 p-2.5 rounded-xl border border-slate-600/80 space-y-1.5">
+                <p className="text-slate-300 text-[10px] font-extrabold uppercase flex items-center gap-1">
+                  ⚠️ Nivel de Riesgo
+                </p>
+                <select
+                  value={(proyecto as LicitacionProyecto).nivelRiesgo || ''}
+                  onChange={(e) => {
+                    const val = e.target.value as LicitacionProyecto['nivelRiesgo'];
+                    saveInlineUpdate({ nivelRiesgo: val || undefined } as any);
+                  }}
+                  className="w-full bg-slate-800 text-white text-xs font-bold border border-slate-600 rounded p-1 outline-none focus:ring-1 focus:ring-orange-500"
+                >
+                  <option value="">Sin evaluar</option>
+                  <option value="Bajo">🟢 Bajo</option>
+                  <option value="Medio">🟡 Medio</option>
+                  <option value="Alto">🟠 Alto</option>
+                  <option value="Crítico">🔴 Crítico</option>
+                </select>
+                <input
+                  type="text"
+                  placeholder="Motivo breve del riesgo..."
+                  defaultValue={(proyecto as LicitacionProyecto).motivoRiesgo || ''}
+                  onBlur={(e) => saveInlineUpdate({ motivoRiesgo: e.target.value } as any)}
+                  className="w-full bg-slate-800 text-slate-300 text-[10px] border border-slate-600 rounded p-1 outline-none placeholder-slate-500"
+                />
+              </div>
+
+              {/* Superficie m² */}
+              <div className="bg-slate-700/50 p-2.5 rounded-xl border border-slate-600/80 space-y-1">
+                <p className="text-slate-300 text-[10px] font-extrabold uppercase">
+                  📐 Superficie (m²)
+                </p>
+                <div className="flex items-center gap-1 bg-slate-800 p-1.5 rounded border border-slate-600">
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    placeholder="0.0"
+                    defaultValue={(proyecto as LicitacionProyecto).superficieM2 || ''}
+                    onBlur={(e) => {
+                      const val = parseFloat(e.target.value);
+                      if (!isNaN(val) && val > 0) saveInlineUpdate({ superficieM2: val } as any);
+                    }}
+                    className="bg-transparent text-white font-black outline-none w-full text-sm text-right"
+                  />
+                  <span className="text-slate-400 text-xs font-bold shrink-0">m²</span>
+                </div>
+                {(proyecto as LicitacionProyecto).montoAdjudicadoTotal && (proyecto as LicitacionProyecto).superficieM2 && (proyecto as LicitacionProyecto).superficieM2! > 0 && (
+                  <p className="text-[10px] text-indigo-300 font-bold">
+                    {formatoMonedaCLP(Math.round(((proyecto as LicitacionProyecto).montoAdjudicadoTotal || 0) / (proyecto as LicitacionProyecto).superficieM2!))}/m²
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
 
           {estaAdjudicado && (
             <div className="bg-emerald-950/70 p-3 rounded-xl border border-emerald-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1393,21 +1464,21 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
                         <td className="p-3 text-slate-600 text-[11px]">{doc.fechaCarga}</td>
                         <td className="p-3 text-slate-500 text-[11px]">{doc.cargadoPor || 'Sistema'}</td>
                         <td className="p-3 text-right space-x-1">
-                          {doc.estado === 'almacenado' && doc.driveLink ? (
+                          {doc.archivoURL ? (
                             <button
                               type="button"
-                              onClick={() => window.open(doc.driveLink, '_blank')}
+                              onClick={() => window.open(doc.archivoURL, '_blank')}
                               className="p-1.5 text-blue-700 hover:bg-blue-100 rounded-lg transition"
-                              title="Abrir en Google Drive"
+                              title="Ver / Descargar archivo"
                             >
                               <Cloud className="w-4 h-4" />
                             </button>
                           ) : (
                             <button
                               type="button"
-                              onClick={() => alert(`Archivo local: ${doc.archivoNombre}`)}
+                              onClick={() => alert(`"${doc.nombre}" quedó registrado solo como referencia (sin archivo adjunto). Edite el documento y adjunte el archivo para poder descargarlo.`)}
                               className="p-1.5 text-slate-400 hover:bg-slate-100 rounded-lg transition"
-                              title="Archivo local (sin sincronizar)"
+                              title="Sin archivo adjunto"
                             >
                               <AlertCircle className="w-4 h-4" />
                             </button>

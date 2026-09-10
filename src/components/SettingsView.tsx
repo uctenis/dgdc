@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { ConfiguracionFirmas } from '../types';
+import { useAuth } from '../context/AuthContext';
+import { ResetCarteraModal } from './ResetCarteraModal';
 import {
   getResponsablesList,
   saveResponsablesList,
@@ -49,8 +51,19 @@ import {
   Hammer,
   BookmarkCheck,
   Briefcase,
+  ScrollText,
 } from 'lucide-react';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
+import { uploadFirmaImagen } from '../services/storageService';
+import { updateUserProfile } from '../services/firestoreService';
+import {
+  getPlantillaBasesPorFamilia,
+  guardarPlantillaBasesPorFamilia,
+  restaurarPlantillaBasesPorFamilia,
+  FAMILIA_BASES_LABEL,
+  type FamiliaBases,
+  type SeccionBases,
+} from '../data/basesTemplateData';
 
 interface SettingsViewProps {
   config: ConfiguracionFirmas;
@@ -64,9 +77,66 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onResetData,
 }) => {
   const [activeTab, setActiveTab] = useState<
-    'parametros' | 'centrosCosto' | 'tiposObra' | 'estadosProyecto' | 'rubros' | 'responsables' | 'firmas' | 'campus' | 'respaldos'
+    'parametros' | 'centrosCosto' | 'tiposObra' | 'estadosProyecto' | 'rubros' | 'responsables' | 'firmas' | 'campus' | 'plantillasBases' | 'respaldos'
   >('parametros');
-  
+  const { isAdmin, user, profile } = useAuth();
+  const [resetCarteraAbierto, setResetCarteraAbierto] = useState(false);
+
+  // Firma manuscrita personal (enrolamiento del usuario logueado)
+  const [firmaImagenLocal, setFirmaImagenLocal] = useState<string | undefined>(profile?.firmaImagenURL);
+  const [subiendoFirma, setSubiendoFirma] = useState(false);
+
+  useEffect(() => {
+    setFirmaImagenLocal(profile?.firmaImagenURL);
+  }, [profile?.firmaImagenURL]);
+
+  const handleSubirFirma = async (file?: File) => {
+    if (!file || !user) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Seleccione una imagen (PNG o JPG) de su firma.');
+      return;
+    }
+    setSubiendoFirma(true);
+    try {
+      const url = await uploadFirmaImagen(user.uid, file);
+      await updateUserProfile(user.uid, { firmaImagenURL: url });
+      setFirmaImagenLocal(url);
+    } catch (error) {
+      console.error('Error al subir la firma:', error);
+      alert('No se pudo guardar la firma. Intente nuevamente.');
+    } finally {
+      setSubiendoFirma(false);
+    }
+  };
+
+  // Plantillas maestras de Bases por familia de Tipo de Obra
+  const [familiaBasesEditando, setFamiliaBasesEditando] = useState<FamiliaBases>('obra-civil');
+  const [seccionesBasesEditando, setSeccionesBasesEditando] = useState<SeccionBases[]>(() => getPlantillaBasesPorFamilia('obra-civil'));
+  const [hasChangesBases, setHasChangesBases] = useState(false);
+
+  const cambiarFamiliaBasesEditando = (familia: FamiliaBases) => {
+    setFamiliaBasesEditando(familia);
+    setSeccionesBasesEditando(getPlantillaBasesPorFamilia(familia));
+    setHasChangesBases(false);
+  };
+
+  const actualizarSeccionBasesEditando = (id: string, contenido: string) => {
+    setSeccionesBasesEditando(prev => prev.map(s => (s.id === id ? { ...s, contenido } : s)));
+    setHasChangesBases(true);
+  };
+
+  const guardarPlantillaBasesEditando = () => {
+    guardarPlantillaBasesPorFamilia(familiaBasesEditando, seccionesBasesEditando);
+    setHasChangesBases(false);
+    alert(`Plantilla de bases "${FAMILIA_BASES_LABEL[familiaBasesEditando]}" guardada. Se usará para los próximos proyectos de este tipo.`);
+  };
+
+  const restaurarPlantillaBasesEditando = () => {
+    if (!confirm('¿Restaurar esta plantilla a su contenido original de fábrica? Se perderán los cambios guardados para esta familia.')) return;
+    setSeccionesBasesEditando(restaurarPlantillaBasesPorFamilia(familiaBasesEditando));
+    setHasChangesBases(false);
+  };
+
   // State para detectar cambios no guardados
   const [hasChanges, setHasChanges] = useState(false);
 
@@ -719,6 +789,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 activeTab === 'campus' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
               }`}>
                 {CAMPUS_UCT.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('plantillasBases')}
+              className={`w-full text-left px-3.5 py-3 rounded-xl font-bold text-xs flex items-center justify-between transition ${
+                activeTab === 'plantillasBases'
+                  ? 'bg-sky-600 text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <ScrollText className="w-4 h-4" />
+                <span>8. Plantillas de Bases</span>
+              </div>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${
+                activeTab === 'plantillasBases' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+              }`}>
+                5
               </span>
             </button>
 
@@ -1649,8 +1739,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       </h5>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                      <div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 items-stretch">
+                      <div className="flex flex-col justify-end">
                         <label className="block font-bold text-slate-700 mb-1">Código Identificador (Nombre antes de @) *</label>
                         <input
                           type="text"
@@ -1661,7 +1751,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none font-bold text-slate-900 disabled:bg-slate-100 font-mono"
                         />
                       </div>
-                      <div>
+                      <div className="flex flex-col justify-end">
                         <label className="block font-bold text-slate-700 mb-1">Nombre Completo *</label>
                         <input
                           type="text"
@@ -1671,7 +1761,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none font-medium"
                         />
                       </div>
-                      <div>
+                      <div className="flex flex-col justify-end">
                         <label className="block font-bold text-slate-700 mb-1">Email Institucional</label>
                         <input
                           type="email"
@@ -1689,7 +1779,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none font-mono"
                         />
                       </div>
-                      <div>
+                      <div className="flex flex-col justify-end">
                         <label className="block font-bold text-slate-700 mb-1">Cargo / Especialidad</label>
                         <input
                           type="text"
@@ -1795,6 +1885,44 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {/* TAB 6: FIRMANTES OFICIALES */}
             {activeTab === 'firmas' && (
               <div className="space-y-6 text-xs">
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+                  <div>
+                    <h4 className="font-extrabold text-slate-900 text-xs uppercase flex items-center gap-2">
+                      <FileSignature className="w-4 h-4 text-indigo-600" />
+                      Mi Firma Manuscrita (Enrolamiento)
+                    </h4>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Suba una foto o escaneo de su firma (fondo blanco, buen contraste). Quedará asociada a su cuenta
+                      ({user?.email}) y se estampará automáticamente en las actas que firme digitalmente.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="w-48 h-24 border-2 border-dashed border-slate-300 rounded-xl flex items-center justify-center bg-slate-50 overflow-hidden shrink-0">
+                      {firmaImagenLocal ? (
+                        <img src={firmaImagenLocal} alt="Firma registrada" className="max-w-full max-h-full object-contain" />
+                      ) : (
+                        <span className="text-[10px] text-slate-400 px-2 text-center">Sin firma registrada aún</span>
+                      )}
+                    </div>
+                    <label className={`px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer flex items-center gap-2 transition ${
+                      subiendoFirma ? 'bg-slate-200 text-slate-500 cursor-wait' : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                    }`}>
+                      <Upload className="w-4 h-4" />
+                      {subiendoFirma ? 'Subiendo...' : firmaImagenLocal ? 'Reemplazar firma' : 'Subir firma'}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        disabled={subiendoFirma}
+                        className="hidden"
+                        onChange={e => {
+                          void handleSubirFirma(e.target.files?.[0]);
+                          e.currentTarget.value = '';
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
                 <div className="bg-sky-50 p-4 rounded-2xl border border-sky-200 text-sky-950 space-y-1">
                   <h4 className="font-bold text-sm">Nómina Institucional de Firmantes en Actas SGC</h4>
                   <p className="text-[11px] text-sky-800">
@@ -1969,6 +2097,80 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
             )}
 
+            {activeTab === 'plantillasBases' && (
+              <div className="space-y-5 text-xs">
+                <div className="bg-sky-50 p-4 rounded-2xl border border-sky-200 text-sky-950 space-y-1">
+                  <h4 className="font-bold text-sm">Plantillas Maestras de Bases (por tipo de proyecto)</h4>
+                  <p className="text-[11px] text-sky-800">
+                    Cuando se generan las Bases de un proyecto nuevo, el sistema elige automáticamente una de estas 5 plantillas
+                    según su Tipo de Obra. Edítelas aquí junto con Secretaría General para que cada proyecto nuevo parta con el
+                    mínimo de correcciones posible. Los cambios solo afectan a proyectos que aún no tengan bases generadas.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {(Object.keys(FAMILIA_BASES_LABEL) as FamiliaBases[]).map(familia => (
+                    <button
+                      key={familia}
+                      type="button"
+                      onClick={() => cambiarFamiliaBasesEditando(familia)}
+                      className={`px-3 py-2 rounded-xl text-[11px] font-bold border transition ${
+                        familiaBasesEditando === familia
+                          ? 'bg-slate-900 text-white border-slate-900'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      {FAMILIA_BASES_LABEL[familia]}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+                  <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-100 pb-3">
+                    <h5 className="font-extrabold text-slate-900 text-xs uppercase">{FAMILIA_BASES_LABEL[familiaBasesEditando]}</h5>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={restaurarPlantillaBasesEditando}
+                        className="px-3 py-1.5 text-slate-600 hover:bg-slate-100 rounded-lg font-bold flex items-center gap-1.5 border border-slate-200"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" /> Restaurar original
+                      </button>
+                      <button
+                        type="button"
+                        onClick={guardarPlantillaBasesEditando}
+                        disabled={!hasChangesBases}
+                        className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-lg font-bold flex items-center gap-1.5"
+                      >
+                        <Save className="w-3.5 h-3.5" /> Guardar plantilla
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {seccionesBasesEditando.map(s => (
+                      <div key={s.id}>
+                        <label className="block font-bold text-slate-700 mb-1">{s.titulo}</label>
+                        <textarea
+                          value={s.contenido}
+                          onChange={e => actualizarSeccionBasesEditando(s.id, e.target.value)}
+                          rows={2}
+                          className="w-full text-xs leading-relaxed border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-sky-400"
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  <p className="text-[10px] text-slate-400 flex items-start gap-1.5 pt-2 border-t border-slate-100">
+                    <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+                    Recuerde: el texto de garantías, multas, requisitos y criterios sigue siendo una guía de estructura, no
+                    cláusulas legales redactadas. Cada proyecto individual pasa igualmente por el flujo Borrador → En Revisión
+                    Legal → Aprobada antes de convocar.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* TAB 8: RESPALDOS Y SISTEMA */}
             {activeTab === 'respaldos' && (
               <div className="space-y-6 text-xs">
@@ -2026,9 +2228,34 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <RotateCcw className="w-4 h-4" />
                     <span>Restablecer Datos de Demostración</span>
                   </button>
+                  <p className="text-[11px] text-rose-500">Esto solo restablece la configuración local (responsables, centros de costo, tipos de obra, etc.) — no borra la Cartera de Proyectos ni las Licitaciones en Firestore.</p>
                 </div>
 
+                {isAdmin && (
+                  <div className="bg-rose-100 p-6 rounded-2xl border-2 border-rose-300 space-y-4">
+                    <h4 className="font-bold text-rose-950 text-sm flex items-center gap-2">
+                      <RotateCcw className="w-4 h-4 text-rose-700" />
+                      <span>Borrar Cartera de Proyectos y Licitaciones (solo admin)</span>
+                    </h4>
+                    <p className="text-rose-900 leading-relaxed">
+                      Elimina definitivamente todos los proyectos, licitaciones, cotizaciones, estados de pago, aumentos de obra e invitados en Firestore, para partir de cero con una nueva cartera. Proveedores, configuración de firmas, responsables y usuarios <strong>no</strong> se ven afectados.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setResetCarteraAbierto(true)}
+                      className="px-5 py-2.5 bg-rose-700 hover:bg-rose-800 text-white font-bold rounded-xl shadow-sm transition flex items-center gap-2"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      <span>Borrar Cartera y Licitaciones…</span>
+                    </button>
+                  </div>
+                )}
+
               </div>
+            )}
+
+            {resetCarteraAbierto && (
+              <ResetCarteraModal onClose={() => setResetCarteraAbierto(false)} />
             )}
 
           </div>

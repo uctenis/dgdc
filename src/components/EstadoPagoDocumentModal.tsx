@@ -1,4 +1,4 @@
-import { FileSignature, Printer, X } from 'lucide-react';
+import { FileSignature, Printer, X, Receipt } from 'lucide-react';
 import type { Cotizacion, EstadoPago, LicitacionProyecto } from '../types';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 
@@ -8,6 +8,7 @@ interface Props {
   estadoPago: EstadoPago;
   estadosPago: EstadoPago[];
   onClose: () => void;
+  onCargarFactura?: (ep: EstadoPago) => void;
 }
 
 const fechaCL = (fecha?: string) => {
@@ -21,7 +22,7 @@ const diferenciaDias = (inicio?: string, termino?: string) => {
   return Math.floor((new Date(`${termino}T12:00:00`).getTime() - new Date(`${inicio}T12:00:00`).getTime()) / 86400000);
 };
 
-export function EstadoPagoDocumentModal({ licitacion, oferta, estadoPago, estadosPago, onClose }: Props) {
+export function EstadoPagoDocumentModal({ licitacion, oferta, estadoPago, estadosPago, onClose, onCargarFactura }: Props) {
   const montoContrato = licitacion.montoAdjudicadoTotal || oferta.montoTotal;
   const montoAcumulado = estadosPago
     .filter(estado => estado.numero <= estadoPago.numero)
@@ -150,11 +151,48 @@ export function EstadoPagoDocumentModal({ licitacion, oferta, estadoPago, estado
             </table>
           </section>
 
+          {(estadoPago.tipoObra || estadoPago.superficieM2 || estadoPago.usoEspacio) && (
+            <section className="mt-4 grid grid-cols-3 gap-2">
+              <DatoContrato label="Tipo de obra" value={estadoPago.tipoObra || 'No informado'} />
+              <DatoContrato label="Superficie intervenida" value={estadoPago.superficieM2 ? `${estadoPago.superficieM2} m²` : 'No informada'} />
+              <DatoContrato label="Uso del espacio" value={estadoPago.usoEspacio || 'No informado'} />
+            </section>
+          )}
+
           <section className="mt-4 rounded-lg border border-slate-300 p-3">
             <h3 className="text-[9px] font-black uppercase text-slate-500">Observaciones y respaldo</h3>
             <p className="mt-1 min-h-8 whitespace-pre-wrap">{estadoPago.observaciones || 'Sin observaciones.'}</p>
             {estadoPago.archivoNombre && <p className="mt-2 text-[9px]"><strong>Documento de respaldo:</strong> {estadoPago.archivoNombre}</p>}
           </section>
+
+          {estadoPago.fotos && estadoPago.fotos.length > 0 && (
+            <section className="mt-4 rounded-lg border border-slate-300 p-3">
+              <h3 className="text-[9px] font-black uppercase text-slate-500">Evidencia fotográfica del avance / obra terminada</h3>
+              <div className="mt-2 grid grid-cols-4 gap-2">
+                {estadoPago.fotos.map((foto, i) => (
+                  <a key={i} href={foto.url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded border border-slate-300">
+                    <img src={foto.url} alt={foto.nombre || `Foto ${i + 1}`} className="h-20 w-full object-cover" />
+                  </a>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {estadoPago.observacionesDetalle && estadoPago.observacionesDetalle.length > 0 && (
+            <section className="mt-4 rounded-lg border border-slate-300 p-3">
+              <h3 className="text-[9px] font-black uppercase text-slate-500">Observaciones puntuales con evidencia fotográfica</h3>
+              <div className="mt-2 space-y-2">
+                {estadoPago.observacionesDetalle.map((obs, i) => (
+                  <div key={i} className="flex gap-3 rounded border border-slate-200 p-2">
+                    <a href={obs.fotoURL} target="_blank" rel="noreferrer" className="block shrink-0 overflow-hidden rounded border border-slate-300">
+                      <img src={obs.fotoURL} alt={obs.fotoNombre || `Observación ${i + 1}`} className="h-16 w-16 object-cover" />
+                    </a>
+                    <p className="leading-relaxed">{obs.texto}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section className="estado-pago-firma mt-6 border border-slate-900">
             <div className="border-b border-slate-900 bg-slate-100 px-3 py-2 text-center font-black uppercase">Certificación del responsable del proyecto</div>
@@ -180,9 +218,34 @@ export function EstadoPagoDocumentModal({ licitacion, oferta, estadoPago, estado
           <footer className="mt-4 flex justify-between border-t border-slate-400 pt-2 text-[8px] text-slate-500"><span>Control de avance físico y financiero · Subdirección de Infraestructura</span><span>ESTADO DE PAGO N° {estadoPago.numero}</span></footer>
         </article>
 
-        <div className="estado-pago-no-print flex items-center justify-end gap-3 border-t bg-slate-50 px-5 py-4">
-          <button onClick={onClose} className="rounded-lg px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200">Cerrar</button>
-          <button onClick={() => window.print()} className="flex items-center gap-2 rounded-lg bg-slate-900 px-5 py-2.5 text-xs font-bold text-white hover:bg-slate-800"><Printer className="h-4 w-4" /> Imprimir / Exportar PDF</button>
+        <div className="estado-pago-no-print flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t bg-slate-50 px-5 py-4">
+          <div>
+            {estadoPago.factura ? (
+              <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5 bg-emerald-100 px-3 py-1.5 rounded-lg border border-emerald-300">
+                <Receipt className="w-4 h-4 text-emerald-700 shrink-0" />
+                Factura N° {estadoPago.factura.numeroFactura} ({formatoMonedaCLP(estadoPago.factura.montoFactura)})
+              </span>
+            ) : (
+              <span className="text-xs text-slate-500 italic">Factura no cargada aún</span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3">
+            {onCargarFactura && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onCargarFactura(estadoPago);
+                }}
+                className="flex items-center gap-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 px-4 py-2 text-xs font-bold text-white shadow-sm transition"
+              >
+                <Receipt className="h-4 w-4" />
+                {estadoPago.factura ? 'Ver / Editar Factura' : 'Cargar Factura'}
+              </button>
+            )}
+            <button onClick={onClose} className="rounded-lg px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200">Cerrar</button>
+            <button onClick={() => window.print()} className="flex items-center gap-2 rounded-lg bg-slate-900 px-5 py-2 text-xs font-bold text-white hover:bg-slate-800"><Printer className="h-4 w-4" /> Imprimir / Exportar PDF</button>
+          </div>
         </div>
       </div>
     </div>

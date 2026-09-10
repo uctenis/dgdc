@@ -8,9 +8,9 @@ export interface ResponsableInfraestructura {
 }
 
 export const INITIAL_RESPONSABLES: ResponsableInfraestructura[] = [
-  { codigo: 'dsilva', nombre: 'David Silva Roco', email: 'dsilva@uct.cl', cargo: 'Sub-Director de Infraestructura', estado: 'Activo' },
+  { codigo: 'dsilva', nombre: 'David Silva Roco', email: 'dsilva@uct.cl', cargo: 'Ingeniero Constructor', estado: 'Activo' },
   { codigo: 'mzurita', nombre: 'M. Zurita', email: 'mzurita@uct.cl', cargo: 'Ingeniero de Proyectos', estado: 'Activo' },
-  { codigo: 'fanselme', nombre: 'Felipe Anselme', email: 'fanselme@uct.cl', cargo: 'Ingeniero de Desarrollo', estado: 'Activo' },
+  { codigo: 'fanselme', nombre: 'Felipe Anselme', email: 'fanselme@uct.cl', cargo: 'Sub-Director de Infraestructura', estado: 'Activo' },
   { codigo: 'ccorrea', nombre: 'Cristóbal Correa', email: 'ccorrea@uct.cl', cargo: 'Ingeniero de Proyectos', estado: 'Activo' },
   { codigo: 'mmatus', nombre: 'M. Matus', email: 'mmatus@uct.cl', cargo: 'Ingeniero de Infraestructura', estado: 'Activo' },
   { codigo: 'jsolis', nombre: 'J. Solís de Ovando', email: 'jsolis@uct.cl', cargo: 'Coordinador de Obras', estado: 'Activo' },
@@ -22,7 +22,7 @@ export const INITIAL_RESPONSABLES: ResponsableInfraestructura[] = [
   { codigo: 'iriquelme', nombre: 'I. Riquelme', email: 'iriquelme@uct.cl', cargo: 'Inspector Técnico de Obra (ITO)', estado: 'Activo' },
 ];
 
-const STORAGE_KEY = 'infra_app_responsables_v2';
+const STORAGE_KEY = 'infra_app_responsables_v3';
 
 export function getResponsablesList(): ResponsableInfraestructura[] {
   try {

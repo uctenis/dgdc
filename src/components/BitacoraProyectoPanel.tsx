@@ -4,6 +4,7 @@ import type { HitoDesarrolloProyecto } from '../types';
 import { addHitoDesarrolloProyecto, subscribeToBitacoraProyecto, updateHitoDesarrolloEstado } from '../services/firestoreService';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { useAuth } from '../context/AuthContext';
+import { PremiumDatePicker } from './PremiumDatePicker';
 
 interface Props {
   proyectoId: string;
@@ -59,7 +60,7 @@ export function BitacoraProyectoPanel({ proyectoId, coleccionProyecto, responsab
       </div>
       {abierto && <div className="space-y-3 border-b p-5">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="text-xs font-bold">Fecha *<input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5 font-normal" /></label>
+          <label className="text-xs font-bold">Fecha *<PremiumDatePicker value={fecha} onChange={setFecha} className="mt-1 flex items-center gap-2 w-full rounded-lg border p-2.5 font-normal text-left" /></label>
           <label className="text-xs font-bold">Tipo *<select value={tipo} onChange={e => setTipo(e.target.value as HitoDesarrolloProyecto['tipo'])} className="mt-1 w-full rounded-lg border p-2.5 font-normal"><option>Hito</option><option>Reunión</option><option>Inspección</option><option>Decisión</option><option>Riesgo</option><option>Incidencia</option><option>Recepción</option></select></label>
           <label className="text-xs font-bold">Estado *<select value={estado} onChange={e => setEstado(e.target.value as HitoDesarrolloProyecto['estado'])} className="mt-1 w-full rounded-lg border p-2.5 font-normal"><option>Abierto</option><option>En seguimiento</option><option>Cerrado</option></select></label>
           <label className="text-xs font-bold">Responsable *<input value={responsable} onChange={e => setResponsable(e.target.value)} className="mt-1 w-full rounded-lg border p-2.5 font-normal" /></label>

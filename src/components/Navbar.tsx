@@ -9,6 +9,7 @@ import {
   Download,
   LogOut,
   UserCircle2,
+  BarChart3,
 } from 'lucide-react';
 import { generarPlantillaCotizacionExcel } from '../services/templateGenerator';
 import { useAuth } from '../context/AuthContext';
@@ -16,10 +17,9 @@ import { useAuth } from '../context/AuthContext';
 interface NavbarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
-  openSettings: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, openSettings }) => {
+export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
   const { user, profile, isAdmin, logout } = useAuth();
   const allTabs = [
     { id: 'licitaciones', label: 'Licitaciones', icon: FolderKanban },
@@ -29,6 +29,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, openSet
     { id: 'ficha-proyecto', label: 'Ficha del Proyecto', icon: FileText, contextual: true },
     { id: 'evaluacion',   label: 'Evaluación', icon: FileCheck2, contextual: true },
     { id: 'documentos',   label: 'Actas SGC', icon: FileText, contextual: true },
+    { id: 'reportes', label: 'Reportes y Auditoría', icon: BarChart3 },
     { id: 'diagrama-sgc', label: 'Flujo SGC 0021', icon: FileCheck2 },
     { id: 'configuracion', label: 'Configuración SGC', icon: Settings, adminOnly: true },
   ];
@@ -99,21 +100,6 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, openSet
             >
               <Download className="w-3.5 h-3.5 text-emerald-400" />
               <span className="text-emerald-200">Plantilla Excel</span>
-            </button>}
-
-            {isAdmin && <button
-              onClick={openSettings}
-              title="Configuración de Firmas y Parámetros SGC"
-              className="p-2.5 rounded-lg transition"
-              style={{ background: 'rgba(255,255,255,0.07)' }}
-              onMouseEnter={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.14)';
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.07)';
-              }}
-            >
-              <Settings className="w-5 h-5 text-slate-300" />
             </button>}
 
             <div className="hidden lg:flex items-center gap-2 rounded-lg bg-white/5 px-3 py-2 text-[10px] text-slate-300">

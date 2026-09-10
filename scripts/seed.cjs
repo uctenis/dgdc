@@ -152,7 +152,7 @@ data.slice(3).forEach((row, idx) => {
           nombreContacto: 'Contacto ' + provName,
           email: 'contacto@' + provName.toLowerCase().replace(/[^a-z0-9]/g, '') + '.cl',
           telefono: '+56 9 ' + String(80000000 + suppliersMap.size * 1234).substring(0, 8),
-          rubro: 'Obras Menores y Remodelaciones',
+          rubro: 'Obras Civiles y Estructuras',
           cuentaSustentabilidad: true,
           direccion: 'Av. Alemania 0' + (100 + suppliersMap.size),
           ciudad: 'Temuco',

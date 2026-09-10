@@ -6,10 +6,10 @@ import { SupplierManager } from './components/SupplierManager';
 import { QuotationIngestion } from './components/QuotationIngestion';
 import { EvaluationMatrix } from './components/EvaluationMatrix';
 import { DocumentGenerator } from './components/DocumentGenerator';
-import { SettingsModal } from './components/SettingsModal';
 import { SettingsView } from './components/SettingsView';
 import { ProyectosMaestros } from './components/ProyectosMaestros';
 import { SgcProcessWorkflow } from './components/SgcProcessWorkflow';
+import { ReportesPage } from './components/ReportesPage';
 import { FichaProyectoPage } from './components/FichaProyectoPage';
 import { LicitacionWorkspacePage } from './components/LicitacionWorkspacePage';
 
@@ -36,10 +36,11 @@ import {
   adjudicarLicitacion as fsAdjudicarLicitacion,
 } from './services/firestoreService';
 import { evaluarCotizaciones } from './services/evaluationEngine';
+import { isProjectResponsible } from './services/internalAccessService';
 
 function AdminApp() {
+  const { user, isAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState<string>('licitaciones');
-  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
 
   // Core App State
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
@@ -160,9 +161,24 @@ function AdminApp() {
   // Handler for Adjudicación Compuesta (Actualiza Firestore + Genera Historial en todos los proveedores)
   const handleAdjudicarLicitacion = async (licId: string, provId: string, justificacion: string) => {
     const licitacionAAdjudicar = licitaciones.find(licitacion => licitacion.id === licId);
-    if (!licitacionAAdjudicar) return;
+    if (!licitacionAAdjudicar) throw new Error('No se encontró la licitación a adjudicar.');
+
+    const puedeAdjudicar = isAdmin || isProjectResponsible(user?.email, licitacionAAdjudicar.responsableEmail);
+    if (!puedeAdjudicar) {
+      throw new Error(`Solo ${licitacionAAdjudicar.responsableNombre || 'el responsable del proyecto'} o un administrador puede adjudicar esta licitación.`);
+    }
 
     const cots = cotizaciones.filter(c => c.licitacionId === licId);
+    if (!cots.length) throw new Error('No hay ofertas registradas para adjudicar esta licitación.');
+    if (!cots.some(c => c.proveedorId === provId)) {
+      throw new Error('El proveedor seleccionado no tiene una oferta registrada en esta licitación.');
+    }
+
+    const invitadosCount = licitacionAAdjudicar.proveedoresInvitadosIds?.length ?? 0;
+    if (invitadosCount < 3 && !licitacionAAdjudicar.esUnicoProveedor) {
+      throw new Error(`Esta licitación solo tiene ${invitadosCount} proveedor(es) invitado(s). Se requiere un mínimo de 3, salvo que esté marcada como "Único Proveedor" en la Ficha del Proyecto.`);
+    }
+
     const evs = evaluarCotizaciones(cots);
     const puntajes: Record<string, number> = {};
     evs.forEach(e => {
@@ -178,6 +194,8 @@ function AdminApp() {
       codigoCP: licitacionAAdjudicar.codigoCP,
       codigoOP: licitacionAAdjudicar.codigoOP,
       nombreProyecto: licitacionAAdjudicar.nombreProyecto,
+      codigoProyecto: licitacionAAdjudicar.codigoProyecto,
+      proyectoMaestroId: licitacionAAdjudicar.proyectoMaestroId,
     });
 
     alert('¡Licitación adjudicada con éxito! El historial de obras fue actualizado. Puede abrir el acta oficial desde la pestaña "Actas" y exportarla a PDF.');
@@ -199,7 +217,6 @@ function AdminApp() {
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        openSettings={() => setActiveTab('configuracion')}
       />
 
       {/* Main Content Area */}
@@ -292,6 +309,10 @@ function AdminApp() {
           />
         )}
 
+        {activeTab === 'reportes' && (
+          <ReportesPage licitaciones={licitaciones} cotizaciones={cotizaciones} />
+        )}
+
         {activeTab === 'diagrama-sgc' && (
           <SgcProcessWorkflow />
         )}
@@ -316,15 +337,6 @@ function AdminApp() {
           </p>
         </div>
       </footer>
-
-      {/* Settings Modal */}
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        config={configFirmas}
-        onSaveConfig={handleSaveConfigFirmas}
-        onResetData={handleResetAllData}
-      />
     </div>
   );
 }

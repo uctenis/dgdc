@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react';
 import {
   BookOpen, Plus, Edit3, Trash2, Search,
   X, DollarSign, Calendar, MapPin, Building, User,
-  FileText, Paperclip, FolderPlus
+  FileText, Paperclip, FolderPlus, ScrollText, Hammer, ShieldCheck
 } from 'lucide-react';
 import {
   subscribeToProyectos,
+  subscribeToLicitaciones,
+  subscribeToProveedores,
   addProyectoMaestro,
   updateProyectoMaestro,
   deleteProyectoMaestro,
@@ -16,7 +18,17 @@ import { corregirOrtografiaEspanol, normalizarNombreProyecto, ATRIBUTOS_ORTOGRAF
 import { CAMPUS_UCT, obtenerEdificiosDeCampus, obtenerCampusPorSigla } from '../data/campusData';
 import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
 import { getCentrosCostoList } from '../data/centrosCostoData';
-import type { ProyectoMaestro } from '../types';
+import { getRubrosList } from '../data/rubrosData';
+import { getTiposObraList } from '../data/tiposObraData';
+import { sugerirPoliticaGarantias } from '../data/basesTemplateData';
+import { VisualizadorOCModal } from './VisualizadorOCModal';
+import { RepararCarteraModal, BotonRepararCartera } from './RepararCarteraModal';
+import { BasesLicitacionModal } from './BasesLicitacionModal';
+import { ContratoAdjudicacionModal } from './ContratoAdjudicacionModal';
+import { requiereContratoFormal } from '../data/contratoTemplateData';
+import { ImportarProyectosExcelModal } from './ImportarProyectosExcelModal';
+import { useAuth } from '../context/AuthContext';
+import type { ProyectoMaestro, LicitacionProyecto, Proveedor } from '../types';
 
 interface ProyectosMaestrosProps {
   onSelectProyecto?: (p: ProyectoMaestro) => void;
@@ -40,6 +52,8 @@ const EMPTY_FORM = {
   edificioSigla: '',
   uso: '',
   tipoObra: '',
+  rubro: '',
+  politicaGarantias: '' as ProyectoMaestro['politicaGarantias'] | '',
   responsableNombre: '',
   responsableEmail: '',
   documentosAntecedentes: [] as {
@@ -56,12 +70,23 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   onOpenFicha,
   modoSelector = false,
 }) => {
+  const { isAdmin } = useAuth();
   const [proyectos, setProyectos] = useState<ProyectoMaestro[]>([]);
+  const [licitaciones, setLicitaciones] = useState<LicitacionProyecto[]>([]);
   const [loading, setLoading] = useState(true);
+  const [repararAbierto, setRepararAbierto] = useState(false);
+  const [basesProyecto, setBasesProyecto] = useState<ProyectoMaestro | null>(null);
+  const [contratoProyecto, setContratoProyecto] = useState<ProyectoMaestro | null>(null);
+  const [proveedores, setProveedores] = useState<Proveedor[]>([]);
+  const [importarExcelAbierto, setImportarExcelAbierto] = useState(false);
   const [search, setSearch] = useState('');
   const [filtroCampus, setFiltroCampus] = useState('Todos');
   const [filtroResponsable, setFiltroResponsable] = useState('Todos');
+  const [filtroRubro, setFiltroRubro] = useState('Todos');
+  const rubrosDisponibles = getRubrosList().filter(r => r.estado === 'Activo');
+  const tiposObraDisponibles = getTiposObraList().filter(t => t.estado === 'Activo');
   const [showModal, setShowModal] = useState(false);
+  const [verPDFOCProyecto, setVerPDFOCProyecto] = useState<ProyectoMaestro | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [tabActivaModal, setTabActivaModal] = useState<'datos' | 'planos' | 'documentos'>('datos');
@@ -82,12 +107,36 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
     return unsub;
   }, []);
 
+  useEffect(() => {
+    const unsub = subscribeToLicitaciones(data => setLicitaciones(data));
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    const unsub = subscribeToProveedores(data => setProveedores(data));
+    return unsub;
+  }, []);
+
+  // Set de proyectos maestros que ya cuentan con una licitación creada.
+  // Coincide primero por proyectoMaestroId (vínculo directo) y, como respaldo
+  // para licitaciones antiguas sin ese campo, por codigoProyecto.
+  const proyectosConLicitacion = React.useMemo(() => {
+    const porId = new Set(licitaciones.map(l => l.proyectoMaestroId).filter(Boolean) as string[]);
+    const porCodigo = new Set(
+      licitaciones.filter(l => !l.proyectoMaestroId && l.codigoProyecto).map(l => l.codigoProyecto)
+    );
+    return { porId, porCodigo };
+  }, [licitaciones]);
+
+  const tieneLicitacion = (p: ProyectoMaestro) =>
+    proyectosConLicitacion.porId.has(p.id) ||
+    (!!p.codigoProyecto && proyectosConLicitacion.porCodigo.has(p.codigoProyecto));
+
   const openAdd = () => {
     setEditingId(null);
-    const nextNum = proyectos.length + 1;
     setForm({
       ...EMPTY_FORM,
-      codigoProyecto: `2026_${String(nextNum).padStart(3, '0')}`,
+      codigoProyecto: '',
     });
     setTabActivaModal('datos');
     setShowModal(true);
@@ -111,6 +160,8 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
       edificioSigla: p.edificioSigla || '',
       uso: p.uso || '',
       tipoObra: p.tipoObra || '',
+      rubro: p.rubro || '',
+      politicaGarantias: p.politicaGarantias || '',
       responsableNombre: p.responsableNombre || '',
       responsableEmail: p.responsableEmail || '',
       documentosAntecedentes: p.documentosAntecedentes || [],
@@ -156,13 +207,20 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
       alert('Ingrese el nombre del proyecto.');
       return;
     }
+    if (!form.tipoObra) {
+      alert('Seleccione el Tipo de Obra: define la plantilla legal de Bases y la política de garantías del proyecto.');
+      return;
+    }
+    if (!form.valorAprox || form.valorAprox <= 0) {
+      alert('Ingrese un Presupuesto Estimado mayor a cero.');
+      return;
+    }
 
     setSaving(true);
     try {
       if (editingId) {
         await updateProyectoMaestro(editingId, {
           codigoCP: form.codigoCP,
-          codigoProyecto: form.codigoProyecto,
           ordenCompraNumero: form.ordenCompraNumero,
           codigoOC: form.codigoOC,
           nombre: normalizarNombreProyecto(form.nombre),
@@ -174,12 +232,15 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           edificioSigla: form.edificioSigla,
           uso: form.uso,
           tipoObra: form.tipoObra,
+          rubro: form.rubro,
+          politicaGarantias: form.politicaGarantias || undefined,
           responsableNombre: form.responsableNombre,
           responsableEmail: form.responsableEmail,
           documentosAntecedentes: form.documentosAntecedentes,
         });
       } else {
-        await addProyectoMaestro({
+        const campusNombreNuevo = form.campusSigla ? obtenerCampusPorSigla(form.campusSigla)?.nombre : '';
+        const nuevoId = await addProyectoMaestro({
           codigoCP: form.codigoCP,
           codigoOP: '',
           codigoOT: '',
@@ -191,14 +252,44 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           estado: form.estado,
           fechaCreacion: new Date().toISOString(),
           campusSigla: form.campusSigla,
-          campusNombre: form.campusSigla ? obtenerCampusPorSigla(form.campusSigla)?.nombre : '',
+          campusNombre: campusNombreNuevo,
           edificioSigla: form.edificioSigla,
           uso: form.uso,
           tipoObra: form.tipoObra,
+          rubro: form.rubro,
+          politicaGarantias: form.politicaGarantias || undefined,
           responsableNombre: form.responsableNombre,
           responsableEmail: form.responsableEmail,
           documentosAntecedentes: form.documentosAntecedentes,
         });
+
+        setShowModal(false);
+        // Encadenar directo a las Bases: se pre-cargan según el Tipo de Obra recién elegido.
+        setBasesProyecto({
+          id: nuevoId,
+          correlativo: 0,
+          codigoCP: form.codigoCP,
+          codigoOP: '',
+          codigoOT: '',
+          codigoProyecto: form.codigoProyecto,
+          ordenCompraNumero: form.ordenCompraNumero,
+          codigoOC: form.codigoOC,
+          nombre: normalizarNombreProyecto(form.nombre),
+          descripcion: form.descripcion,
+          valorAprox: form.valorAprox,
+          estado: form.estado,
+          fechaCreacion: new Date().toISOString(),
+          campusSigla: form.campusSigla,
+          campusNombre: campusNombreNuevo,
+          edificioSigla: form.edificioSigla,
+          uso: form.uso,
+          tipoObra: form.tipoObra,
+          rubro: form.rubro,
+          politicaGarantias: form.politicaGarantias || undefined,
+          responsableNombre: form.responsableNombre,
+          responsableEmail: form.responsableEmail,
+        });
+        return;
       }
 
       setShowModal(false);
@@ -211,11 +302,16 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
 
   const handleDelete = async (p: ProyectoMaestro) => {
     if (!confirm(`¿Eliminar el proyecto "${p.nombre}" de la Cartera de Proyectos 2026?`)) return;
-    await deleteProyectoMaestro(p.id);
+    try {
+      await deleteProyectoMaestro(p.id);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'No se pudo eliminar el proyecto.');
+    }
   };
 
   const [filtroPrioridad, setFiltroPrioridad] = useState('Todas');
   const [filtroEstado, setFiltroEstado] = useState('Todos');
+  const [filtroLicitacion, setFiltroLicitacion] = useState<'Todos' | 'Con' | 'Sin'>('Todos');
 
   // Cálculos de Resumen por Prioridad y Financiero
   const totalAltaVal = proyectos.filter(p => p.prioridad === 'Alta').reduce((sum, p) => sum + (p.valorAprox || 0), 0);
@@ -244,10 +340,14 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
 
     const matchCampus = filtroCampus === 'Todos' || p.campusSigla === filtroCampus;
     const matchResponsable = filtroResponsable === 'Todos' || p.responsableNombre === filtroResponsable;
+    const matchRubro = filtroRubro === 'Todos' || p.rubro === filtroRubro;
     const matchPrioridad = filtroPrioridad === 'Todas' || (p.prioridad || 'Media') === filtroPrioridad;
     const matchEstado = filtroEstado === 'Todos' || p.estado === filtroEstado;
+    const matchLicitacion =
+      filtroLicitacion === 'Todos' ||
+      (filtroLicitacion === 'Con' ? tieneLicitacion(p) : !tieneLicitacion(p));
 
-    return matchSearch && matchCampus && matchResponsable && matchPrioridad && matchEstado;
+    return matchSearch && matchCampus && matchResponsable && matchRubro && matchPrioridad && matchEstado && matchLicitacion;
   });
 
   return (
@@ -265,13 +365,24 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
             </p>
           </div>
           {!modoSelector && (
-            <button
-              onClick={openAdd}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2.5 rounded-xl shadow-sm transition text-xs shrink-0"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Nuevo Proyecto Cartera 2026</span>
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              {isAdmin && <BotonRepararCartera onOpen={() => setRepararAbierto(true)} />}
+              <button
+                onClick={() => setImportarExcelAbierto(true)}
+                className="flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-semibold px-3 py-2 rounded-xl text-xs shrink-0"
+                title="Importar varios proyectos desde una planilla Excel"
+              >
+                <FolderPlus className="w-4 h-4" />
+                <span>Importar Excel</span>
+              </button>
+              <button
+                onClick={openAdd}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2.5 rounded-xl shadow-sm transition text-xs shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Nuevo Proyecto Cartera 2026</span>
+              </button>
+            </div>
           )}
         </div>
 
@@ -347,7 +458,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
       </div>
 
       {/* Search & Location / Priority / Responsable Filters */}
-      <div className="grid grid-cols-1 sm:grid-cols-6 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-8 gap-3">
         <div className="sm:col-span-2 relative">
           <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
           <input
@@ -410,6 +521,31 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
             <option value="Completado">✅ Completado</option>
           </select>
         </div>
+        <div>
+          <select
+            value={filtroRubro}
+            onChange={e => setFiltroRubro(e.target.value)}
+            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm font-semibold"
+          >
+            <option value="Todos">Todos los Rubros</option>
+            {rubrosDisponibles.map(r => (
+              <option key={r.id} value={r.nombre}>
+                {r.nombre}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <select
+            value={filtroLicitacion}
+            onChange={e => setFiltroLicitacion(e.target.value as 'Todos' | 'Con' | 'Sin')}
+            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm font-semibold"
+          >
+            <option value="Todos">Con / Sin Licitación</option>
+            <option value="Con">📋 Con Licitación</option>
+            <option value="Sin">— Sin Licitación</option>
+          </select>
+        </div>
       </div>
 
       {/* Table */}
@@ -421,22 +557,21 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           <p className="text-slate-500 text-sm">No se encontraron proyectos en la Cartera 2026 con ese criterio de búsqueda.</p>
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-x-auto">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-auto max-h-[75vh]">
           <table className="w-full text-xs min-w-[1000px]">
-            <thead className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-10">
+            <thead className="bg-slate-900 text-white border-b border-slate-800">
               <tr>
-                <th className="px-3 py-3 text-left font-bold w-12">N°</th>
-                <th className="px-3 py-3 text-center font-bold">Cód. Proyecto</th>
-                <th className="px-3 py-3 text-center font-bold">Centro Costo (CC)</th>
-                <th className="px-3 py-3 text-center font-bold">Orden Compra (OC)</th>
-                <th className="px-3 py-3 text-left font-bold">Proyecto Institucional</th>
-                <th className="px-3 py-3 text-left font-bold">Ubicación UCT</th>
-                <th className="px-3 py-3 text-center font-bold">Prioridad</th>
-                <th className="px-3 py-3 text-center font-bold">Estado / Avance</th>
-                <th className="px-3 py-3 text-right font-bold">Ppto. Estimado</th>
-                <th className="px-3 py-3 text-right font-bold">Ppto. Adjudicado</th>
-                <th className="px-3 py-3 text-right font-bold">Gasto Efectivo</th>
-                <th className="px-3 py-3 text-center font-bold">Acciones</th>
+                <th className="px-3 py-3 text-center font-bold sticky top-0 z-10 bg-slate-900">Cód. Proyecto</th>
+                <th className="px-3 py-3 text-center font-bold sticky top-0 z-10 bg-slate-900">Centro Costo (CC)</th>
+                <th className="px-3 py-3 text-center font-bold sticky top-0 z-10 bg-slate-900">Orden Compra (OC)</th>
+                <th className="px-3 py-3 text-left font-bold sticky top-0 z-10 bg-slate-900">Proyecto Institucional</th>
+                <th className="px-3 py-3 text-left font-bold sticky top-0 z-10 bg-slate-900">Ubicación UCT</th>
+                <th className="px-3 py-3 text-center font-bold sticky top-0 z-10 bg-slate-900">Prioridad</th>
+                <th className="px-3 py-3 text-center font-bold sticky top-0 z-10 bg-slate-900">Estado / Avance</th>
+                <th className="px-3 py-3 text-right font-bold sticky top-0 z-10 bg-slate-900">Ppto. Estimado</th>
+                <th className="px-3 py-3 text-right font-bold sticky top-0 z-10 bg-slate-900">Ppto. Adjudicado</th>
+                <th className="px-3 py-3 text-right font-bold sticky top-0 z-10 bg-slate-900">Gasto Efectivo</th>
+                <th className="px-3 py-3 text-center font-bold sticky top-0 right-0 z-20 bg-slate-900 border-l border-slate-700">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -448,23 +583,16 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                 return (
                   <tr
                     key={p.id}
-                    className={`hover:bg-slate-50/80 transition ${(modoSelector || onOpenFicha) ? 'cursor-pointer' : ''}`}
+                    className={`hover:bg-slate-50/80 transition ${modoSelector ? 'cursor-pointer' : ''}`}
                     onClick={() => {
                       if (modoSelector) {
                         onSelectProyecto?.(p);
-                      } else {
-                        onOpenFicha?.(p);
                       }
                     }}
                   >
-                    <td className="px-3 py-3">
-                      <span className="font-extrabold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200 font-mono">
-                        {String(p.correlativo).padStart(3, '0')}
-                      </span>
-                    </td>
                     <td className="px-3 py-3 text-center">
                       <span className="font-bold text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded w-fit font-mono inline-block">
-                        {p.codigoProyecto || '-'}
+                        {p.codigoProyecto || (p.correlativo ? String(p.correlativo).padStart(3, '0') : '-')}
                       </span>
                     </td>
                     <td className="px-3 py-3 text-center">
@@ -472,17 +600,37 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                         {p.codigoCP || '-'}
                       </span>
                     </td>
-                    <td className="px-3 py-3 text-center">
+                    <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
                       {p.ordenCompraNumero || p.codigoOC ? (
-                        <span className="font-bold text-purple-900 bg-purple-100 border border-purple-200 px-2 py-0.5 rounded w-fit font-mono inline-block">
-                          {p.ordenCompraNumero || p.codigoOC}
-                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setVerPDFOCProyecto(p);
+                          }}
+                          className="font-extrabold text-purple-900 bg-purple-100 hover:bg-purple-200 hover:text-purple-950 border border-purple-300 px-2.5 py-1 rounded font-mono inline-flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+                          title="Haga clic para ver el PDF de la Orden de Compra"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-purple-700" />
+                          <span>{p.ordenCompraNumero || p.codigoOC}</span>
+                        </button>
                       ) : (
                         <span className="text-slate-300">-</span>
                       )}
                     </td>
                     <td className="px-3 py-3">
-                      <p className="font-bold text-slate-800 line-clamp-1">{(p.nombre || '').toUpperCase()}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-bold text-slate-800 line-clamp-1">{(p.nombre || '').toUpperCase()}</p>
+                        {tieneLicitacion(p) && (
+                          <span
+                            className="shrink-0 inline-flex items-center gap-1 text-[9px] font-extrabold bg-indigo-100 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded-full"
+                            title="Este proyecto ya tiene una licitación creada"
+                          >
+                            <FileText className="w-2.5 h-2.5" />
+                            <span>Con Licitación</span>
+                          </span>
+                        )}
+                      </div>
                       {p.responsableNombre ? (
                         <p className="text-slate-500 text-[10px] line-clamp-1 mt-0.5 flex items-center gap-1">
                           <User className="w-3 h-3 text-slate-400" />
@@ -491,16 +639,94 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                       ) : (
                         <p className="text-slate-400 text-[10px] italic">Sin responsable asignado</p>
                       )}
+                      <select
+                        value={p.tipoObra || ''}
+                        onClick={e => e.stopPropagation()}
+                        onChange={async (e) => {
+                          await updateProyectoMaestro(p.id, { tipoObra: e.target.value });
+                        }}
+                        className={`mt-1 text-[10px] font-semibold rounded px-1.5 py-0.5 outline-none cursor-pointer border transition w-full max-w-[220px] ${
+                          p.tipoObra
+                            ? 'text-amber-800 bg-amber-50 border-amber-200 hover:bg-amber-100'
+                            : 'text-slate-400 bg-slate-50 border-slate-200 hover:bg-slate-100 italic'
+                        }`}
+                        title="Asignar Tipo de Obra (define la plantilla de Bases)"
+                      >
+                        <option value="">-- Sin tipo de obra --</option>
+                        {tiposObraDisponibles.map(t => (
+                          <option key={t.id} value={t.nombre}>
+                            {t.nombre}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={p.rubro || ''}
+                        onClick={e => e.stopPropagation()}
+                        onChange={async (e) => {
+                          await updateProyectoMaestro(p.id, { rubro: e.target.value });
+                        }}
+                        className={`mt-1 text-[10px] font-semibold rounded px-1.5 py-0.5 outline-none cursor-pointer border transition w-full max-w-[220px] ${
+                          p.rubro
+                            ? 'text-violet-800 bg-violet-50 border-violet-200 hover:bg-violet-100'
+                            : 'text-slate-400 bg-slate-50 border-slate-200 hover:bg-slate-100 italic'
+                        }`}
+                        title="Asignar Rubro del Proyecto"
+                      >
+                        <option value="">-- Sin rubro asignado --</option>
+                        {rubrosDisponibles.map(r => (
+                          <option key={r.id} value={r.nombre}>
+                            {r.nombre}
+                          </option>
+                        ))}
+                      </select>
                     </td>
-                    <td className="px-3 py-3">
-                      {p.campusSigla ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded w-fit">
-                          <MapPin className="w-3 h-3 text-indigo-500" />
-                          {p.campusSigla} {p.edificioSigla ? `• Ed. ${p.edificioSigla}` : ''}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400 text-[10px]">UCT Central</span>
-                      )}
+                    <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                      <div className="flex flex-col gap-1 text-[10px] min-w-[120px]">
+                        <select
+                          value={p.campusSigla || ''}
+                          onChange={async (e) => {
+                            const sigla = e.target.value;
+                            const campInfo = obtenerCampusPorSigla(sigla);
+                            const eds = obtenerEdificiosDeCampus(sigla);
+                            const primerEd = eds.length > 0 ? eds[0] : '';
+                            await updateProyectoMaestro(p.id, {
+                              campusSigla: sigla,
+                              campusNombre: campInfo ? campInfo.nombre : '',
+                              edificioSigla: primerEd,
+                            });
+                          }}
+                          className="font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5 outline-none cursor-pointer hover:bg-indigo-100 transition text-[10px] w-full"
+                          title="Cambiar Campus UCT"
+                        >
+                          <option value="">-- Campus --</option>
+                          {CAMPUS_UCT.map(c => (
+                            <option key={c.sigla} value={c.sigla}>
+                              {c.sigla} ({c.nombre})
+                            </option>
+                          ))}
+                        </select>
+
+                        {p.campusSigla ? (
+                          <select
+                            value={p.edificioSigla || ''}
+                            onChange={async (e) => {
+                              const edSigla = e.target.value;
+                              await updateProyectoMaestro(p.id, { edificioSigla: edSigla });
+                            }}
+                            className="font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 outline-none cursor-pointer hover:bg-slate-100 transition text-[10px] w-full"
+                            title="Cambiar Edificio del Campus"
+                          >
+                            <option value="">-- Edificio --</option>
+                            {obtenerEdificiosDeCampus(p.campusSigla).map(ed => (
+                              <option key={ed} value={ed}>
+                                Ed. {ed}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-[9px] text-slate-400 italic">Seleccione campus</span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
                       <select
@@ -557,25 +783,80 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                         <span className="text-slate-300">-</span>
                       )}
                     </td>
-                    <td className="px-3 py-3 text-center">
+                    <td className="px-3 py-3 text-center sticky right-0 z-10 bg-white border-l border-slate-200" onClick={e => e.stopPropagation()}>
                       {!modoSelector && (
-                        <div className="flex items-center justify-center gap-1">
+                        <div className="flex items-center justify-center gap-1.5">
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               onOpenFicha?.(p);
                             }}
-                            className="px-2 py-1 text-[11px] font-bold text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-lg transition flex items-center gap-1 border border-sky-200"
-                            title="Ver Ficha y Carátula del Proyecto"
+                            className="px-3 py-1.5 text-xs font-bold text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-lg transition flex items-center gap-1.5 border border-sky-200 shadow-sm"
+                            title="Ver Ficha del Proyecto (Acceso a detalles, edición y eliminación)"
                           >
-                            <FileText className="w-3.5 h-3.5" />
+                            <FileText className="w-4 h-4" />
                             <span>Ficha</span>
                           </button>
-                          <button onClick={() => openEdit(p)} className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition" title="Editar datos y antecedentes">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setBasesProyecto(p);
+                            }}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 border shadow-sm ${
+                              p.bases?.estado === 'Aprobada' ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200' :
+                              p.bases ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200' :
+                              'text-slate-500 bg-slate-50 hover:bg-slate-100 border-slate-200'
+                            }`}
+                            title={p.bases ? `Bases: ${p.bases.estado}` : 'Generar Bases Administrativas y Técnicas'}
+                          >
+                            <ScrollText className="w-4 h-4" />
+                            <span>Bases</span>
+                          </button>
+                          {(p.montoAdjudicado || 0) > 0 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setContratoProyecto(p);
+                              }}
+                              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 border shadow-sm ${
+                                p.contrato?.estado === 'Firmado' ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200' :
+                                p.contrato ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200' :
+                                requiereContratoFormal(p.montoAdjudicado || 0) ? 'text-rose-700 bg-rose-50 hover:bg-rose-100 border-rose-200' :
+                                'text-slate-500 bg-slate-50 hover:bg-slate-100 border-slate-200'
+                              }`}
+                              title={
+                                p.contrato ? `Contrato: ${p.contrato.estado}` :
+                                requiereContratoFormal(p.montoAdjudicado || 0) ? 'Este monto requiere Contrato formal firmado (no basta con la OC)' :
+                                'Generar Contrato de Adjudicación (opcional bajo este monto)'
+                              }
+                            >
+                              <FileText className="w-4 h-4" />
+                              <span>Contrato</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEdit(p);
+                            }}
+                            className="p-1.5 text-slate-500 bg-slate-50 hover:bg-slate-100 rounded-lg transition border border-slate-200 shadow-sm"
+                            title="Editar datos del proyecto"
+                          >
                             <Edit3 className="w-4 h-4" />
                           </button>
-                          <button onClick={() => handleDelete(p)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition" title="Eliminar proyecto">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(p);
+                            }}
+                            className="p-1.5 text-rose-500 bg-rose-50 hover:bg-rose-100 rounded-lg transition border border-rose-200 shadow-sm"
+                            title="Eliminar proyecto de la Cartera"
+                          >
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
@@ -683,16 +964,14 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                     </div>
 
                     <div>
-                      <label className="block font-semibold text-slate-700 mb-1">Cód. Proyecto Correlativo *</label>
+                      <label className="block font-semibold text-slate-700 mb-1">Cód. Proyecto Correlativo</label>
                       <input
                         type="text"
-                        required
-                        placeholder="Ej: 2026_099"
-                        value={form.codigoProyecto}
-                        onChange={e => setForm(f => ({ ...f, codigoProyecto: e.target.value }))}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-indigo-700"
+                        disabled
+                        value={form.codigoProyecto || 'Se asignará automáticamente al guardar'}
+                        className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg outline-none font-bold text-slate-500 cursor-not-allowed"
                       />
-                      <span className="text-[10px] text-slate-400 mt-0.5 block">Identificador correlativo 2026</span>
+                      <span className="text-[10px] text-slate-400 mt-0.5 block">Identificador correlativo — lo asigna el sistema, no es editable</span>
                     </div>
 
                     <div>
@@ -834,6 +1113,68 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                        <Hammer className="w-3.5 h-3.5 text-indigo-600" />
+                        Tipo de Obra *
+                      </label>
+                      <select
+                        required
+                        value={form.tipoObra}
+                        onChange={e => setForm(f => ({ ...f, tipoObra: e.target.value }))}
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                      >
+                        <option value="">-- Seleccionar Tipo de Obra --</option>
+                        {tiposObraDisponibles.map(t => (
+                          <option key={t.id} value={t.nombre}>
+                            {t.nombre}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-[10px] text-slate-400 mt-1">Define qué plantilla de Bases se pre-carga al generar las bases del proyecto.</p>
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                        <ScrollText className="w-3.5 h-3.5 text-indigo-600" />
+                        Rubro del Proyecto
+                      </label>
+                      <select
+                        value={form.rubro}
+                        onChange={e => setForm(f => ({ ...f, rubro: e.target.value }))}
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                      >
+                        <option value="">-- Seleccionar Rubro --</option>
+                        {rubrosDisponibles.map(r => (
+                          <option key={r.id} value={r.nombre}>
+                            {r.nombre}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                      <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                      Política de Garantías del Contrato
+                    </label>
+                    <select
+                      value={form.politicaGarantias || ''}
+                      onChange={e => setForm(f => ({ ...f, politicaGarantias: (e.target.value || '') as typeof f.politicaGarantias }))}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                    >
+                      <option value="">-- Sin definir (se usará la sugerencia por monto) --</option>
+                      <option value="Sin Garantías">Sin Garantías</option>
+                      <option value="Retención sobre Estados de Pago">Retención sobre Estados de Pago</option>
+                      <option value="Boletas de Garantía Completas">Boletas de Garantía Completas</option>
+                    </select>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Sugerencia para {formatoMonedaCLP(form.valorAprox || 0)}: <strong className="text-slate-600">{sugerirPoliticaGarantias(form.valorAprox || 0)}</strong>.
+                      {' '}No es obligatorio exigir boletas en contratos de bajo monto — esta política ajusta el texto de la sección de Garantías en las Bases.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1 flex items-center gap-1">
                         <DollarSign className="w-3.5 h-3.5 text-emerald-600" /> Presupuesto Estimado (CLP con separador de miles) *
                       </label>
                       <div className="relative flex items-center">
@@ -939,11 +1280,38 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
               {/* TAB 3: DOCUMENTOS Y BASES */}
               {tabActivaModal === 'documentos' && (
                 <div className="space-y-4">
+                  <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-200 flex items-center justify-between gap-3 flex-wrap">
+                    <div>
+                      <h4 className="font-bold text-emerald-900 text-xs flex items-center gap-2">
+                        <ScrollText className="w-4 h-4 text-emerald-700" />
+                        Bases Administrativas y Técnicas
+                      </h4>
+                      <p className="text-[11px] text-emerald-800 mt-1">
+                        {editingId
+                          ? 'Se generan solas a partir de una plantilla según el Tipo de Obra del proyecto (pestaña Datos Generales) — no se adjunta un archivo aquí.'
+                          : 'Al hacer clic en "Agregar Proyecto a Cartera 2026" (botón abajo) se abrirán automáticamente, ya pre-cargadas según el Tipo de Obra que elijas en "Datos Generales".'}
+                      </p>
+                    </div>
+                    {editingId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const proyectoActual = proyectos.find(p => p.id === editingId);
+                          if (proyectoActual) setBasesProyecto(proyectoActual);
+                        }}
+                        className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shrink-0"
+                      >
+                        <ScrollText className="w-3.5 h-3.5" /> Abrir Bases del Proyecto
+                      </button>
+                    )}
+                  </div>
+
                   <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-200 space-y-3">
                     <h4 className="font-bold text-indigo-900 text-xs flex items-center gap-2">
                       <FolderPlus className="w-4 h-4 text-indigo-600" />
-                      <span>Agregar Nuevo Documento o Bases Técnicas</span>
+                      <span>Agregar Otro Documento o Antecedente</span>
                     </h4>
+                    <p className="text-[10px] text-indigo-700 -mt-1.5">Solo para registrar nombres de antecedentes de respaldo (planos externos, informes, anexos) — no reemplaza las Bases de arriba.</p>
                     <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
                       <input
                         type="text"
@@ -1007,6 +1375,30 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
 
           </div>
         </div>
+      )}
+
+      {/* Modal Visualizador del PDF de la Orden de Compra (OC) */}
+      {verPDFOCProyecto && (
+        <VisualizadorOCModal
+          proyecto={verPDFOCProyecto}
+          onClose={() => setVerPDFOCProyecto(null)}
+        />
+      )}
+
+      {repararAbierto && (
+        <RepararCarteraModal onClose={() => setRepararAbierto(false)} />
+      )}
+
+      {basesProyecto && (
+        <BasesLicitacionModal proyecto={basesProyecto} onClose={() => setBasesProyecto(null)} />
+      )}
+
+      {contratoProyecto && (
+        <ContratoAdjudicacionModal proyecto={contratoProyecto} proveedores={proveedores} onClose={() => setContratoProyecto(null)} />
+      )}
+
+      {importarExcelAbierto && (
+        <ImportarProyectosExcelModal onClose={() => setImportarExcelAbierto(false)} />
       )}
     </div>
   );

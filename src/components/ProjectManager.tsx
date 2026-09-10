@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import type { LicitacionProyecto, Proveedor, ProyectoMaestro, Cotizacion, ConfiguracionFirmas } from '../types';
 import {
   FolderKanban, Plus, Calendar, ArrowRight, Edit3, Trash2,
-  CheckCircle, Users, BookOpen, X, FileText, Sparkles, MapPin
+  CheckCircle, Users, BookOpen, X, FileText, Sparkles, MapPin,
+  Search, TrendingUp, TrendingDown, AlertTriangle,
+  ChevronUp, ChevronDown, Activity, ShieldAlert,
 } from 'lucide-react';
 import { formatoMonedaCLP, ordenarCotizacionesPorResultado } from '../services/evaluationEngine';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
@@ -13,7 +15,24 @@ import { ActaEvaluacionModal } from './ActaEvaluacionModal';
 import { IngresoOfertasLicitacionModal } from './IngresoOfertasLicitacionModal';
 import { CargaOrdenCompraModal } from './CargaOrdenCompraModal';
 import { ProyectosMaestros } from './ProyectosMaestros';
+import { PremiumDatePicker } from './PremiumDatePicker';
 import { getCentrosCostoList } from '../data/centrosCostoData';
+
+// ─── COLORES DE RIESGO ───────────────────────────────────────────────────────
+const RIESGO_COLOR: Record<string, string> = {
+  Bajo: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  Medio: 'bg-amber-100 text-amber-800 border-amber-200',
+  Alto: 'bg-orange-100 text-orange-800 border-orange-200',
+  Crítico: 'bg-red-100 text-red-800 border-red-200',
+};
+
+// ─── COLORES LIFECYCLE ───────────────────────────────────────────────────────
+const LIFECYCLE_LABEL: Record<string, string> = {
+  Bases: 'Bases', Invitando: 'Invitando', Evaluando: 'Evaluando',
+  Adjudicado: 'Adjudicado', OT_Emitida: 'OT Emitida', OP_Emitida: 'OP Emitida',
+  OC_Emitida: 'OC Emitida', En_Ejecucion: 'En Ejecución',
+  Recepcion_Solicitada: 'Recepción', Finalizado: 'Finalizado',
+};
 
 interface ProjectManagerProps {
   licitaciones: LicitacionProyecto[];
@@ -26,7 +45,7 @@ interface ProjectManagerProps {
   onAddLicitacion: (lic: Omit<LicitacionProyecto, 'id'>) => void | Promise<void>;
   onUpdateLicitacion: (id: string, lic: Partial<LicitacionProyecto>) => void | Promise<void>;
   onDeleteLicitacion: (id: string) => void;
-  onAdjudicarLicitacion: (licitacionId: string, proveedorId: string, justificacion: string) => void;
+  onAdjudicarLicitacion: (licitacionId: string, proveedorId: string, justificacion: string) => Promise<void>;
 }
 
 export const ProjectManager: React.FC<ProjectManagerProps> = ({
@@ -51,6 +70,90 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
   const [ocLicitacion, setOcLicitacion] = useState<LicitacionProyecto | null>(null);
   const [showMasterSelector, setShowMasterSelector] = useState(false);
 
+  // ─── FILTROS Y VISTA ──────────────────────────────────────────────────────
+  const [search, setSearch] = useState('');
+  const [filtroEstado, setFiltroEstado] = useState('');
+  const [filtroCampus, setFiltroCampus] = useState('');
+  const [sortCol, setSortCol] = useState<'nombre' | 'monto' | 'estado' | 'fecha'>('fecha');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  const toggleSort = (col: typeof sortCol) => {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortCol(col); setSortDir('asc'); }
+  };
+
+  // ─── KPIs GLOBALES ────────────────────────────────────────────────────────
+  const kpis = useMemo(() => {
+    const adjudicadas = licitaciones.filter(l => l.estado === 'Adjudicado' || Boolean(l.proveedorAdjudicadoId));
+    const enEjecucion = licitaciones.filter(l => l.estadoLifecycle === 'En_Ejecucion');
+    const finalizadas = licitaciones.filter(l => l.estadoLifecycle === 'Finalizado');
+    const conRiesgoAlto = licitaciones.filter(l => l.nivelRiesgo === 'Alto' || l.nivelRiesgo === 'Crítico');
+
+    const montoTotalEstimado = licitaciones.reduce((s, l) => s + (l.montoEstimado || 0), 0);
+    const montoTotalAdjudicado = adjudicadas.reduce((s, l) => s + (l.montoAdjudicadoTotal || 0), 0);
+    const ahorroTotal = adjudicadas.reduce((s, l) => {
+      const adj = l.montoAdjudicadoTotal || 0;
+      const est = l.montoEstimado || 0;
+      return s + (est - adj);
+    }, 0);
+
+    const ofertasPorLic = licitaciones.map(l => cotizaciones.filter(c => c.licitacionId === l.id).length);
+    const promedioOferentes = ofertasPorLic.length ? (ofertasPorLic.reduce((a, b) => a + b, 0) / ofertasPorLic.length) : 0;
+
+    const lifecycleCount: Record<string, number> = {};
+    licitaciones.forEach(l => {
+      const k = l.estadoLifecycle || l.estado || 'Sin estado';
+      lifecycleCount[k] = (lifecycleCount[k] || 0) + 1;
+    });
+
+    return {
+      total: licitaciones.length,
+      adjudicadas: adjudicadas.length,
+      enEjecucion: enEjecucion.length,
+      finalizadas: finalizadas.length,
+      conRiesgoAlto: conRiesgoAlto.length,
+      montoTotalEstimado,
+      montoTotalAdjudicado,
+      ahorroTotal,
+      pctAhorro: montoTotalEstimado > 0 ? (ahorroTotal / montoTotalEstimado * 100) : 0,
+      promedioOferentes,
+      lifecycleCount,
+    };
+  }, [licitaciones, cotizaciones]);
+
+  // ─── LISTA FILTRADA Y ORDENADA ────────────────────────────────────────────
+  const licitacionesFiltradas = useMemo(() => {
+    const q = search.toLowerCase();
+    return licitaciones
+      .filter(l => {
+        if (q && !(
+          l.nombreProyecto.toLowerCase().includes(q) ||
+          l.codigoCP?.toLowerCase().includes(q) ||
+          l.codigoProyecto?.toLowerCase().includes(q) ||
+          (l.proveedorAdjudicadoNombre || '').toLowerCase().includes(q)
+        )) return false;
+        if (filtroEstado && l.estado !== filtroEstado) return false;
+        if (filtroCampus && l.campusSigla !== filtroCampus) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        let va: number | string = 0;
+        let vb: number | string = 0;
+        if (sortCol === 'nombre') { va = a.nombreProyecto; vb = b.nombreProyecto; }
+        else if (sortCol === 'monto') { va = a.montoAdjudicadoTotal || a.montoEstimado || 0; vb = b.montoAdjudicadoTotal || b.montoEstimado || 0; }
+        else if (sortCol === 'estado') { va = a.estadoLifecycle || a.estado; vb = b.estadoLifecycle || b.estado; }
+        else if (sortCol === 'fecha') { va = a.fechaCreacion || ''; vb = b.fechaCreacion || ''; }
+        if (va < vb) return sortDir === 'asc' ? -1 : 1;
+        if (va > vb) return sortDir === 'asc' ? 1 : -1;
+        return 0;
+      });
+  }, [licitaciones, search, filtroEstado, filtroCampus, sortCol, sortDir]);
+
+  const campusOpciones = useMemo(() =>
+    [...new Set(licitaciones.map(l => l.campusSigla).filter(Boolean))].sort() as string[],
+    [licitaciones]
+  );
+
   // Form state
   const [codigoCP, setCodigoCP] = useState('409-');
   const [codigoOP, setCodigoOP] = useState('OP-');
@@ -63,6 +166,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
   const [edificioSigla, setEdificioSigla] = useState('');
   const [responsableNombre, setResponsableNombre] = useState('');
   const [responsableEmail, setResponsableEmail] = useState('');
+  const [selectedMasterProyectoId, setSelectedMasterProyectoId] = useState<string | null>(null);
 
   // Fechas Calendario SGC
   const getFutureDate = (daysAhead: number) => {
@@ -73,6 +177,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
 
   const [fechaVisitaTerreno, setFechaVisitaTerreno] = useState(getFutureDate(5));
   const [fechaRecepcionConsultas, setFechaRecepcionConsultas] = useState(getFutureDate(8));
+  const [fechaRespuestaConsultas, setFechaRespuestaConsultas] = useState(getFutureDate(10));
   const [fechaEvaluacion, setFechaEvaluacion] = useState(getFutureDate(12));
 
   const handleOpenAdd = () => {
@@ -90,7 +195,9 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     setResponsableEmail('');
     setFechaVisitaTerreno(getFutureDate(5));
     setFechaRecepcionConsultas(getFutureDate(8));
+    setFechaRespuestaConsultas(getFutureDate(10));
     setFechaEvaluacion(getFutureDate(12));
+    setSelectedMasterProyectoId(null);
     // Abre primero el selector de la Lista de Proyectos
     setShowMasterSelector(true);
   };
@@ -110,6 +217,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     setResponsableEmail(lic.responsableEmail || '');
     setFechaVisitaTerreno(lic.fechaVisitaTerreno || getFutureDate(5));
     setFechaRecepcionConsultas(lic.fechaRecepcionConsultas || getFutureDate(8));
+    setFechaRespuestaConsultas(lic.fechaRespuestaConsultas || getFutureDate(10));
     setFechaEvaluacion(lic.fechaEvaluacion);
     setShowModal(true);
   };
@@ -126,6 +234,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     setEdificioSigla(p.edificioSigla || '');
     setResponsableNombre(p.responsableNombre || '');
     setResponsableEmail(p.responsableEmail || '');
+    setSelectedMasterProyectoId(p.id);
     setShowMasterSelector(false);
     setShowModal(true);
   };
@@ -133,6 +242,11 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nombreProyecto) return;
+
+    if (fechaVisitaTerreno > fechaRecepcionConsultas || fechaRecepcionConsultas > fechaRespuestaConsultas || fechaRespuestaConsultas > fechaEvaluacion) {
+      alert('El Calendario SGC tiene un orden inválido: Visita a Terreno → Recepción de Consultas → Respuesta de Consultas → Entrega de Propuestas deben ir en ese orden cronológico. Corrija las fechas antes de guardar.');
+      return;
+    }
 
     const nombreFormateado = normalizarNombreProyecto(nombreProyecto);
 
@@ -147,6 +261,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
         montoEstimado,
         fechaVisitaTerreno,
         fechaRecepcionConsultas,
+        fechaRespuestaConsultas,
         fechaEvaluacion,
         fechaEntregaPropuestas: fechaEvaluacion,
         campusSigla,
@@ -166,6 +281,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
         fechaCreacion: new Date().toISOString().split('T')[0],
         fechaVisitaTerreno,
         fechaRecepcionConsultas,
+        fechaRespuestaConsultas,
         fechaEvaluacion,
         fechaEntregaPropuestas: fechaEvaluacion,
         campusSigla,
@@ -174,6 +290,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
         responsableEmail,
         estado: 'En Evaluacion',
         estadoLifecycle: 'Invitando',
+        ...(selectedMasterProyectoId ? { proyectoMaestroId: selectedMasterProyectoId } : {}),
       });
     }
 
@@ -182,18 +299,17 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Header section */}
+      {/* ─── HEADER ─────────────────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
         <div>
           <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
             <FolderKanban className="w-6 h-6 text-sky-600" />
-            <span>Gestión de Proyectos & Licitaciones de Obra</span>
+            <span>Gestión de Proyectos &amp; Licitaciones de Obra</span>
           </h2>
           <p className="text-xs text-slate-500 mt-1">
             Administre los procesos de compra y licitación identificados por sus códigos CP, OP y OT.
           </p>
         </div>
-
         <button
           onClick={handleOpenAdd}
           className="flex items-center justify-center gap-2 bg-sky-600 hover:bg-sky-700 text-white font-semibold px-4 py-2.5 rounded-xl shadow-sm transition text-xs"
@@ -203,9 +319,96 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
         </button>
       </div>
 
-      {/* Grid of Projects with Professional Enterprise Card Design */}
+      {/* ─── KPIs GLOBALES ─────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
+          <span className="text-[10px] font-bold uppercase text-slate-400 block">Total Licitaciones</span>
+          <span className="text-lg font-black text-slate-800">{kpis.total}</span>
+        </div>
+        <div className="bg-emerald-50 p-3.5 rounded-xl border border-emerald-200 shadow-sm">
+          <span className="text-[10px] font-bold uppercase text-emerald-600 block">Adjudicadas</span>
+          <span className="text-lg font-black text-emerald-800">{kpis.adjudicadas}</span>
+        </div>
+        <div className="bg-sky-50 p-3.5 rounded-xl border border-sky-200 shadow-sm">
+          <span className="text-[10px] font-bold uppercase text-sky-600 block">Monto Adjudicado</span>
+          <span className="text-sm font-black text-sky-800">{formatoMonedaCLP(kpis.montoTotalAdjudicado)}</span>
+        </div>
+        <div className={`p-3.5 rounded-xl border shadow-sm ${kpis.ahorroTotal >= 0 ? 'bg-violet-50 border-violet-200' : 'bg-red-50 border-red-200'}`}>
+          <span className={`text-[10px] font-bold uppercase flex items-center gap-1 ${kpis.ahorroTotal >= 0 ? 'text-violet-600' : 'text-red-600'}`}>
+            {kpis.ahorroTotal >= 0 ? <TrendingDown className="w-3 h-3" /> : <TrendingUp className="w-3 h-3" />}
+            Ahorro vs. Estimado
+          </span>
+          <span className={`text-sm font-black ${kpis.ahorroTotal >= 0 ? 'text-violet-800' : 'text-red-800'}`}>{formatoMonedaCLP(kpis.ahorroTotal)} ({kpis.pctAhorro.toFixed(1)}%)</span>
+        </div>
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
+          <span className="text-[10px] font-bold uppercase text-slate-400 flex items-center gap-1">
+            <Activity className="w-3 h-3" /> En Ejecución
+          </span>
+          <span className="text-lg font-black text-slate-800">{kpis.enEjecucion}</span>
+        </div>
+        <div className={`p-3.5 rounded-xl border shadow-sm ${kpis.conRiesgoAlto > 0 ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200'}`}>
+          <span className={`text-[10px] font-bold uppercase block ${kpis.conRiesgoAlto > 0 ? 'text-amber-600' : 'text-slate-400'}`}>Riesgo Alto/Crítico</span>
+          <span className={`text-lg font-black ${kpis.conRiesgoAlto > 0 ? 'text-amber-800' : 'text-slate-800'}`}>{kpis.conRiesgoAlto}</span>
+        </div>
+      </div>
+
+      {/* ─── BÚSQUEDA, FILTROS Y ORDEN ─────────────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Buscar por nombre, CP, código de proyecto o proveedor..."
+            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-sky-500"
+          />
+        </div>
+        <select
+          value={filtroEstado}
+          onChange={e => setFiltroEstado(e.target.value)}
+          className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold outline-none focus:ring-2 focus:ring-sky-500"
+        >
+          <option value="">Todos los estados</option>
+          <option value="Borrador">Borrador</option>
+          <option value="En Evaluacion">En Evaluación</option>
+          <option value="Adjudicado">Adjudicado</option>
+          <option value="Cerrado">Cerrado</option>
+        </select>
+        {campusOpciones.length > 0 && (
+          <select
+            value={filtroCampus}
+            onChange={e => setFiltroCampus(e.target.value)}
+            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold outline-none focus:ring-2 focus:ring-sky-500"
+          >
+            <option value="">Todos los campus</option>
+            {campusOpciones.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
+        <div className="flex items-center gap-1.5">
+          <select
+            value={sortCol}
+            onChange={e => toggleSort(e.target.value as typeof sortCol)}
+            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold outline-none focus:ring-2 focus:ring-sky-500"
+          >
+            <option value="fecha">Ordenar por fecha</option>
+            <option value="nombre">Ordenar por nombre</option>
+            <option value="monto">Ordenar por monto</option>
+            <option value="estado">Ordenar por estado</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+            title={sortDir === 'asc' ? 'Ascendente' : 'Descendente'}
+            className="p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-100"
+          >
+            {sortDir === 'asc' ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {licitaciones.map(lic => {
+        {licitacionesFiltradas.map(lic => {
           const isSelected = lic.id === licitacionSeleccionadaId;
           const cotsLic = cotizaciones.filter(c => c.licitacionId === lic.id);
           const resultadosOfertas = ordenarCotizacionesPorResultado(cotsLic, lic);
@@ -278,6 +481,17 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                       <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded flex items-center gap-1 border border-slate-200">
                         <MapPin className="w-3 h-3 text-slate-500" />
                         {lic.campusSigla} {lic.edificioSigla ? `• ${lic.edificioSigla}` : ''}
+                      </span>
+                    )}
+                    {lic.estadoLifecycle && (
+                      <span className="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                        {LIFECYCLE_LABEL[lic.estadoLifecycle] || lic.estadoLifecycle}
+                      </span>
+                    )}
+                    {lic.nivelRiesgo && (lic.nivelRiesgo === 'Alto' || lic.nivelRiesgo === 'Crítico') && (
+                      <span className={`font-bold px-2 py-0.5 rounded border flex items-center gap-1 ${RIESGO_COLOR[lic.nivelRiesgo]}`} title={lic.motivoRiesgo}>
+                        <ShieldAlert className="w-3 h-3" />
+                        Riesgo {lic.nivelRiesgo}
                       </span>
                     )}
                   </div>
@@ -492,6 +706,11 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
             </div>
           );
         })}
+        {licitacionesFiltradas.length === 0 && (
+          <div className="col-span-2 py-16 text-center text-slate-400 italic text-sm">
+            No se encontraron licitaciones con los filtros actuales.
+          </div>
+        )}
       </div>
 
       {/* Carga Orden de Compra Modal */}
@@ -520,10 +739,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
           proveedores={proveedores}
           configFirmas={configFirmas}
           onClose={() => setActaLicitacion(null)}
-          onAdjudicar={(provId, justificacion) => {
-            onAdjudicarLicitacion(actaLicitacion.id, provId, justificacion);
-            setActaLicitacion(null);
-          }}
+          onAdjudicar={(provId, justificacion) => onAdjudicarLicitacion(actaLicitacion.id, provId, justificacion)}
         />
       )}
 
@@ -682,38 +898,45 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                   <Calendar className="w-3.5 h-3.5 text-sky-600" />
                   Calendario SGC de la Licitación (Hitos Obligatorios)
                 </span>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1 text-[11px]">1. Visita a Terreno</label>
-                    <input
-                      type="date"
-                      required
+                    <PremiumDatePicker
                       value={fechaVisitaTerreno}
-                      onChange={e => setFechaVisitaTerreno(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-[11px]"
+                      onChange={setFechaVisitaTerreno}
+                      className="flex items-center gap-1.5 w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-[11px] text-left"
                     />
                   </div>
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1 text-[11px]">2. Recepción Consultas</label>
-                    <input
-                      type="date"
-                      required
+                    <PremiumDatePicker
                       value={fechaRecepcionConsultas}
-                      onChange={e => setFechaRecepcionConsultas(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-[11px]"
+                      onChange={setFechaRecepcionConsultas}
+                      className="flex items-center gap-1.5 w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-[11px] text-left"
                     />
                   </div>
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1 text-[11px]">3. Entrega Propuestas</label>
-                    <input
-                      type="date"
-                      required
+                    <label className="block font-semibold text-slate-700 mb-1 text-[11px]">3. Respuesta Consultas</label>
+                    <PremiumDatePicker
+                      value={fechaRespuestaConsultas}
+                      onChange={setFechaRespuestaConsultas}
+                      className="flex items-center gap-1.5 w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-[11px] text-left"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1 text-[11px]">4. Entrega Propuestas</label>
+                    <PremiumDatePicker
                       value={fechaEvaluacion}
-                      onChange={e => setFechaEvaluacion(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-[11px]"
+                      onChange={setFechaEvaluacion}
+                      className="flex items-center gap-1.5 w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-[11px] text-left"
                     />
                   </div>
                 </div>
+                {(fechaRecepcionConsultas > fechaRespuestaConsultas || fechaRespuestaConsultas > fechaEvaluacion || fechaVisitaTerreno > fechaRecepcionConsultas) && (
+                  <p className="text-[10px] text-red-700 font-semibold flex items-center gap-1 mt-1">
+                    <AlertTriangle className="w-3 h-3" /> Orden inválido: deben avanzar 1 → 2 → 3 → 4. No podrá guardar hasta corregirlo.
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -769,7 +992,8 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-semibold shadow-sm"
+                    disabled={fechaVisitaTerreno > fechaRecepcionConsultas || fechaRecepcionConsultas > fechaRespuestaConsultas || fechaRespuestaConsultas > fechaEvaluacion}
+                    className="px-5 py-2 bg-sky-600 hover:bg-sky-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg font-semibold shadow-sm"
                   >
                     {editingId ? 'Guardar Cambios' : 'Crear Licitación'}
                   </button>

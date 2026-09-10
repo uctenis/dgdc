@@ -1,11 +1,21 @@
 import React, { useState } from 'react';
 import type { Proveedor } from '../types';
-import { Building2, Search, Plus, Leaf, Edit3, Trash2, Phone, Mail, MapPin, Wifi, History, CheckCircle2, AlertCircle, Upload, Loader2, FileText } from 'lucide-react';
+import { Building2, Search, Plus, Leaf, Edit3, Trash2, Phone, Mail, MapPin, Wifi, History, CheckCircle2, AlertCircle, Upload, Loader2, FileText, X, Trophy } from 'lucide-react';
 import { HistorialObrasModal } from './HistorialObrasModal';
+import { RankingDesempenoModal } from './RankingDesempenoModal';
 import { formatearRUT, validarRUT } from '../utils/rutUtils';
 import { parseProveedorDesdeCotizacion } from '../utils/providerDocumentParser';
 
 import { getRubrosList } from '../data/rubrosData';
+
+/** Separa un campo de contacto (email o teléfono) que puede traer varios valores juntos (", " / ";" / "/" / salto de línea). */
+function splitContactos(valor?: string): string[] {
+  const partes = (valor || '')
+    .split(/[,;/\n]+/)
+    .map(p => p.trim())
+    .filter(Boolean);
+  return partes.length > 0 ? partes : [''];
+}
 
 interface SupplierManagerProps {
   proveedores: Proveedor[];
@@ -27,14 +37,15 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedHistorialProv, setSelectedHistorialProv] = useState<Proveedor | null>(null);
+  const [rankingAbierto, setRankingAbierto] = useState(false);
 
   // Form state
   const [rut, setRut] = useState('');
   const [razonSocial, setRazonSocial] = useState('');
   const [nombreContacto, setNombreContacto] = useState('');
-  const [email, setEmail] = useState('');
-  const [telefono, setTelefono] = useState('');
-  const [rubro, setRubro] = useState('Obras Menores y Remodelaciones');
+  const [emails, setEmails] = useState<string[]>(['']);
+  const [telefonos, setTelefonos] = useState<string[]>(['']);
+  const [rubro, setRubro] = useState('Obras Civiles y Estructuras');
   const [cuentaSustentabilidad, setCuentaSustentabilidad] = useState(true);
   const [direccion, setDireccion] = useState('');
   const [ciudad, setCiudad] = useState('Temuco');
@@ -46,7 +57,7 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
   const rubrosLista = getRubrosList();
   const rubrosDisponibles = rubrosLista.filter(r => r.estado === 'Activo').map(r => r.nombre);
   if (rubrosDisponibles.length === 0) {
-    rubrosDisponibles.push('Obras Menores y Remodelaciones');
+    rubrosDisponibles.push('Obras Civiles y Estructuras');
   }
 
   const handleOpenAddModal = () => {
@@ -54,9 +65,9 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
     setRut('');
     setRazonSocial('');
     setNombreContacto('');
-    setEmail('');
-    setTelefono('');
-    setRubro('Obras Menores y Remodelaciones');
+    setEmails(['']);
+    setTelefonos(['']);
+    setRubro('Obras Civiles y Estructuras');
     setCuentaSustentabilidad(true);
     setDireccion('');
     setCiudad('Temuco');
@@ -72,8 +83,8 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
     setRut(prov.rut);
     setRazonSocial(prov.razonSocial);
     setNombreContacto(prov.nombreContacto);
-    setEmail(prov.email);
-    setTelefono(prov.telefono);
+    setEmails(splitContactos(prov.email));
+    setTelefonos(splitContactos(prov.telefono));
     setRubro(prov.rubro);
     setCuentaSustentabilidad(prov.cuentaSustentabilidad);
     setDireccion(prov.direccion || '');
@@ -101,8 +112,8 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
       if (datos.rut) setRut(formatearRUT(datos.rut));
       if (datos.razonSocial) setRazonSocial(datos.razonSocial);
       if (datos.nombreContacto) setNombreContacto(datos.nombreContacto);
-      if (datos.email) setEmail(datos.email);
-      if (datos.telefono) setTelefono(datos.telefono);
+      if (datos.email) setEmails(splitContactos(datos.email));
+      if (datos.telefono) setTelefonos(splitContactos(datos.telefono));
       if (datos.direccion) setDireccion(datos.direccion);
       if (datos.ciudad) setCiudad(datos.ciudad);
 
@@ -130,6 +141,9 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
       setLecturaError('Ya existe un proveedor registrado con este RUT.');
       return;
     }
+
+    const email = emails.map(e => e.trim()).filter(Boolean).join(', ');
+    const telefono = telefonos.map(t => t.trim()).filter(Boolean).join(', ');
 
     setGuardandoProveedor(true);
     setLecturaError('');
@@ -198,13 +212,23 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
           </div>
         </div>
 
-        <button
-          onClick={handleOpenAddModal}
-          className="flex items-center justify-center gap-2 bg-sky-600 hover:bg-sky-700 text-white font-semibold px-4 py-2.5 rounded-xl shadow-sm transition text-xs"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Registrar Nuevo Proveedor</span>
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => setRankingAbierto(true)}
+            className="flex items-center justify-center gap-2 bg-purple-50 hover:bg-purple-100 border border-purple-300 text-purple-800 font-semibold px-4 py-2.5 rounded-xl shadow-sm transition text-xs"
+            title="Ver ranking de desempeño post-ejecución de todos los proveedores"
+          >
+            <Trophy className="w-4 h-4" />
+            <span>Ranking de Desempeño</span>
+          </button>
+          <button
+            onClick={handleOpenAddModal}
+            className="flex items-center justify-center gap-2 bg-sky-600 hover:bg-sky-700 text-white font-semibold px-4 py-2.5 rounded-xl shadow-sm transition text-xs"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Registrar Nuevo Proveedor</span>
+          </button>
+        </div>
       </div>
 
       {/* Filters & Search bar */}
@@ -237,63 +261,67 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
       </div>
 
       {/* Supplier Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
         {filteredProveedores.map(prov => (
           <div
             key={prov.id}
-            className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 hover:shadow-md transition flex flex-col justify-between"
+            className="bg-white rounded-xl p-3 shadow-sm border border-slate-200 hover:shadow-md transition flex flex-col justify-between"
           >
             <div>
               <div className="flex items-start justify-between gap-2">
-                <div>
-                  <span className="text-[10px] font-extrabold uppercase bg-slate-100 text-slate-600 px-2 py-0.5 rounded tracking-wide border border-slate-200">
+                <div className="min-w-0">
+                  <span className="text-[9px] font-extrabold uppercase bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded tracking-wide border border-slate-200">
                     RUT: {prov.rut}
                   </span>
-                  <h3 className="text-sm font-bold text-slate-800 mt-2 line-clamp-2">{prov.razonSocial}</h3>
+                  <h3 className="text-xs font-bold text-slate-800 mt-1 line-clamp-2">{prov.razonSocial}</h3>
                 </div>
 
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-0.5 shrink-0">
                   <button
                     onClick={() => handleOpenEditModal(prov)}
-                    className="p-1.5 text-slate-400 hover:text-sky-600 hover:bg-slate-50 rounded-lg transition"
+                    className="p-1 text-slate-400 hover:text-sky-600 hover:bg-slate-50 rounded-lg transition"
                     title="Editar datos"
                   >
-                    <Edit3 className="w-4 h-4" />
+                    <Edit3 className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => onDeleteProveedor(prov.id)}
-                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-slate-50 rounded-lg transition"
+                    className="p-1 text-slate-400 hover:text-red-600 hover:bg-slate-50 rounded-lg transition"
                     title="Eliminar proveedor"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
 
               {/* Rubro tag */}
-              <div className="mt-3">
-                <span className="text-xs bg-sky-50 text-sky-700 border border-sky-200 px-2.5 py-1 rounded-md font-medium inline-block">
+              <div className="mt-1.5">
+                <span className="text-[10px] bg-sky-50 text-sky-700 border border-sky-200 px-2 py-0.5 rounded-md font-medium inline-block line-clamp-1">
                   {prov.rubro}
                 </span>
               </div>
 
               {/* Contact info list */}
-              <div className="mt-4 space-y-2 text-xs text-slate-600">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-slate-700">Contacto:</span> {prov.nombreContacto}
+              <div className="mt-2 space-y-1 text-[11px] text-slate-600">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-semibold text-slate-700">Contacto:</span> <span className="truncate">{prov.nombreContacto}</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Mail className="w-3.5 h-3.5 text-slate-400" />
-                  <span>{prov.email}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Phone className="w-3.5 h-3.5 text-slate-400" />
-                  <span>{prov.telefono}</span>
-                </div>
+                {splitContactos(prov.email).map((correo, i) => (
+                  <div key={`email-${i}`} className="flex items-center gap-1.5">
+                    <Mail className="w-3 h-3 text-slate-400 shrink-0" />
+                    <span className="truncate">{correo}</span>
+                  </div>
+                ))}
+                {splitContactos(prov.telefono).map((tel, i) => (
+                  <div key={`tel-${i}`} className="flex items-center gap-1.5">
+                    <Phone className="w-3 h-3 text-slate-400 shrink-0" />
+                    <span>{tel}</span>
+                  </div>
+                ))}
                 {prov.direccion && (
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                    <span>
+                  <div className="flex items-center gap-1.5">
+                    <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                    <span className="truncate">
                       {prov.direccion}, {prov.ciudad}
                     </span>
                   </div>
@@ -302,27 +330,26 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
             </div>
 
             {/* Bottom status bar */}
-            <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-              <div className="flex items-center gap-1.5">
+            <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between gap-1.5 text-[10px] flex-wrap">
+              <div className="flex items-center gap-1">
                 {prov.cuentaSustentabilidad ? (
-                  <span className="flex items-center gap-1 text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                    <Leaf className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Sustentabilidad Acreditada</span>
+                  <span className="flex items-center gap-1 text-emerald-700 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200" title="Sustentabilidad Acreditada">
+                    <Leaf className="w-3 h-3 text-emerald-600" />
                   </span>
                 ) : (
-                  <span className="flex items-center gap-1 text-amber-700 font-medium bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                    <span>Requiere Carta Compromiso</span>
+                  <span className="flex items-center gap-1 text-amber-700 font-medium bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                    <span>Sin Sustentabilidad</span>
                   </span>
                 )}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => setSelectedHistorialProv(prov)}
-                  className="flex items-center gap-1 text-xs text-sky-600 hover:text-sky-800 font-semibold bg-sky-50 px-2 py-1 rounded-md border border-sky-200 transition"
+                  className="flex items-center gap-1 text-[10px] text-sky-600 hover:text-sky-800 font-semibold bg-sky-50 px-1.5 py-0.5 rounded-md border border-sky-200 transition"
                   title="Ver historial de licitaciones y obras"
                 >
-                  <History className="w-3.5 h-3.5" />
+                  <History className="w-3 h-3" />
                   <span>Historial</span>
                 </button>
 
@@ -350,6 +377,13 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
         <HistorialObrasModal
           proveedor={selectedHistorialProv}
           onClose={() => setSelectedHistorialProv(null)}
+        />
+      )}
+
+      {rankingAbierto && (
+        <RankingDesempenoModal
+          proveedores={proveedores}
+          onClose={() => setRankingAbierto(false)}
         />
       )}
 
@@ -473,36 +507,83 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Nombre Contacto</label>
+                <input
+                  type="text"
+                  placeholder="Persona responsable"
+                  value={nombreContacto}
+                  onChange={e => setNombreContacto(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Nombre Contacto</label>
-                  <input
-                    type="text"
-                    placeholder="Persona responsable"
-                    value={nombreContacto}
-                    onChange={e => setNombreContacto(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none"
-                  />
+                  <label className="block font-semibold text-slate-700 mb-1">Email(s)</label>
+                  <div className="space-y-2">
+                    {emails.map((valor, i) => (
+                      <div key={i} className="flex items-center gap-1.5">
+                        <input
+                          type="email"
+                          placeholder="correo@empresa.cl"
+                          value={valor}
+                          onChange={e => setEmails(prev => prev.map((v, idx) => (idx === i ? e.target.value : v)))}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none"
+                        />
+                        {emails.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setEmails(prev => prev.filter((_, idx) => idx !== i))}
+                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg shrink-0"
+                            title="Quitar este email"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setEmails(prev => [...prev, ''])}
+                      className="flex items-center gap-1 text-sky-600 hover:text-sky-800 font-semibold text-[11px]"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Agregar otro email
+                    </button>
+                  </div>
                 </div>
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Email</label>
-                  <input
-                    type="email"
-                    placeholder="correo@empresa.cl"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Teléfono</label>
-                  <input
-                    type="text"
-                    placeholder="+56 9 ..."
-                    value={telefono}
-                    onChange={e => setTelefono(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none"
-                  />
+                  <label className="block font-semibold text-slate-700 mb-1">Teléfono(s)</label>
+                  <div className="space-y-2">
+                    {telefonos.map((valor, i) => (
+                      <div key={i} className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          placeholder="+56 9 ..."
+                          value={valor}
+                          onChange={e => setTelefonos(prev => prev.map((v, idx) => (idx === i ? e.target.value : v)))}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none"
+                        />
+                        {telefonos.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setTelefonos(prev => prev.filter((_, idx) => idx !== i))}
+                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg shrink-0"
+                            title="Quitar este teléfono"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setTelefonos(prev => [...prev, ''])}
+                      className="flex items-center gap-1 text-sky-600 hover:text-sky-800 font-semibold text-[11px]"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Agregar otro teléfono
+                    </button>
+                  </div>
                 </div>
               </div>
 

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { LicitacionProyecto, Cotizacion } from '../types';
 import { evaluarCotizaciones, formatoMonedaCLP } from '../services/evaluationEngine';
 import { Trophy, Award, DollarSign, ShieldCheck, Leaf, Sparkles, ArrowRight } from 'lucide-react';
@@ -7,7 +7,7 @@ import confetti from 'canvas-confetti';
 interface EvaluationMatrixProps {
   licitacion: LicitacionProyecto | null;
   cotizaciones: Cotizacion[];
-  onAdjudicarLicitacion: (licitacionId: string, proveedorId: string, justificacion: string) => void;
+  onAdjudicarLicitacion: (licitacionId: string, proveedorId: string, justificacion: string) => Promise<void>;
   onNavigateToDocumentos: () => void;
 }
 
@@ -17,6 +17,7 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
   onAdjudicarLicitacion,
   onNavigateToDocumentos,
 }) => {
+  const [isAdjudicando, setIsAdjudicando] = useState(false);
   const cotizacionesProyecto = useMemo(
     () => licitacion ? cotizaciones.filter(c => c.licitacionId === licitacion.id) : [],
     [cotizaciones, licitacion]
@@ -59,14 +60,23 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
     || licitacion.estado === 'Cerrado'
     || Boolean(licitacion.proveedorAdjudicadoId || licitacion.proveedorGanadorId);
 
-  const handleCelebrarAdjudicacion = () => {
+  const handleCelebrarAdjudicacion = async () => {
     if (!adjudicado) return;
-    confetti({
-      particleCount: 100,
-      spread: 70,
-      origin: { y: 0.6 },
-    });
-    onAdjudicarLicitacion(licitacion.id, adjudicado.proveedorId, `Adjudicado automáticamente según menor precio y mejor puntaje ponderado SGC (${adjudicado.puntajeTotalPonderado} pts).`);
+    if (!confirm(`¿Confirma adjudicar esta licitación a ${adjudicado.proveedorNombre}? Esta acción no se puede deshacer.`)) return;
+    setIsAdjudicando(true);
+    try {
+      await onAdjudicarLicitacion(licitacion.id, adjudicado.proveedorId, `Adjudicado automáticamente según menor precio y mejor puntaje ponderado SGC (${adjudicado.puntajeTotalPonderado} pts).`);
+      confetti({
+        particleCount: 100,
+        spread: 70,
+        origin: { y: 0.6 },
+      });
+    } catch (err) {
+      console.error('Error al adjudicar la licitación:', err);
+      alert(err instanceof Error ? err.message : 'No fue posible adjudicar la licitación. Intente nuevamente.');
+    } finally {
+      setIsAdjudicando(false);
+    }
   };
 
   if (cotizacionesProyecto.length === 0) {
@@ -107,10 +117,11 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
             {!procesoAdjudicado && (
               <button
                 onClick={handleCelebrarAdjudicacion}
-                className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-5 py-3 rounded-xl text-xs shadow-lg transition flex items-center gap-2"
+                disabled={isAdjudicando}
+                className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-slate-950 font-bold px-5 py-3 rounded-xl text-xs shadow-lg transition flex items-center gap-2"
               >
                 <Trophy className="w-4 h-4" />
-                <span>Aprobar Adjudicación</span>
+                <span>{isAdjudicando ? 'Adjudicando…' : 'Aprobar Adjudicación'}</span>
               </button>
             )}
             <button

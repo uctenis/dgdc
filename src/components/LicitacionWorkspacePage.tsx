@@ -3,7 +3,10 @@ import {
   ArrowLeft, ClipboardCheck, FileCheck2, FileText, FolderOpen, Landmark,
   CalendarDays, CircleDollarSign, Clock3, Loader2, Receipt, Save, TrendingUp,
   Trophy, Upload, WalletCards, ShieldCheck, LockKeyhole,
+  AlertTriangle, ShieldAlert, Award, CheckSquare, Minus, TrendingDown, BarChart3,
+  Camera, Plus, Trash2, Image as ImageIcon,
 } from 'lucide-react';
+
 import type {
   AumentoObra, ConfiguracionFirmas, Cotizacion, EstadoPago, ItemEstadoPago,
   LicitacionProyecto, Proveedor,
@@ -14,8 +17,12 @@ import { EvaluationMatrix } from './EvaluationMatrix';
 import { DocumentGenerator } from './DocumentGenerator';
 import { FichaProyectoPage } from './FichaProyectoPage';
 import { EstadoPagoDocumentModal } from './EstadoPagoDocumentModal';
+import { CargaFacturaEstadoPagoModal } from './CargaFacturaEstadoPagoModal';
+import { ActaRecepcionModal } from './ActaRecepcionModal';
+import { EvaluacionDesempenoModal } from './EvaluacionDesempenoModal';
+import { PremiumDatePicker } from './PremiumDatePicker';
 import { parseOrdenDeCompra } from '../utils/ocParser';
-import { uploadFileToProjectFolder } from '../services/driveService';
+import { uploadLicitacionDocument } from '../services/storageService';
 import {
   addEstadoPago, subscribeToAumentosObra, subscribeToEstadosPago, updateLicitacion, syncOCToProyectoMaestro
 } from '../services/firestoreService';
@@ -95,6 +102,20 @@ export function LicitacionWorkspacePage({
         </div>
       </section>
 
+      {/* Badge de riesgo del proyecto */}
+      {licitacion.nivelRiesgo && (
+        <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border text-xs font-bold w-fit ${
+          licitacion.nivelRiesgo === 'Crítico' ? 'bg-red-50 border-red-300 text-red-800' :
+          licitacion.nivelRiesgo === 'Alto' ? 'bg-orange-50 border-orange-300 text-orange-800' :
+          licitacion.nivelRiesgo === 'Medio' ? 'bg-amber-50 border-amber-300 text-amber-800' :
+          'bg-emerald-50 border-emerald-300 text-emerald-800'
+        }`}>
+          <ShieldAlert className="w-3.5 h-3.5" />
+          <span>Riesgo {licitacion.nivelRiesgo}</span>
+          {licitacion.motivoRiesgo && <span className="font-normal opacity-75"> · {licitacion.motivoRiesgo}</span>}
+        </div>
+      )}
+
       <nav className="flex gap-1 overflow-x-auto bg-white border border-slate-200 rounded-2xl p-1.5 shadow-sm">
         {tabs.map(tab => {
           const Icon = tab.icon;
@@ -110,7 +131,7 @@ export function LicitacionWorkspacePage({
         })}
       </nav>
 
-      {activeTab === 'resumen' && <ResumenLicitacion licitacion={licitacion} oferta={ofertaAdjudicada} ofertasCount={ofertas.length} onNavigate={setActiveTab} />}
+      {activeTab === 'resumen' && <ResumenLicitacion licitacion={licitacion} oferta={ofertaAdjudicada} ofertasCount={ofertas.length} onNavigate={setActiveTab} cotizaciones={cotizaciones} />}
       {activeTab === 'expediente' && (
         <FichaProyectoPage
           proyecto={licitacion}
@@ -136,53 +157,242 @@ export function LicitacionWorkspacePage({
         />
       )}
       {activeTab === 'oc' && <OrdenCompraTab licitacion={licitacion} oferta={ofertaAdjudicada} />}
-      {activeTab === 'pagos' && <EstadosPagoTab licitacion={licitacion} oferta={ofertaAdjudicada} />}
+      {activeTab === 'pagos' && <EstadosPagoTab licitacion={licitacion} oferta={ofertaAdjudicada} configFirmas={configFirmas} />}
     </div>
   );
 }
 
-function ResumenLicitacion({ licitacion, oferta, ofertasCount, onNavigate }: {
+function ResumenLicitacion({ licitacion, oferta, ofertasCount, onNavigate, cotizaciones }: {
   licitacion: LicitacionProyecto;
   oferta?: Cotizacion;
   ofertasCount: number;
   onNavigate: (tab: TabId) => void;
+  cotizaciones: Cotizacion[];
 }) {
   const empresaAdjudicada = oferta?.proveedorNombre || licitacion.proveedorAdjudicadoNombre;
   const rutAdjudicado = oferta?.proveedorRut || licitacion.proveedorAdjudicadoRut;
-  const montoAdjudicado = licitacion.montoAdjudicadoTotal || oferta?.montoTotal;
-  const plazoAdjudicado = licitacion.plazoAdjudicadoDias || oferta?.plazoDias;
-  const etapas = [
+  const montoAdjudicado = licitacion.montoAdjudicadoTotal || oferta?.montoTotal || 0;
+  const plazoAdjudicado = licitacion.plazoAdjudicadoDias || oferta?.plazoDias || 0;
+  const montoEstimado = licitacion.montoEstimado || 0;
+  const ahorro = montoEstimado - montoAdjudicado;
+  const pctAhorro = montoEstimado > 0 && montoAdjudicado > 0 ? (ahorro / montoEstimado * 100) : 0;
+
+  // ─ Competencia
+  const ofertasLic = cotizaciones.filter(c => c.licitacionId === licitacion.id);
+  const montos = ofertasLic.map(c => c.montoTotal).sort((a, b) => a - b);
+  const minOferta = montos[0] || 0;
+  const maxOferta = montos[montos.length - 1] || 0;
+  const spreadPct = maxOferta > 0 ? ((maxOferta - minOferta) / maxOferta * 100) : 0;
+  const invitados = licitacion.proveedoresInvitadosIds?.length || 0;
+  const tasaParticipacion = invitados > 0 ? (ofertasLic.length / invitados * 100) : null;
+
+  // ─ Plazo y avance
+  const fechaInicio = licitacion.fechaInicioObra || '';
+  const fechaTermino = licitacion.fechaTerminoProgramada || '';
+  const hoy = new Date().toISOString().split('T')[0];
+  const diasTranscurridos = fechaInicio ? Math.max(0, Math.floor((new Date(hoy).getTime() - new Date(fechaInicio).getTime()) / 86400000) + 1) : 0;
+  const avanceProgramadoPct = fechaInicio && plazoAdjudicado > 0 ? Math.min(100, Math.round(diasTranscurridos / plazoAdjudicado * 100)) : 0;
+
+  // ─ Trazabilidad documental
+  const hitos = [
+    { label: 'Bases y planos', ok: Boolean(licitacion.antecedentesTecnicos?.length), tab: 'expediente' as TabId },
+    { label: 'Empresas invitadas', ok: Boolean(licitacion.proveedoresInvitadosIds?.length), tab: 'expediente' as TabId },
     { label: 'Ofertas recibidas', ok: ofertasCount > 0, tab: 'ofertas' as TabId },
     { label: 'Empresa adjudicada', ok: Boolean(empresaAdjudicada), tab: 'evaluacion' as TabId },
+    { label: 'Acta de evaluación', ok: Boolean(licitacion.actaFirmaDigital), tab: 'actas' as TabId },
+    { label: 'OT emitida', ok: Boolean(licitacion.codigoOT || licitacion.ordenTrabajoNumero), tab: 'oc' as TabId },
+    { label: 'OP emitida', ok: Boolean(licitacion.codigoOP || licitacion.ordenPedidoNumero), tab: 'oc' as TabId },
     { label: 'Orden de compra', ok: Boolean(licitacion.ordenCompraNumero), tab: 'oc' as TabId },
-    { label: 'Ejecución y pagos', ok: licitacion.estadoLifecycle === 'En_Ejecucion' || licitacion.estadoLifecycle === 'Finalizado', tab: 'pagos' as TabId },
+    { label: 'Inicio de obra', ok: Boolean(fechaInicio), tab: 'pagos' as TabId },
+    { label: 'Estado de pagos', ok: Boolean(licitacion.estadoLifecycle === 'En_Ejecucion' || licitacion.estadoLifecycle === 'Finalizado'), tab: 'pagos' as TabId },
   ];
+  const hitosOk = hitos.filter(h => h.ok).length;
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-      <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-        <h2 className="font-black text-slate-900 mb-4">Estado operativo de la licitación</h2>
-        <div className="grid sm:grid-cols-2 gap-3">
-          {etapas.map((etapa, index) => (
-            <button key={etapa.label} onClick={() => onNavigate(etapa.tab)} className="text-left p-4 rounded-xl border border-slate-200 hover:border-sky-300 hover:bg-sky-50/40 transition">
-              <span className={`w-7 h-7 rounded-full inline-flex items-center justify-center text-xs font-black mr-2 ${etapa.ok ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{index + 1}</span>
-              <strong className="text-sm">{etapa.label}</strong>
-              <span className={`block ml-9 text-[11px] ${etapa.ok ? 'text-emerald-700' : 'text-slate-400'}`}>{etapa.ok ? 'Completado' : 'Pendiente'}</span>
-            </button>
-          ))}
+    <div className="space-y-5">
+
+      {/* ─── PANEL FINANCIERO ────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Monto Estimado</span>
+          <p className="text-lg font-black text-slate-700">{formatoMonedaCLP(montoEstimado)}</p>
+          <span className="text-[10px] text-slate-400">Presupuesto inicial</span>
+        </div>
+        <div className={`rounded-2xl border p-4 shadow-sm ${ montoAdjudicado > 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200' }`}>
+          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">{montoAdjudicado > 0 ? 'Monto Adjudicado' : 'Por Adjudicar'}</span>
+          <p className={`text-lg font-black ${ montoAdjudicado > 0 ? 'text-emerald-700' : 'text-slate-400'}`}>
+            {montoAdjudicado > 0 ? formatoMonedaCLP(montoAdjudicado) : '—'}
+          </p>
+          {montoAdjudicado > 0 && empresaAdjudicada && (
+            <span className="text-[10px] text-emerald-600 truncate block">
+              {empresaAdjudicada}{rutAdjudicado ? ` (RUT ${rutAdjudicado})` : ''}
+            </span>
+          )}
+        </div>
+        <div className={`rounded-2xl border p-4 shadow-sm ${ ahorro > 0 ? 'bg-sky-50 border-sky-200' : ahorro < 0 ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200' }`}>
+          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Ahorro / Sobrevalor</span>
+          <div className="flex items-center gap-1.5">
+            {ahorro > 0 ? <TrendingDown className="w-4 h-4 text-sky-600" /> : ahorro < 0 ? <TrendingUp className="w-4 h-4 text-red-600" /> : <Minus className="w-4 h-4 text-slate-400" />}
+            <p className={`text-lg font-black ${ ahorro > 0 ? 'text-sky-700' : ahorro < 0 ? 'text-red-700' : 'text-slate-400'}`}>
+              {montoAdjudicado > 0 ? `${ahorro > 0 ? '' : ''}${formatoMonedaCLP(Math.abs(ahorro))}` : '—'}
+            </p>
+          </div>
+          {montoAdjudicado > 0 && <span className="text-[10px] text-slate-500">{pctAhorro >= 0 ? '+' : ''}{pctAhorro.toFixed(1)}% vs estimado</span>}
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+          <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Responsable Obra</span>
+          <p className="text-sm font-bold text-slate-700 truncate">{licitacion.responsableNombre || <span className="text-slate-400 italic font-normal">Sin asignar</span>}</p>
+          {licitacion.responsableEmail && <span className="text-[10px] text-slate-400 truncate block">{licitacion.responsableEmail}</span>}
         </div>
       </div>
-      <aside className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-        <h2 className="font-black text-slate-900 mb-4">Responsable de la obra</h2>
-        {empresaAdjudicada ? (
-          <div className="space-y-3 text-sm">
-            <div><span className="text-[10px] uppercase text-slate-400 block">Empresa adjudicada</span><strong>{empresaAdjudicada}</strong>{rutAdjudicado && <p className="text-xs text-slate-500">RUT: {rutAdjudicado}</p>}</div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="bg-emerald-50 p-3 rounded-xl"><span className="text-[10px] text-emerald-700 block">Monto oficial</span><strong className="text-xs">{montoAdjudicado ? formatoMonedaCLP(montoAdjudicado) : 'Por informar'}</strong></div>
-              <div className="bg-sky-50 p-3 rounded-xl"><span className="text-[10px] text-sky-700 block">Plazo</span><strong>{plazoAdjudicado ? `${plazoAdjudicado} días` : 'Por informar'}</strong></div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+        {/* ─── TRAZABILIDAD DOCUMENTAL ────────────────────────────────── */}
+        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-black text-slate-900 text-sm">Trazabilidad del Proceso</h3>
+            <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${
+              hitosOk === hitos.length ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
+              hitosOk > hitos.length / 2 ? 'bg-sky-100 text-sky-800 border-sky-200' :
+              'bg-slate-100 text-slate-600 border-slate-200'
+            }`}>{hitosOk}/{hitos.length} completados</span>
+          </div>
+          {/* Barra de progreso general */}
+          <div className="h-2 bg-slate-100 rounded-full mb-4 overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-sky-400 to-emerald-500 rounded-full transition-all"
+              style={{ width: `${hitos.length > 0 ? (hitosOk / hitos.length * 100) : 0}%` }}
+            />
+          </div>
+          <div className="grid sm:grid-cols-2 gap-2">
+            {hitos.map(hito => (
+              <button
+                key={hito.label}
+                onClick={() => onNavigate(hito.tab)}
+                className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition text-xs ${
+                  hito.ok
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:border-emerald-400'
+                    : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-sky-300 hover:text-sky-700'
+                }`}
+              >
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
+                  hito.ok ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-400'
+                }`}>
+                  {hito.ok ? <CheckSquare className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
+                </span>
+                <span className="font-semibold">{hito.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ─── PANEL LATERAL: COMPETENCIA + PLAZO ───────────────────────── */}
+        <div className="space-y-4">
+
+          {/* Competencia */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+            <h3 className="font-black text-slate-900 text-sm mb-3 flex items-center gap-2">
+              <Award className="w-4 h-4 text-amber-500" />
+              Análisis de Competencia
+            </h3>
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Empresas invitadas</span>
+                <span className="font-bold text-slate-800">{invitados || '—'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Ofertas recibidas</span>
+                <span className="font-bold text-slate-800">{ofertasLic.length}</span>
+              </div>
+              {tasaParticipacion !== null && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Tasa participación</span>
+                  <span className={`font-bold ${ tasaParticipacion >= 70 ? 'text-emerald-700' : tasaParticipacion >= 40 ? 'text-amber-700' : 'text-red-700'}`}>
+                    {tasaParticipacion.toFixed(0)}%
+                  </span>
+                </div>
+              )}
+              {montos.length > 1 && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Oferta más baja</span>
+                    <span className="font-bold text-emerald-700">{formatoMonedaCLP(minOferta)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Oferta más alta</span>
+                    <span className="font-bold text-slate-700">{formatoMonedaCLP(maxOferta)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Spread de precios</span>
+                    <span className="font-bold text-sky-700">{spreadPct.toFixed(1)}%</span>
+                  </div>
+                </>
+              )}
+              {ofertasLic.length === 0 && <p className="text-slate-400 italic">Sin ofertas ingresadas.</p>}
             </div>
           </div>
-        ) : <p className="text-xs text-slate-500">La empresa, el monto y el plazo se completarán automáticamente al adjudicar.</p>}
-      </aside>
+
+          {/* Plazo */}
+          {plazoAdjudicado > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+              <h3 className="font-black text-slate-900 text-sm mb-3 flex items-center gap-2">
+                <Clock3 className="w-4 h-4 text-violet-500" />
+                Estado de Plazo
+              </h3>
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Plazo contrato</span>
+                  <span className="font-bold text-slate-700">{plazoAdjudicado} días</span>
+                </div>
+                {fechaInicio && (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Inicio</span>
+                      <span className="font-bold text-slate-700">{fechaInicio}</span>
+                    </div>
+                    {fechaTermino && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Término programado</span>
+                        <span className="font-bold text-slate-700">{fechaTermino}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Días transcurridos</span>
+                      <span className="font-bold text-slate-700">{diasTranscurridos}</span>
+                    </div>
+                    <div className="mt-2">
+                      <div className="flex justify-between mb-1">
+                        <span className="text-slate-500">Avance programado</span>
+                        <span className={`font-black ${
+                          avanceProgramadoPct >= 100 ? 'text-slate-500' : 'text-violet-700'
+                        }`}>{avanceProgramadoPct}%</span>
+                      </div>
+                      <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-violet-400 rounded-full transition-all"
+                          style={{ width: `${avanceProgramadoPct}%` }}
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+                {!fechaInicio && <p className="text-slate-400 italic text-[11px]">Definir fecha de inicio en la pestaña Pagos.</p>}
+              </div>
+            </div>
+          )}
+
+          {/* Info OC */}
+          {licitacion.ordenCompraNumero && (
+            <div className="bg-violet-50 rounded-2xl border border-violet-200 p-4">
+              <span className="text-[10px] font-bold text-violet-600 uppercase">Orden de Compra</span>
+              <p className="font-extrabold text-violet-900 text-sm mt-0.5">{licitacion.ordenCompraNumero}</p>
+              {licitacion.codigoOT && <p className="text-[11px] text-violet-700 mt-0.5">OT: {licitacion.codigoOT}</p>}
+              {licitacion.codigoOP && <p className="text-[11px] text-violet-700">OP: {licitacion.codigoOP}</p>}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -212,12 +422,8 @@ function OrdenCompraTab({ licitacion, oferta }: { licitacion: LicitacionProyecto
     try {
       let archivoActualizado: Partial<LicitacionProyecto> = {};
       if (file) {
-        const uploaded = await uploadFileToProjectFolder(file, licitacion.id, licitacion.nombreProyecto);
-        if (uploaded.storage !== 'drive') {
-          alert('No se pudo almacenar la OC en Drive. Configure o autorice Google Drive e intente nuevamente.');
-          return;
-        }
-        archivoActualizado = { archivoOCNombre: file.name, archivoOCURL: uploaded.url, archivoOCDriveId: uploaded.id };
+        const url = await uploadLicitacionDocument(licitacion.id, 'ordenes-compra', file);
+        archivoActualizado = { archivoOCNombre: file.name, archivoOCURL: url };
       }
       const datosOC = {
         ordenCompraNumero: numero.trim(),
@@ -277,23 +483,38 @@ async function calcularHashEstadoPago(estado: EstadoPago): Promise<string> {
     porcentajeAvanceGlobal: estado.porcentajeAvanceGlobal,
     observaciones: estado.observaciones || '',
     archivoDriveId: estado.archivoDriveId || '',
+    fotos: (estado.fotos || []).map(f => f.url),
+    observacionesDetalle: (estado.observacionesDetalle || []).map(o => ({ texto: o.texto, fotoURL: o.fotoURL })),
+    tipoObra: estado.tipoObra || '',
+    superficieM2: estado.superficieM2 || 0,
+    usoEspacio: estado.usoEspacio || '',
   });
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(contenidoFirmado));
   return Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-function EstadosPagoTab({ licitacion, oferta }: { licitacion: LicitacionProyecto; oferta?: Cotizacion }) {
+function EstadosPagoTab({ licitacion, oferta, configFirmas }: { licitacion: LicitacionProyecto; oferta?: Cotizacion; configFirmas: ConfiguracionFirmas }) {
   const { user } = useAuth();
   const [estados, setEstados] = useState<EstadoPago[]>([]);
   const [aumentos, setAumentos] = useState<AumentoObra[]>([]);
   const [avances, setAvances] = useState<Record<string, number | undefined>>({});
   const [observaciones, setObservaciones] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [fotos, setFotos] = useState<File[]>([]);
+  const [observacionesDetalle, setObservacionesDetalle] = useState<{ texto: string; foto: File | null }[]>([]);
+  const [tipoObraForm, setTipoObraForm] = useState(licitacion.tipoObra || '');
+  const [superficieForm, setSuperficieForm] = useState(licitacion.superficieM2 ? String(licitacion.superficieM2) : '');
+  const [usoEspacioForm, setUsoEspacioForm] = useState(licitacion.uso || '');
   const [saving, setSaving] = useState(false);
   const [savingDates, setSavingDates] = useState(false);
   const [fechaInicio, setFechaInicio] = useState(licitacion.fechaInicioObra || '');
   const [estadoDocumento, setEstadoDocumento] = useState<EstadoPago | null>(null);
+  const [facturaModalEP, setFacturaModalEP] = useState<EstadoPago | null>(null);
   const [firmandoId, setFirmandoId] = useState<string | null>(null);
+  const [obsRecepcion, setObsRecepcion] = useState('');
+  const [procesandoRecepcion, setProcesandoRecepcion] = useState(false);
+  const [actaRecepcionAbierta, setActaRecepcionAbierta] = useState(false);
+  const [evaluacionAbierta, setEvaluacionAbierta] = useState(false);
 
   useEffect(() => subscribeToEstadosPago(licitacion.id, setEstados), [licitacion.id]);
   useEffect(() => subscribeToAumentosObra(licitacion.id, setAumentos), [licitacion.id]);
@@ -317,6 +538,59 @@ function EstadosPagoTab({ licitacion, oferta }: { licitacion: LicitacionProyecto
       alert('No fue posible registrar la firma. Intente nuevamente.');
     } finally {
       setFirmandoId(null);
+    }
+  };
+
+  const aprobarRecepcion = async () => {
+    if (!user || !esResponsableActual) {
+      return alert(`Solo ${licitacion.responsableNombre || 'el responsable del proyecto'} (${licitacion.responsableEmail || 'correo no configurado'}) puede aprobar la Recepción Conforme.`);
+    }
+    if (!confirm('¿Confirma la Recepción Conforme de la obra? La licitación quedará marcada como Finalizada.')) return;
+    setProcesandoRecepcion(true);
+    try {
+      await updateLicitacion(licitacion.id, {
+        recepcionConforme: {
+          ...licitacion.recepcionConforme,
+          solicitada: true,
+          aprobada: true,
+          fechaAprobacion: new Date().toISOString().split('T')[0],
+          aprobadoPor: user.email || '',
+          objetada: false,
+          ...(obsRecepcion.trim() ? { observaciones: obsRecepcion.trim() } : {}),
+        },
+        estadoLifecycle: 'Finalizado',
+        estado: 'Cerrado',
+      });
+      setObsRecepcion('');
+      alert('Recepción Conforme aprobada. La licitación quedó marcada como Finalizada y Cerrada.');
+    } finally {
+      setProcesandoRecepcion(false);
+    }
+  };
+
+  const objetarRecepcion = async () => {
+    if (!user || !esResponsableActual) {
+      return alert(`Solo ${licitacion.responsableNombre || 'el responsable del proyecto'} (${licitacion.responsableEmail || 'correo no configurado'}) puede objetar la Recepción Conforme.`);
+    }
+    if (!obsRecepcion.trim()) return alert('Indique el motivo de la objeción para que el proveedor pueda corregir.');
+    if (!confirm('¿Confirma objetar esta solicitud? El proveedor deberá corregir y volver a solicitar la Recepción Conforme.')) return;
+    setProcesandoRecepcion(true);
+    try {
+      await updateLicitacion(licitacion.id, {
+        recepcionConforme: {
+          ...licitacion.recepcionConforme,
+          solicitada: false,
+          aprobada: false,
+          objetada: true,
+          fechaObjecion: new Date().toISOString().split('T')[0],
+          observaciones: obsRecepcion.trim(),
+          aprobadoPor: user.email || '',
+        },
+      });
+      setObsRecepcion('');
+      alert('Objeción registrada. El proveedor verá el motivo y podrá volver a solicitar la recepción.');
+    } finally {
+      setProcesandoRecepcion(false);
     }
   };
 
@@ -428,19 +702,30 @@ function EstadosPagoTab({ licitacion, oferta }: { licitacion: LicitacionProyecto
     if (Object.keys(erroresAvance).length) return alert('Corrija los porcentajes: ningún avance puede ser menor al anterior ni superior a 100%.');
     if (!montoNeto) return alert('Ingrese un avance acumulado mayor al registrado en al menos una partida.');
     if (montoTotal > saldoContrato + 1) return alert(`El estado supera el saldo contractual disponible (${formatoMonedaCLP(saldoContrato)}). Ajuste los avances del período.`);
+    if (!fotos.length) return alert('Debe adjuntar al menos una fotografía del avance o de la obra terminada.');
+    if (!tipoObraForm.trim()) return alert('Indique el tipo de obra (ej: Remodelación, Alhajamiento).');
+    if (!superficieForm || Number(superficieForm) <= 0) return alert('Indique la superficie (m²) intervenida.');
+    if (!usoEspacioForm.trim()) return alert('Indique el uso del espacio.');
+    const observacionesIncompletas = observacionesDetalle.some(o => Boolean(o.texto.trim()) !== Boolean(o.foto));
+    if (observacionesIncompletas) return alert('Cada observación debe tener texto y su fotografía de respaldo. Complete o elimine las observaciones incompletas.');
     setSaving(true);
     try {
-      let archivo: { id: string; url: string } | undefined;
+      let archivoUrl: string | undefined;
       if (file) {
-        const uploaded = await uploadFileToProjectFolder(file, licitacion.id, licitacion.nombreProyecto);
-        if (uploaded.storage !== 'drive') {
-          alert('No se pudo respaldar el estado de pago en Drive. Autorice Drive e intente nuevamente.');
-          return;
-        }
-        archivo = uploaded;
+        archivoUrl = await uploadLicitacionDocument(licitacion.id, 'estados-pago', file);
       }
-      const nuevoEstado: Omit<EstadoPago, 'id' | 'licitacionId'> = {
-        numero: estados.length + 1,
+      const fotosUrls = await Promise.all(fotos.map(f => uploadLicitacionDocument(licitacion.id, 'estados-pago', f)));
+      const fotosData = fotos.map((f, i) => ({ url: fotosUrls[i], nombre: f.name }));
+      const observacionesConFoto = await Promise.all(
+        observacionesDetalle
+          .filter(o => o.texto.trim() && o.foto)
+          .map(async o => ({
+            texto: o.texto.trim(),
+            fotoURL: await uploadLicitacionDocument(licitacion.id, 'estados-pago', o.foto as File),
+            fotoNombre: (o.foto as File).name,
+          }))
+      );
+      const nuevoEstado: Omit<EstadoPago, 'id' | 'licitacionId' | 'numero'> = {
         fecha: new Date().toISOString().split('T')[0],
         proveedorId: oferta.proveedorId,
         proveedorNombre: oferta.proveedorNombre,
@@ -451,19 +736,40 @@ function EstadosPagoTab({ licitacion, oferta }: { licitacion: LicitacionProyecto
         montoTotal,
         porcentajeAvanceGlobal: porcentajeGlobal,
         observaciones,
-        ...(file && archivo ? { archivoNombre: file.name, archivoURL: archivo.url, archivoDriveId: archivo.id } : {}),
+        ...(file && archivoUrl ? { archivoNombre: file.name, archivoURL: archivoUrl } : {}),
+        fotos: fotosData,
+        ...(observacionesConFoto.length ? { observacionesDetalle: observacionesConFoto } : {}),
+        tipoObra: tipoObraForm.trim(),
+        superficieM2: Number(superficieForm),
+        usoEspacio: usoEspacioForm.trim(),
         estado: 'Ingresado',
       };
-      const estadoPagoId = await addEstadoPago(licitacion.id, nuevoEstado);
+      const { id: estadoPagoId, numero } = await addEstadoPago(licitacion.id, nuevoEstado);
       await updateLicitacion(licitacion.id, { estadoLifecycle: 'En_Ejecucion' });
-      setEstadoDocumento({ id: estadoPagoId, licitacionId: licitacion.id, ...nuevoEstado });
+      setEstadoDocumento({ id: estadoPagoId, licitacionId: licitacion.id, numero, ...nuevoEstado });
       setAvances({});
       setObservaciones('');
       setFile(null);
-      alert(`Estado de pago N° ${estados.length + 1} ingresado.`);
+      setFotos([]);
+      setObservacionesDetalle([]);
+      alert(`Estado de pago N° ${numero} ingresado.`);
     } finally {
       setSaving(false);
     }
+  };
+
+  const agregarObservacion = () => {
+    if (observacionesDetalle.length >= 5) return;
+    setObservacionesDetalle(actual => [...actual, { texto: '', foto: null }]);
+  };
+  const actualizarObservacionTexto = (index: number, texto: string) => {
+    setObservacionesDetalle(actual => actual.map((o, i) => i === index ? { ...o, texto } : o));
+  };
+  const actualizarObservacionFoto = (index: number, foto: File | null) => {
+    setObservacionesDetalle(actual => actual.map((o, i) => i === index ? { ...o, foto } : o));
+  };
+  const eliminarObservacion = (index: number) => {
+    setObservacionesDetalle(actual => actual.filter((_, i) => i !== index));
   };
 
   if (!oferta) return <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6 text-sm text-amber-900">Adjudique una oferta para habilitar el control de estados de pago.</div>;
@@ -478,6 +784,46 @@ function EstadosPagoTab({ licitacion, oferta }: { licitacion: LicitacionProyecto
         <IndicadorProyecto icon={Clock3} label="Saldo contractual" value={formatoMonedaCLP(saldoContrato)} detail={desviacionFisica < 0 ? `${Math.abs(desviacionFisica)} pts bajo programa` : `${desviacionFisica} pts sobre programa`} color={desviacionFisica < 0 ? 'amber' : 'slate'} />
       </section>
 
+      {/* Panel de alerta de desvío + costo/m² */}
+      <div className="flex flex-wrap gap-3">
+        {/* Alerta de desvío significativo */}
+        {fechaInicio && plazoDias > 0 && Math.abs(desviacionFisica) > 10 && (
+          <div className={`flex-1 flex items-start gap-3 rounded-2xl border p-4 ${
+            desviacionFisica < 0
+              ? 'bg-amber-50 border-amber-300 text-amber-900'
+              : 'bg-emerald-50 border-emerald-300 text-emerald-900'
+          }`}>
+            <AlertTriangle className={`w-5 h-5 shrink-0 mt-0.5 ${desviacionFisica < 0 ? 'text-amber-600' : 'text-emerald-600'}`} />
+            <div>
+              <p className="font-bold text-sm">
+                {desviacionFisica < 0
+                  ? `Desvío de atraso: ${Math.abs(desviacionFisica)} puntos bajo lo programado`
+                  : `Adelanto: ${desviacionFisica} puntos sobre lo programado`}
+              </p>
+              <p className="text-xs mt-0.5 opacity-80">
+                Avance físico: {porcentajeFisicoRegistrado}% · Avance programado: {avanceProgramado}% · Días transcurridos: {diasTranscurridos}/{plazoDias}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Costo/m² efectivo */}
+        {licitacion.superficieM2 && licitacion.superficieM2 > 0 && pagadoAcumulado > 0 && (
+          <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm min-w-[220px]">
+            <div className="p-2 bg-indigo-100 rounded-xl">
+              <BarChart3 className="w-5 h-5 text-indigo-600" />
+            </div>
+            <div>
+              <span className="text-[10px] font-bold uppercase text-slate-400 block">Costo efectivo/m²</span>
+              <p className="font-black text-indigo-700 text-lg">
+                {formatoMonedaCLP(Math.round(pagadoAcumulado / licitacion.superficieM2))}/m²
+              </p>
+              <span className="text-[10px] text-slate-400">{licitacion.superficieM2} m² · {formatoMonedaCLP(pagadoAcumulado)} pagados</span>
+            </div>
+          </div>
+        )}
+      </div>
+
       <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
           <div>
@@ -485,7 +831,7 @@ function EstadosPagoTab({ licitacion, oferta }: { licitacion: LicitacionProyecto
             <p className="text-xs text-slate-500 mt-1">La programación se distribuye por el peso económico y orden del itemizado; el avance azul corresponde al avance físico aprobado.</p>
           </div>
           <div className="flex flex-wrap items-end gap-2 text-xs">
-            <label className="font-bold text-slate-600">Inicio de obra<input type="date" value={fechaInicio} onChange={e => setFechaInicio(e.target.value)} className="block mt-1 px-3 py-2 border rounded-lg" /></label>
+            <label className="font-bold text-slate-600">Inicio de obra<PremiumDatePicker value={fechaInicio} onChange={setFechaInicio} className="flex items-center gap-2 mt-1 px-3 py-2 border rounded-lg text-left" /></label>
             <div className="px-3 py-2 bg-slate-50 border rounded-lg"><span className="block text-[9px] uppercase text-slate-400">Plazo</span><strong>{plazoDias} días corridos</strong></div>
             <div className="px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg"><span className="block text-[9px] uppercase text-emerald-600">Término calculado</span><strong className="text-emerald-800">{fechaTermino ? formatearFecha(fechaTermino) : 'Pendiente'}</strong></div>
             <button onClick={guardarFechas} disabled={savingDates || !fechaInicio || !plazoDias} className="px-4 py-2.5 bg-sky-700 text-white rounded-lg font-bold disabled:opacity-50">{savingDates ? 'Guardando…' : 'Guardar programa'}</button>
@@ -515,6 +861,86 @@ function EstadosPagoTab({ licitacion, oferta }: { licitacion: LicitacionProyecto
       {contratoCompletado && (
         <section className="rounded-2xl border border-emerald-300 bg-emerald-50 p-6 text-emerald-950">
           <div className="flex items-start gap-3"><ShieldCheck className="h-6 w-6 shrink-0 text-emerald-700" /><div><h2 className="font-black">Contrato vigente completado</h2><p className="mt-1 text-xs">El avance físico o financiero alcanzó el 100%. No se pueden ingresar más estados de pago. Si existe mayor obra, regístrela en la ficha del proyecto y obtenga su aprobación; las nuevas partidas y el nuevo saldo habilitarán automáticamente el siguiente estado.</p></div></div>
+        </section>
+      )}
+
+      {contratoCompletado && (
+        <section className="rounded-2xl border border-sky-300 bg-sky-50 p-6 space-y-4">
+          <div className="flex items-start gap-3">
+            <ClipboardCheck className="h-6 w-6 shrink-0 text-sky-700" />
+            <div>
+              <h2 className="font-black text-sky-950">Recepción Conforme de Obra</h2>
+              <p className="mt-1 text-xs text-sky-900">Cierre formal del proceso: al aprobarla, la licitación pasa automáticamente a estado <strong>Finalizado</strong>.</p>
+            </div>
+          </div>
+
+          {licitacion.recepcionConforme?.aprobada ? (
+            <div className="space-y-3">
+              <div className="bg-emerald-100 border border-emerald-300 rounded-xl p-4 text-emerald-900 text-xs font-semibold flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 shrink-0" />
+                Recepción Conforme aprobada el {formatearFecha(licitacion.recepcionConforme.fechaAprobacion || '')} por {licitacion.recepcionConforme.aprobadoPor || 'el responsable'}.
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setActaRecepcionAbierta(true)}
+                  className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold text-xs flex items-center gap-2"
+                >
+                  <FileCheck2 className="w-4 h-4" />
+                  {licitacion.actaRecepcionAdobe ? 'Ver Acta de Recepción y estado de firma' : 'Generar Acta de Recepción y enviar a firma digital'}
+                </button>
+                {licitacion.proveedorAdjudicadoId && (
+                  <button
+                    onClick={() => setEvaluacionAbierta(true)}
+                    className="px-4 py-2.5 bg-purple-700 hover:bg-purple-800 text-white rounded-lg font-bold text-xs flex items-center gap-2"
+                  >
+                    <ClipboardCheck className="w-4 h-4" />
+                    Evaluar Desempeño del Proveedor
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : licitacion.recepcionConforme?.solicitada ? (
+            <div className="space-y-3">
+              <div className="bg-amber-100 border border-amber-300 rounded-xl p-4 text-amber-900 text-xs">
+                Solicitada por {licitacion.proveedorAdjudicadoNombre || 'el proveedor'} el {formatearFecha(licitacion.recepcionConforme.fechaSolicitud || '')}. Pendiente de revisión.
+              </div>
+              <textarea
+                value={obsRecepcion}
+                onChange={e => setObsRecepcion(e.target.value)}
+                placeholder="Observaciones (obligatorias si objeta; opcionales si aprueba)..."
+                rows={2}
+                className="w-full px-3 py-2 border border-sky-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-sky-500"
+              />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={aprobarRecepcion}
+                  disabled={procesandoRecepcion || !esResponsableActual}
+                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs disabled:opacity-50"
+                >
+                  {procesandoRecepcion ? 'Procesando…' : 'Aprobar Recepción Conforme'}
+                </button>
+                <button
+                  onClick={objetarRecepcion}
+                  disabled={procesandoRecepcion || !esResponsableActual}
+                  className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold text-xs disabled:opacity-50"
+                >
+                  Objetar y devolver al proveedor
+                </button>
+              </div>
+              {!esResponsableActual && (
+                <p className="text-[10px] text-sky-700">Solo {licitacion.responsableNombre || 'el responsable del proyecto'} puede aprobar u objetar esta solicitud.</p>
+              )}
+            </div>
+          ) : (
+            <div className="bg-white border border-sky-200 rounded-xl p-4 text-xs text-sky-800">
+              {licitacion.recepcionConforme?.objetada && (
+                <p className="mb-2 text-rose-700 font-semibold">
+                  Última solicitud objetada el {formatearFecha(licitacion.recepcionConforme.fechaObjecion || '')}: “{licitacion.recepcionConforme.observaciones}”
+                </p>
+              )}
+              Aún no hay una solicitud de Recepción Conforme del proveedor.
+            </div>
+          )}
         </section>
       )}
       {aumentos.some(aumento => aumento.estado === 'Borrador') && (
@@ -551,8 +977,72 @@ function EstadosPagoTab({ licitacion, oferta }: { licitacion: LicitacionProyecto
             </tbody>
           </table>
         </div>
+        <div className="p-5 border-t bg-white space-y-4">
+          <div>
+            <h3 className="text-xs font-black uppercase text-slate-500 flex items-center gap-1.5"><ClipboardCheck className="w-3.5 h-3.5" /> Datos de la obra</h3>
+            <div className="mt-2 grid sm:grid-cols-3 gap-3">
+              <label className="text-[11px] font-bold text-slate-600">Tipo de obra
+                <input type="text" value={tipoObraForm} onChange={e => setTipoObraForm(e.target.value)} placeholder="Ej: Remodelación, Alhajamiento" className="mt-1 w-full px-3 py-2 border rounded-lg text-xs" />
+              </label>
+              <label className="text-[11px] font-bold text-slate-600">Superficie intervenida (m²)
+                <input type="number" min={0} step="0.01" value={superficieForm} onChange={e => setSuperficieForm(e.target.value)} placeholder="Ej: 120" className="mt-1 w-full px-3 py-2 border rounded-lg text-xs" />
+              </label>
+              <label className="text-[11px] font-bold text-slate-600">Uso del espacio
+                <input type="text" value={usoEspacioForm} onChange={e => setUsoEspacioForm(e.target.value)} placeholder="Ej: Sala de clases, Laboratorio" className="mt-1 w-full px-3 py-2 border rounded-lg text-xs" />
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-xs font-black uppercase text-slate-500 flex items-center gap-1.5"><Camera className="w-3.5 h-3.5" /> Fotografías del avance / obra terminada <span className="text-red-600">*</span></h3>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={e => setFotos(actual => [...actual, ...Array.from(e.target.files || [])])}
+              className="mt-2 text-xs"
+            />
+            {fotos.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {fotos.map((f, i) => (
+                  <div key={`${f.name}-${i}`} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[10px]">
+                    <ImageIcon className="w-3 h-3 text-slate-400 shrink-0" />
+                    <span className="max-w-[140px] truncate">{f.name}</span>
+                    <button type="button" onClick={() => setFotos(actual => actual.filter((_, idx) => idx !== i))} className="text-red-500 hover:text-red-700"><Trash2 className="w-3 h-3" /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-black uppercase text-slate-500">Observaciones con evidencia fotográfica ({observacionesDetalle.length}/5)</h3>
+              <button type="button" onClick={agregarObservacion} disabled={observacionesDetalle.length >= 5} className="flex items-center gap-1 text-[11px] font-bold text-sky-700 hover:text-sky-900 disabled:opacity-40"><Plus className="w-3.5 h-3.5" /> Agregar observación</button>
+            </div>
+            {observacionesDetalle.length === 0 && <p className="mt-1 text-[11px] text-slate-400">Sin observaciones puntuales registradas.</p>}
+            <div className="mt-2 space-y-2">
+              {observacionesDetalle.map((obs, i) => (
+                <div key={i} className="flex flex-col sm:flex-row gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <textarea
+                    value={obs.texto}
+                    onChange={e => actualizarObservacionTexto(i, e.target.value)}
+                    rows={2}
+                    placeholder={`Observación ${i + 1}...`}
+                    className="flex-1 px-3 py-2 border rounded-lg text-xs"
+                  />
+                  <div className="flex sm:flex-col items-start gap-1.5 shrink-0">
+                    <input type="file" accept="image/*" onChange={e => actualizarObservacionFoto(i, e.target.files?.[0] || null)} className="text-[10px] w-40" />
+                    <button type="button" onClick={() => eliminarObservacion(i)} className="flex items-center gap-1 text-[10px] font-bold text-red-600 hover:text-red-800"><Trash2 className="w-3 h-3" /> Quitar</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
         <div className="p-5 bg-slate-50 grid sm:grid-cols-3 gap-4">
-          <div className="sm:col-span-2 space-y-3"><textarea value={observaciones} onChange={e => setObservaciones(e.target.value)} rows={2} placeholder="Observaciones del avance..." className="w-full p-3 border rounded-xl text-xs" /><input type="file" accept=".pdf,.xlsx,.xls,.doc,.docx" onChange={e => setFile(e.target.files?.[0] || null)} className="text-xs" /></div>
+          <div className="sm:col-span-2 space-y-3"><textarea value={observaciones} onChange={e => setObservaciones(e.target.value)} rows={2} placeholder="Observaciones generales del avance (opcional)..." className="w-full p-3 border rounded-xl text-xs" /><input type="file" accept=".pdf,.xlsx,.xls,.doc,.docx" onChange={e => setFile(e.target.files?.[0] || null)} className="text-xs" /></div>
           <div className="text-right text-xs space-y-1"><p>Neto: <strong>{formatoMonedaCLP(montoNeto)}</strong></p><p>IVA: <strong>{formatoMonedaCLP(montoIva)}</strong></p><p className="text-base text-emerald-700">Total: <strong>{formatoMonedaCLP(montoTotal)}</strong></p><p>Avance físico resultante: <strong>{porcentajeGlobal}%</strong></p><button onClick={save} disabled={saving || Object.keys(erroresAvance).length > 0} className="mt-2 px-4 py-2 bg-emerald-700 text-white rounded-xl font-bold disabled:opacity-50">{saving ? 'Guardando...' : 'Ingresar estado de pago'}</button></div>
         </div>
       </section>
@@ -574,6 +1064,12 @@ function EstadosPagoTab({ licitacion, oferta }: { licitacion: LicitacionProyecto
                 </div>
                 <p className="text-xs text-slate-500 mt-1">{formatearFecha(ep.fecha)} · Avance físico acumulado {ep.porcentajeAvanceGlobal}%</p>
                 <p className="text-sm font-black text-emerald-700 mt-2">{formatoMonedaCLP(ep.montoTotal)}</p>
+                {(ep.fotos?.length || ep.observacionesDetalle?.length) ? (
+                  <p className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-slate-500">
+                    <Camera className="h-3 w-3" /> {ep.fotos?.length || 0} foto{(ep.fotos?.length || 0) === 1 ? '' : 's'}
+                    {ep.observacionesDetalle?.length ? ` · ${ep.observacionesDetalle.length} observación${ep.observacionesDetalle.length === 1 ? '' : 'es'} con evidencia` : ''}
+                  </p>
+                ) : null}
                 {ep.firmaResponsable ? (
                   <div className="mt-3 rounded-lg border border-emerald-200 bg-white/80 p-2 text-[10px] text-emerald-900">
                     <p className="flex items-center gap-1 font-bold"><ShieldCheck className="h-3.5 w-3.5" /> {ep.firmaResponsable.nombre}</p>
@@ -583,6 +1079,38 @@ function EstadosPagoTab({ licitacion, oferta }: { licitacion: LicitacionProyecto
                 ) : (
                   <div className="mt-3 flex items-center gap-2 text-[10px] text-amber-800"><LockKeyhole className="h-3.5 w-3.5" /> Requiere firma de {licitacion.responsableNombre || 'responsable asignado'}.</div>
                 )}
+                {/* Estado de Facturación y Glosa */}
+                {ep.factura ? (
+                  <div className="mt-3 bg-emerald-50 border border-emerald-300 rounded-xl p-2.5 text-xs flex items-center justify-between gap-2">
+                    <div className="space-y-0.5 min-w-0">
+                      <span className="font-extrabold text-emerald-950 flex items-center gap-1">
+                        <Receipt className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+                        Factura N° {ep.factura.numeroFactura} ({formatoMonedaCLP(ep.factura.montoFactura)})
+                      </span>
+                      <span className="text-[10px] text-slate-500 block truncate max-w-xs font-mono" title={ep.factura.glosaOficial}>
+                        "{ep.factura.glosaOficial}"
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setFacturaModalEP(ep)}
+                      className="text-[10px] font-bold text-emerald-800 bg-white hover:bg-emerald-100 border border-emerald-300 px-2.5 py-1 rounded-lg transition shrink-0 shadow-sm"
+                    >
+                      Ver Factura
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mt-3 bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs flex items-center justify-between">
+                    <span className="text-[11px] text-slate-500 italic">Factura no cargada aún</span>
+                    <button
+                      onClick={() => setFacturaModalEP(ep)}
+                      className="flex items-center gap-1 text-[11px] font-bold text-white bg-emerald-700 hover:bg-emerald-800 px-3 py-1 rounded-lg shadow-sm transition"
+                    >
+                      <Receipt className="w-3.5 h-3.5" />
+                      + Cargar Factura
+                    </button>
+                  </div>
+                )}
+
                 <div className="mt-3 flex flex-wrap items-center gap-3">
                   <button onClick={() => setEstadoDocumento(ep)} className="flex items-center gap-1 text-xs font-bold text-slate-700 hover:text-sky-700"><FileText className="w-3.5 h-3.5" /> Ver documento</button>
                   {ep.archivoURL && <a href={ep.archivoURL} target="_blank" rel="noreferrer" className="text-xs text-sky-700 underline">Abrir respaldo</a>}
@@ -601,6 +1129,33 @@ function EstadosPagoTab({ licitacion, oferta }: { licitacion: LicitacionProyecto
           estadoPago={estadoDocumento}
           estadosPago={estados.some(estado => estado.id === estadoDocumento.id) ? estados : [...estados, estadoDocumento]}
           onClose={() => setEstadoDocumento(null)}
+          onCargarFactura={ep => setFacturaModalEP(ep)}
+        />
+      )}
+
+      {facturaModalEP && (
+        <CargaFacturaEstadoPagoModal
+          licitacion={licitacion}
+          estadoPago={facturaModalEP}
+          estadosPago={estados}
+          onClose={() => setFacturaModalEP(null)}
+        />
+      )}
+
+      {actaRecepcionAbierta && (
+        <ActaRecepcionModal
+          licitacion={licitacion}
+          configFirmas={configFirmas}
+          onClose={() => setActaRecepcionAbierta(false)}
+        />
+      )}
+
+      {evaluacionAbierta && licitacion.proveedorAdjudicadoId && (
+        <EvaluacionDesempenoModal
+          proveedorId={licitacion.proveedorAdjudicadoId}
+          proveedorNombre={licitacion.proveedorAdjudicadoNombre || 'Proveedor'}
+          licitacion={licitacion}
+          onClose={() => setEvaluacionAbierta(false)}
         />
       )}
     </div>

@@ -14,7 +14,7 @@ interface ActaEvaluacionModalProps {
   proveedores: Proveedor[];
   configFirmas: ConfiguracionFirmas;
   onClose: () => void;
-  onAdjudicar: (proveedorId: string, justificacion: string) => void;
+  onAdjudicar: (proveedorId: string, justificacion: string) => Promise<void>;
 }
 
 export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
@@ -44,6 +44,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
 
   const [modoEdicion, setModoEdicion] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isAdjudicando, setIsAdjudicando] = useState(false);
 
   const cotizacionGanadoraSel = evaluaciones.find(e => e.proveedorId === proveedorSeleccionadoId) || ganadoraDefault;
 
@@ -84,21 +85,28 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
     }
   };
 
-  const handleAprobarYAdjudicar = () => {
+  const handleAprobarYAdjudicar = async () => {
     if (!proveedorSeleccionadoId) {
       alert('Seleccione un proveedor para adjudicar.');
       return;
     }
     if (!confirm(`¿Confirmar la Adjudicación Oficial de la Licitación a ${proveedorganador.razonSocial}?`)) return;
 
-    confetti({
-      particleCount: 150,
-      spread: 90,
-      origin: { y: 0.6 },
-    });
-
-    onAdjudicar(proveedorSeleccionadoId, justificacionEditada);
-    onClose();
+    setIsAdjudicando(true);
+    try {
+      await onAdjudicar(proveedorSeleccionadoId, justificacionEditada);
+      confetti({
+        particleCount: 150,
+        spread: 90,
+        origin: { y: 0.6 },
+      });
+      onClose();
+    } catch (err) {
+      console.error('Error al adjudicar la licitación:', err);
+      alert(err instanceof Error ? err.message : 'No fue posible adjudicar la licitación. Intente nuevamente.');
+    } finally {
+      setIsAdjudicando(false);
+    }
   };
 
   const isAdjudicado = licitacion.estado === 'Adjudicado' || licitacion.estado === 'Cerrado';
@@ -725,10 +733,11 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
               <button
                 type="button"
                 onClick={handleAprobarYAdjudicar}
-                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-md transition flex items-center gap-2"
+                disabled={isAdjudicando}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold rounded-xl shadow-md transition flex items-center gap-2"
               >
                 <Trophy className="w-4 h-4" />
-                <span>Aprobar y Emitir Adjudicación</span>
+                <span>{isAdjudicando ? 'Adjudicando…' : 'Aprobar y Emitir Adjudicación'}</span>
               </button>
             )}
 

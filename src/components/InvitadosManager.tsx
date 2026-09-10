@@ -7,6 +7,7 @@ import {
   subscribeToInvitados,
   addInvitado,
   removeInvitado,
+  updateLicitacion,
 } from '../services/firestoreService';
 import type { Proveedor, InvitadoLicitacion, LicitacionProyecto } from '../types';
 
@@ -26,6 +27,28 @@ export const InvitadosManager: React.FC<InvitadosManagerProps> = ({
   const [addingId, setAddingId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [error, setError] = useState('');
+  const [guardandoUnicoProveedor, setGuardandoUnicoProveedor] = useState(false);
+
+  const handleToggleUnicoProveedor = async () => {
+    const nuevoValor = !licitacion.esUnicoProveedor;
+    if (nuevoValor && !confirm('¿Confirma marcar esta licitación como "Único Proveedor"? Esto habilita adjudicarla con menos de 3 invitados. Úselo solo cuando exista una justificación real (proveedor especializado, trato directo, etc.) — regístrela en la justificación de adjudicación.')) return;
+    setGuardandoUnicoProveedor(true);
+    try {
+      await updateLicitacion(licitacion.id, { esUnicoProveedor: nuevoValor });
+    } catch (err) {
+      console.error('Error actualizando esUnicoProveedor:', err);
+      setError('No se pudo actualizar la marca de "Único Proveedor". Intente nuevamente.');
+    } finally {
+      setGuardandoUnicoProveedor(false);
+    }
+  };
+
+  const checklist = licitacion.checklistAntecedentes;
+  const antecedentesCompletos = Boolean(
+    checklist?.basesTecnicasOk && checklist?.basesAdministrativasOk && checklist?.planosOk &&
+    checklist?.calendarioDefinidoOk && checklist?.revisadoSecretariaGeneralOk
+  );
 
   useEffect(() => {
     const unsub = subscribeToInvitados(licitacion.id, data => {
@@ -47,16 +70,23 @@ export const InvitadosManager: React.FC<InvitadosManagerProps> = ({
     );
 
   const handleAdd = async (prov: Proveedor) => {
+    setError('');
     setAddingId(prov.id);
-    await addInvitado(licitacion.id, {
-      proveedorId: prov.id,
-      proveedorEmail: prov.email,
-      proveedorNombre: prov.razonSocial,
-      proveedorRut: prov.rut,
-      fechaInvitacion: new Date().toISOString().split('T')[0],
-      estadoPropuesta: 'Pendiente',
-    });
-    setAddingId(null);
+    try {
+      await addInvitado(licitacion.id, {
+        proveedorId: prov.id,
+        proveedorEmail: prov.email,
+        proveedorNombre: prov.razonSocial,
+        proveedorRut: prov.rut,
+        fechaInvitacion: new Date().toISOString().split('T')[0],
+        estadoPropuesta: 'Pendiente',
+      });
+    } catch (err) {
+      console.error('Error invitando proveedor:', err);
+      setError(`No se pudo invitar a ${prov.razonSocial}. Intente nuevamente.`);
+    } finally {
+      setAddingId(null);
+    }
   };
 
   const handleAutoSuggest = async () => {
@@ -76,6 +106,9 @@ export const InvitadosManager: React.FC<InvitadosManagerProps> = ({
       alert('No hay proveedores disponibles para invitar.');
       return;
     }
+    if (recomendados.length < 3) {
+      alert(`Solo se encontraron ${recomendados.length} proveedor(es) disponibles — se recomienda al menos 3 invitados.`);
+    }
 
     for (const prov of recomendados) {
       await handleAdd(prov);
@@ -88,9 +121,16 @@ export const InvitadosManager: React.FC<InvitadosManagerProps> = ({
       return;
     }
     if (!confirm(`¿Eliminar la invitación a ${invitado.proveedorNombre}?`)) return;
+    setError('');
     setRemovingId(invitado.proveedorId);
-    await removeInvitado(licitacion.id, invitado.proveedorId);
-    setRemovingId(null);
+    try {
+      await removeInvitado(licitacion.id, invitado.proveedorId);
+    } catch (err) {
+      console.error('Error eliminando invitado:', err);
+      setError(`No se pudo eliminar a ${invitado.proveedorNombre}. Intente nuevamente.`);
+    } finally {
+      setRemovingId(null);
+    }
   };
 
   const estadoBadge = (estado: InvitadoLicitacion['estadoPropuesta']) => {
@@ -133,34 +173,60 @@ export const InvitadosManager: React.FC<InvitadosManagerProps> = ({
 
         <div className="flex-1 overflow-y-auto">
           {/* Banner de Verificación de Antecedentes */}
-          <div className="p-4 bg-slate-900 text-white flex items-center justify-between gap-4">
+          <div className={`p-4 text-white flex items-center justify-between gap-4 ${antecedentesCompletos ? 'bg-slate-900' : 'bg-amber-800'}`}>
             <div className="flex items-center gap-2.5 text-xs">
-              <ShieldCheck className="w-5 h-5 text-indigo-400 shrink-0" />
+              <ShieldCheck className="w-5 h-5 text-indigo-300 shrink-0" />
               <div>
                 <span className="font-bold text-white block">Estado Antecedentes Técnicos SGC:</span>
-                <span className="text-[11px] text-slate-300">
-                  {licitacion.checklistAntecedentes?.basesTecnicasOk ? '✓ Bases Técnicas y Planos Validados' : '⚠️ Pendiente de validación de antecedentes'}
+                <span className="text-[11px] text-slate-200">
+                  {antecedentesCompletos ? '✓ Checklist de Bases y Planos completo' : '⚠️ Checklist de "Bases & Planos" incompleto — complételo antes de invitar'}
                 </span>
               </div>
             </div>
 
             <button
-              onClick={async () => {
+              onClick={() => {
+                if (!antecedentesCompletos) {
+                  alert('No se puede enviar la invitación: el checklist de "Bases & Planos" (Antecedentes Técnicos) no está completo para esta licitación.');
+                  return;
+                }
                 if (invitados.length === 0) {
                   alert('Debe agregar al menos un proveedor para enviar invitaciones.');
                   return;
                 }
-                const confirmMsg = `¿Confirmar el envío oficial de ${invitados.length} invitación(es) por correo electrónico con las bases técnicas y calendario de licitación?`;
-                if (!confirm(confirmMsg)) return;
+                // El sistema no tiene un servicio de correo conectado todavía: en vez de
+                // simular un envío que nunca ocurrió, se abre el cliente de correo del
+                // propio usuario con los destinatarios en CCO (para no exponer entre sí
+                // a empresas que compiten en la misma licitación) y el asunto ya listo.
+                const emails = invitados
+                  .map(inv => proveedores.find(p => p.id === inv.proveedorId)?.email)
+                  .filter((email): email is string => Boolean(email));
 
-                alert(`¡Se han enviado exitosamente ${invitados.length} invitaciones individuales por correo electrónico! Los contratistas han sido notificados con las bases técnicas y el enlace de postulación.`);
+                if (emails.length < invitados.length) {
+                  alert(`${invitados.length - emails.length} de ${invitados.length} proveedores invitados no tienen correo registrado en su ficha. Complételo antes de continuar.`);
+                }
+                if (!emails.length) return;
+
+                const asunto = encodeURIComponent(`Invitación a licitación — ${licitacion.codigoProyecto || ''} ${licitacion.nombreProyecto}`);
+                const cuerpo = encodeURIComponent(
+                  `Estimados,\n\nLes invitamos a participar en el proceso de licitación "${licitacion.nombreProyecto}" (CP ${licitacion.codigoCP}).\n\nAdjunte a este correo las bases técnicas y administrativas correspondientes.\n\nSaludos,\nSubdirección de Infraestructura UCT`
+                );
+                window.location.href = `mailto:?bcc=${emails.join(',')}&subject=${asunto}&body=${cuerpo}`;
               }}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2 rounded-xl transition shadow-sm flex items-center gap-1.5 shrink-0"
+              disabled={!antecedentesCompletos}
+              className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-600 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-xs px-4 py-2 rounded-xl transition shadow-sm flex items-center gap-1.5 shrink-0"
+              title={antecedentesCompletos ? 'Abre su cliente de correo con los invitados en copia oculta. El sistema aún no envía correos automáticamente.' : 'Complete el checklist de Bases & Planos antes de invitar'}
             >
               <Send className="w-3.5 h-3.5" />
-              <span>Enviar Invitaciones ({invitados.length})</span>
+              <span>Redactar Invitación por Correo ({invitados.length})</span>
             </button>
           </div>
+
+          {error && (
+            <div className="mx-6 mt-4 p-3 rounded-xl border border-red-200 bg-red-50 text-red-800 text-xs font-semibold">
+              {error}
+            </div>
+          )}
 
           {/* Invitados actuales */}
           <div className="p-6 border-b border-slate-100">
@@ -168,9 +234,14 @@ export const InvitadosManager: React.FC<InvitadosManagerProps> = ({
               <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
                 Invitados Actuales ({invitados.length})
               </h4>
-              {invitados.length < 3 && (
+              {invitados.length < 3 && !licitacion.esUnicoProveedor && (
                 <span className="flex items-center gap-1 text-amber-600 text-[10px] font-semibold">
-                  <AlertTriangle className="w-3 h-3" /> Mínimo 3 sugeridos
+                  <AlertTriangle className="w-3 h-3" /> Mínimo 3 sugeridos — no se podrá adjudicar hasta cumplirlo
+                </span>
+              )}
+              {invitados.length < 3 && licitacion.esUnicoProveedor && (
+                <span className="flex items-center gap-1 text-indigo-600 text-[10px] font-semibold">
+                  <ShieldCheck className="w-3 h-3" /> Excepción "Único Proveedor" activa
                 </span>
               )}
               {invitados.length >= 3 && (
@@ -179,6 +250,19 @@ export const InvitadosManager: React.FC<InvitadosManagerProps> = ({
                 </span>
               )}
             </div>
+
+            {invitados.length < 3 && (
+              <label className="mb-3 flex items-start gap-2 p-2.5 rounded-lg border border-indigo-200 bg-indigo-50/60 text-[11px] text-indigo-900 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={Boolean(licitacion.esUnicoProveedor)}
+                  disabled={guardandoUnicoProveedor}
+                  onChange={handleToggleUnicoProveedor}
+                  className="w-4 h-4 mt-0.5 text-indigo-600 rounded"
+                />
+                <span>Marcar como <strong>Único Proveedor / trato directo</strong> (excepción justificada al mínimo de 3 invitados — sin esta marca no se podrá adjudicar con menos de 3).</span>
+              </label>
+            )}
 
             {loading ? (
               <p className="text-xs text-slate-400">Cargando...</p>

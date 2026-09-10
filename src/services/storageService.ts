@@ -8,7 +8,7 @@ const KEYS = {
   PROVEEDORES: 'infra_app_proveedores_v3',
   LICITACIONES: 'infra_app_licitaciones_v2',
   COTIZACIONES: 'infra_app_cotizaciones_v2',
-  CONFIG_FIRMAS: 'infra_app_config_firmas_v1',
+  CONFIG_FIRMAS: 'infra_app_config_firmas_v2',
 };
 
 export const storageService = {
@@ -109,10 +109,44 @@ export function uploadPropuesta(
   });
 }
 
+/** Sube la imagen de la firma manuscrita enrolada por un usuario y retorna la URL de descarga. */
+export function uploadFirmaImagen(uid: string, file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const ext = file.name.split('.').pop() || 'png';
+    const storageRef = ref(storage, `firmas/${uid}.${ext}`);
+    const task = uploadBytesResumable(storageRef, file);
+    task.on(
+      'state_changed',
+      () => {},
+      reject,
+      async () => resolve(await getDownloadURL(task.snapshot.ref))
+    );
+  });
+}
+
+/** Sube un documento/antecedente de la Ficha de Proyecto a Firebase Storage y retorna la URL de descarga. */
+export function uploadProyectoDocumento(
+  proyectoId: string,
+  file: File,
+  onProgress?: (pct: number) => void
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const nombreSeguro = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storageRef = ref(storage, `proyectos/${proyectoId}/documentos/${Date.now()}_${nombreSeguro}`);
+    const task = uploadBytesResumable(storageRef, file);
+    task.on(
+      'state_changed',
+      snapshot => onProgress?.(Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)),
+      reject,
+      async () => resolve(await getDownloadURL(task.snapshot.ref))
+    );
+  });
+}
+
 /** Respaldo persistente para documentos administrativos cuando Drive no está disponible. */
 export function uploadLicitacionDocument(
   licitacionId: string,
-  categoria: 'ofertas' | 'ordenes-compra' | 'estados-pago',
+  categoria: 'ofertas' | 'ordenes-compra' | 'estados-pago' | 'antecedentes',
   file: File,
   onProgress?: (pct: number) => void
 ): Promise<string> {
