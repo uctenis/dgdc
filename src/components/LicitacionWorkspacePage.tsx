@@ -40,7 +40,7 @@ interface Props {
   onBack: () => void;
   onAddCotizacion: (cotizacion: Omit<Cotizacion, 'id' | 'fechaCarga'>) => void | Promise<void>;
   onDeleteCotizacion: (id: string) => void | Promise<void>;
-  onAdjudicarLicitacion: (licitacionId: string, proveedorId: string, justificacion: string) => void | Promise<void>;
+  onAdjudicarLicitacion: (licitacionId: string, proveedorId: string, justificacion: string) => Promise<void>;
 }
 
 const tabs: { id: TabId; label: string; icon: typeof FileText }[] = [
