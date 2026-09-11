@@ -1,4 +1,5 @@
-import type { SeccionBases } from './basesTemplateData';
+import type { SeccionBases, PoliticaGarantias } from './basesTemplateData';
+import { sugerirPoliticaGarantias } from './basesTemplateData';
 
 export type SeccionContrato = SeccionBases;
 
@@ -39,7 +40,7 @@ export const PLANTILLA_CONTRATO_OBRA_CIVIL: SeccionContrato[] = [
   {
     id: 'objeto',
     titulo: 'Primera — Objeto del Contrato',
-    contenido: '1.1 El presente contrato y sus anexos (Presupuesto Oficial, Programa de Obra / Carta Gantt, Programa Financiero y Condiciones Particulares) son los únicos documentos válidos para regular las relaciones entre las partes, dejando sin efecto cualquier previsión de la oferta del PRESTADOR o de la documentación precedente a la firma. 1.2 El MANDANTE encarga al PRESTADOR la ejecución de la totalidad de la obra "{{nombreProyecto}}" según lo estudiado en el proceso de licitación, incluyendo aclaraciones del proceso de consultas, que el PRESTADOR declara conocer. 1.3 El PRESTADOR reconoce como interlocutores válidos únicamente a los representantes que determine el MANDANTE.',
+    contenido: '1.1 El presente contrato y sus anexos (Presupuesto Oficial, Programa de Obra / Carta Gantt, Programa Financiero y Condiciones Particulares) son los únicos documentos válidos para regular las relaciones entre las partes, dejando sin efecto cualquier previsión de la oferta del PRESTADOR o de la documentación precedente a la firma. 1.2 El MANDANTE encarga al PRESTADOR la ejecución de la totalidad de la obra "{{nombreProyecto}}" según lo estudiado en el proceso de licitación, incluyendo aclaraciones del proceso de consultas, que el PRESTADOR declara conocer. 1.3 El PRESTADOR reconoce como interlocutores válidos únicamente a los representantes que determine el MANDANTE.\n\n1.4 Alcance específico declarado en la Cartera de Proyectos: {{descripcionProyecto}}',
   },
   {
     id: 'precio',
@@ -112,13 +113,22 @@ const TEXTO_GARANTIAS_CONTRATO_SIN = 'Dado el monto de este contrato, inferior a
 const TEXTO_GARANTIAS_CONTRATO_RETENCION = 'En vez de boletas de garantía bancarias, se establece una retención de 5% sobre cada factura, la cual responderá de la correcta ejecución de la obra y del cumplimiento de las obligaciones del PRESTADOR. Su devolución se realizará conforme a lo indicado en la cláusula de Terminación y Garantía Post-Venta.';
 const TEXTO_GARANTIAS_CONTRATO_COMPLETAS = 'Se establece una retención del 5% del monto de cada factura, que junto con las boletas exigidas responderá de la correcta ejecución de la obra y demás obligaciones del PRESTADOR. El PRESTADOR debe proporcionar una Boleta de Fiel Cumplimiento del Contrato o póliza equivalente por el 5% del contrato, con vigencia de 60 días luego de la Recepción Provisoria de las obras. Adicionalmente, para el período de garantía post-venta, deberá proporcionar una Boleta de Garantía de Correcta Ejecución (o póliza equivalente) por el 5%, con vigencia de 365 días desde el Acta de Recepción.';
 
-export function resolverNotaGarantiasContrato(politica: 'Sin Garantías' | 'Retención sobre Estados de Pago' | 'Boletas de Garantía Completas' | undefined): string {
-  if (politica === 'Sin Garantías') return TEXTO_GARANTIAS_CONTRATO_SIN;
-  if (politica === 'Retención sobre Estados de Pago') return TEXTO_GARANTIAS_CONTRATO_RETENCION;
+/**
+ * Resuelve el texto de garantías del Contrato. Si el proyecto nunca definió una política
+ * explícita, NO se asume la más exigente por defecto (bug corregido) — se sugiere según el
+ * monto real ADJUDICADO, igual que se hace para las Bases (que a esa altura pudo haberse
+ * sugerido con el Presupuesto Estimado, distinto del monto que finalmente se adjudicó).
+ */
+export function resolverNotaGarantiasContrato(politica: PoliticaGarantias | undefined, montoAdjudicado = 0): string {
+  const politicaEfectiva = politica || sugerirPoliticaGarantias(montoAdjudicado);
+  if (politicaEfectiva === 'Sin Garantías') return TEXTO_GARANTIAS_CONTRATO_SIN;
+  if (politicaEfectiva === 'Retención sobre Estados de Pago') return TEXTO_GARANTIAS_CONTRATO_RETENCION;
   return TEXTO_GARANTIAS_CONTRATO_COMPLETAS;
 }
 
-const STORAGE_KEY_CONTRATO_OBRA_CIVIL = 'infra_app_plantilla_contrato_v1_obra-civil';
+// v2: se agregó {{descripcionProyecto}} a la cláusula de Objeto — el cambio de versión en la
+// llave fuerza a que todos los navegadores reciban el default nuevo (localStorage no se auto-migra).
+const STORAGE_KEY_CONTRATO_OBRA_CIVIL = 'infra_app_plantilla_contrato_v2_obra-civil';
 
 export function getPlantillaContratoObraCivil(): SeccionContrato[] {
   try {

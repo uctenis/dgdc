@@ -1,15 +1,14 @@
 import { useRef, useState } from 'react';
-import { X, FileText, Printer, Download, Loader2, ShieldCheck, ScrollText, AlertTriangle, FileType2, FolderInput, CheckCircle2, RefreshCw } from 'lucide-react';
+import { X, FileText, Printer, Download, Loader2, ShieldCheck, ScrollText, AlertTriangle, FileType2, FolderInput, CheckCircle2, RefreshCw, Upload, ExternalLink } from 'lucide-react';
 import type { ProyectoMaestro, LicitacionProyecto } from '../types';
-import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { updateProyectoMaestro, updateLicitacion } from '../services/firestoreService';
 import { generarPdfDesdeElemento } from '../services/pdfGenerator';
-import { uploadLicitacionDocument } from '../services/storageService';
+import { uploadLicitacionDocument, uploadProyectoDocumento } from '../services/storageService';
 import { generarDocumentoSeccionesWord } from '../services/docxGenerator';
-import { getPlantillaBasesPorTipoObra, obtenerFamiliaPorTipoObra, FAMILIA_BASES_LABEL, aplicarDatosAPlantilla, aplicarNormativaPorRubro, resolverContenidoGarantias, resolverContenidoModalidad, sugerirPoliticaGarantias, type SeccionBases, type ModalidadContrato } from '../data/basesTemplateData';
+import { obtenerFamiliaPorTipoObra, FAMILIA_BASES_LABEL, resolverContenidoModalidad, sugerirPoliticaGarantias, type SeccionBases, type ModalidadContrato } from '../data/basesTemplateData';
 import { obtenerClausulaNormativaPorRubro } from '../data/normativaPorRubro';
+import { construirSeccionesBasesDesdeCero } from '../utils/basesGenerator';
 import { useAuth } from '../context/AuthContext';
-import { obtenerCampusPorSigla } from '../data/campusData';
 
 interface BasesLicitacionModalProps {
   proyecto: ProyectoMaestro;
@@ -25,38 +24,18 @@ export function BasesLicitacionModal({ proyecto, licitacion, onClose }: BasesLic
   const [generandoPdf, setGenerandoPdf] = useState(false);
   const [guardandoLegajo, setGuardandoLegajo] = useState(false);
   const [legajoGuardado, setLegajoGuardado] = useState(false);
-
-  const datosMerge: Record<string, string> = {
-    nombreProyecto: proyecto.nombre || '',
-    campus: proyecto.campusNombre || proyecto.campusSigla || '—',
-    edificio: proyecto.edificioSigla ? ` · Edificio ${proyecto.edificioSigla}` : '',
-    direccionCampus: (() => {
-      const dir = obtenerCampusPorSigla(proyecto.campusSigla || '')?.direccion;
-      return dir ? `, ${dir}` : '';
-    })(),
-    montoEstimado: formatoMonedaCLP(proyecto.valorAprox || 0),
-    plazoDias: proyecto.plazoEjecucionDias ? `${proyecto.plazoEjecucionDias}` : '[definir]',
-    tipoObra: proyecto.tipoObra || '[definir]',
-  };
+  const [subiendoArchivoFinal, setSubiendoArchivoFinal] = useState(false);
+  const [archivoFinal, setArchivoFinal] = useState(proyecto.bases?.archivoFinalURL
+    ? { url: proyecto.bases.archivoFinalURL, nombre: proyecto.bases.archivoFinalNombre || 'Bases.docx' }
+    : null);
 
   const familiaBases = obtenerFamiliaPorTipoObra(proyecto.tipoObra);
   const politicaGarantias = proyecto.politicaGarantias || sugerirPoliticaGarantias(proyecto.valorAprox || 0);
   const modalidadInicial: ModalidadContrato = proyecto.modalidadContrato || 'Suma Alzada';
   const clausulaRubro = obtenerClausulaNormativaPorRubro(proyecto.rubro);
 
-  const construirSeccionesDesdeCero = (modalidadActual: ModalidadContrato): SeccionBases[] =>
-    aplicarNormativaPorRubro(
-      getPlantillaBasesPorTipoObra(proyecto.tipoObra).map(s => {
-        if (s.id === 'garantias') return { ...s, contenido: aplicarDatosAPlantilla(resolverContenidoGarantias(politicaGarantias, s.contenido), datosMerge) };
-        if (s.id === 'modalidad') return { ...s, contenido: resolverContenidoModalidad(modalidadActual) };
-        return { ...s, contenido: aplicarDatosAPlantilla(s.contenido, datosMerge) };
-      }),
-      clausulaRubro,
-      proyecto.rubro
-    );
-
   const [secciones, setSecciones] = useState<SeccionBases[]>(
-    proyecto.bases?.secciones || construirSeccionesDesdeCero(modalidadInicial)
+    proyecto.bases?.secciones || construirSeccionesBasesDesdeCero(proyecto, modalidadInicial)
   );
   const [modalidad, setModalidad] = useState<ModalidadContrato>(modalidadInicial);
   const [estado, setEstado] = useState<NonNullable<ProyectoMaestro['bases']>['estado']>(proyecto.bases?.estado || 'Borrador');
@@ -69,8 +48,8 @@ export function BasesLicitacionModal({ proyecto, licitacion, onClose }: BasesLic
   // perder la posibilidad de revisar el resultado antes de guardar.
   const tieneAnexoNormativoRubro = secciones.some(s => s.id === 'normativa-rubro');
   const regenerarDesdeePlantilla = () => {
-    if (!confirm('Esto reemplazará TODO el contenido actual (incluyendo cualquier edición manual) por una versión nueva generada desde la plantilla vigente, con la normativa del rubro incorporada. ¿Continuar?')) return;
-    setSecciones(construirSeccionesDesdeCero(modalidad));
+    if (!confirm('Esto reemplazará TODO el contenido actual (incluyendo cualquier edición manual) por una versión nueva generada desde la plantilla vigente, con los datos actuales del proyecto y la normativa del rubro incorporada. ¿Continuar?')) return;
+    setSecciones(construirSeccionesBasesDesdeCero(proyecto, modalidad));
   };
 
   const actualizarSeccion = (id: string, contenido: string) => {
@@ -89,6 +68,7 @@ export function BasesLicitacionModal({ proyecto, licitacion, onClose }: BasesLic
           secciones,
           fechaActualizacion: new Date().toISOString(),
           actualizadoPor: user?.email || '',
+          desactualizada: false,
           ...(estadoFinal === 'Aprobada'
             ? { fechaAprobacion: new Date().toISOString().split('T')[0], aprobadoPor: user?.email || '' }
             : {}),
@@ -160,6 +140,38 @@ export function BasesLicitacionModal({ proyecto, licitacion, onClose }: BasesLic
     }
   };
 
+  // Documento final: se exporta a Word, se edita fuera del sistema (formato, firmas, membrete
+  // final), y se vuelve a subir aquí como el archivo oficial — independiente del borrador de
+  // texto editable de `secciones`, que sigue sirviendo de base para el Contrato de Adjudicación.
+  const subirArchivoFinal = async (file: File) => {
+    setSubiendoArchivoFinal(true);
+    try {
+      const archivoURL = await uploadProyectoDocumento(proyecto.id, file);
+      await updateProyectoMaestro(proyecto.id, {
+        bases: {
+          version: proyecto.bases?.version || 1,
+          estado,
+          secciones,
+          fechaActualizacion: proyecto.bases?.fechaActualizacion || new Date().toISOString(),
+          actualizadoPor: proyecto.bases?.actualizadoPor,
+          fechaAprobacion: proyecto.bases?.fechaAprobacion,
+          aprobadoPor: proyecto.bases?.aprobadoPor,
+          desactualizada: proyecto.bases?.desactualizada,
+          archivoFinalURL: archivoURL,
+          archivoFinalNombre: file.name,
+          archivoFinalFechaCarga: new Date().toISOString(),
+          archivoFinalCargadoPor: user?.email || '',
+        },
+      });
+      setArchivoFinal({ url: archivoURL, nombre: file.name });
+    } catch (err) {
+      console.error('Error subiendo el archivo final de Bases:', err);
+      alert('No se pudo subir el archivo. Intente nuevamente.');
+    } finally {
+      setSubiendoArchivoFinal(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl max-w-4xl w-full p-6 shadow-2xl space-y-5 max-h-[94vh] flex flex-col border border-slate-200">
@@ -180,6 +192,12 @@ export function BasesLicitacionModal({ proyecto, licitacion, onClose }: BasesLic
                   : proyecto.rubro
                     ? ` (el rubro "${proyecto.rubro}" aún no tiene un anexo normativo específico en el sistema; revise manualmente la normativa sectorial aplicable)`
                     : ' (el proyecto no tiene Rubro asignado — asígnelo en la Ficha o Cartera para incorporar automáticamente la normativa sectorial específica)'}
+              </p>
+            )}
+            {proyecto.bases?.desactualizada && (
+              <p className="text-[10px] text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1 mt-1.5 flex items-center gap-1.5 w-fit">
+                <AlertTriangle className="w-3 h-3 shrink-0" />
+                Los datos del proyecto cambiaron desde la última vez que se generó este texto (presupuesto, plazo, tipo de obra, garantías u otro dato citado) — revise las secciones o use "Regenerar desde Plantilla" para traer los valores actuales.
               </p>
             )}
             {proyecto.bases && !tieneAnexoNormativoRubro && clausulaRubro && (
@@ -259,22 +277,25 @@ export function BasesLicitacionModal({ proyecto, licitacion, onClose }: BasesLic
           )}
 
           {/* Documento capturable a PDF */}
-          <div ref={docRef} className="bg-white p-8 border border-slate-200 rounded-lg text-slate-900" style={{ width: '760px', margin: '0 auto', fontFamily: 'Georgia, serif' }}>
-            <div className="text-center border-b-2 border-slate-800 pb-3 mb-5">
-              <h1 className="text-lg font-bold uppercase">Bases Administrativas y Técnicas</h1>
+          <div ref={docRef} className="bg-white p-9 border border-slate-200 rounded-lg text-slate-900" style={{ width: '760px', margin: '0 auto', fontFamily: 'Georgia, serif' }}>
+            <div className="flex flex-col items-center text-center border-b-2 border-indigo-950 pb-4 mb-6">
+              <img src={`${import.meta.env.BASE_URL}logo-uct.png`} alt="Universidad Católica de Temuco" className="h-12 w-auto object-contain mb-2" />
+              <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-950">Universidad Católica de Temuco</p>
+              <p className="text-[9px] text-slate-500 mb-2">Subdirección de Infraestructura · Dirección de Gestión y Desarrollo de Campus</p>
+              <h1 className="text-lg font-bold uppercase text-slate-900">Bases Administrativas y Técnicas</h1>
               <p className="text-xs text-slate-600 mt-1">{proyecto.nombre}</p>
               <p className="text-[10px] text-slate-500 mt-0.5">{proyecto.codigoProyecto} · CP {proyecto.codigoCP} · Modalidad: {modalidad}</p>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-5">
               {secciones.map(s => (
                 <div key={s.id}>
-                  <h3 className="text-xs font-bold uppercase text-slate-800 mb-1">{s.titulo}</h3>
+                  <h3 className="text-xs font-bold uppercase text-indigo-950 mb-1.5 pb-1 border-b border-slate-200">{s.titulo}</h3>
                   {puedeEditarContenido ? (
                     <textarea
                       value={s.contenido}
                       onChange={e => actualizarSeccion(s.id, e.target.value)}
-                      rows={3}
+                      rows={Math.min(12, Math.max(3, Math.ceil(s.contenido.length / 75)))}
                       className="w-full text-xs leading-relaxed border border-slate-200 rounded-lg p-2 outline-none focus:ring-2 focus:ring-indigo-400"
                     />
                   ) : (
@@ -312,6 +333,21 @@ export function BasesLicitacionModal({ proyecto, licitacion, onClose }: BasesLic
             <button onClick={() => window.print()} className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-2">
               <Printer className="w-4 h-4" /> Imprimir
             </button>
+            <label className="px-4 py-2.5 bg-violet-50 hover:bg-violet-100 border border-violet-300 text-violet-800 rounded-xl text-xs font-bold flex items-center gap-2 cursor-pointer">
+              {subiendoArchivoFinal ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              {subiendoArchivoFinal ? 'Subiendo…' : archivoFinal ? 'Reemplazar archivo final' : 'Subir versión editada (Word/PDF)'}
+              <input
+                type="file"
+                accept=".doc,.docx,.pdf"
+                className="hidden"
+                disabled={subiendoArchivoFinal}
+                onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (file) subirArchivoFinal(file);
+                  e.target.value = '';
+                }}
+              />
+            </label>
             {licitacion && (
               <button onClick={guardarEnLegajo} disabled={guardandoLegajo} className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-2">
                 {guardandoLegajo ? <Loader2 className="w-4 h-4 animate-spin" /> : legajoGuardado ? <CheckCircle2 className="w-4 h-4" /> : <FolderInput className="w-4 h-4" />}
@@ -324,6 +360,19 @@ export function BasesLicitacionModal({ proyecto, licitacion, onClose }: BasesLic
               </span>
             )}
           </div>
+
+          {archivoFinal && (
+            <a
+              href={archivoFinal.url}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-2 bg-violet-50 border border-violet-200 rounded-xl px-3 py-2 text-xs text-violet-900 font-semibold w-fit hover:bg-violet-100 transition"
+            >
+              <FileText className="w-4 h-4 shrink-0" />
+              Archivo final oficial: {archivoFinal.nombre}
+              <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+            </a>
+          )}
 
           <p className="text-[10px] text-slate-400 flex items-start gap-1.5">
             <FileText className="w-3 h-3 shrink-0 mt-0.5" />

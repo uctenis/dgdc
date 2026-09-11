@@ -47,7 +47,9 @@ export function ContratoAdjudicacionModal({ proyecto, proveedores, onClose }: Co
   );
 
   const modalidadInicial: ModalidadContrato = proyecto.modalidadContrato || 'Suma Alzada';
-  const plazoDiasNum = proyecto.plazoEjecucionDias || 0;
+  // El plazo REAL adjudicado manda; si aún no se sincroniza desde la licitación, se usa la
+  // duración aproximada declarada al crear el proyecto (mismo criterio que en las Bases).
+  const plazoDiasNum = proyecto.plazoEjecucionDias || proyecto.duracionEstimadaDias || 0;
   const [fechaInicioObra, setFechaInicioObra] = useState(proyecto.fechaInicio || '');
   const fechaTermino = fechaInicioObra && plazoDiasNum ? sumarDiasCorridos(fechaInicioObra, plazoDiasNum) : '';
 
@@ -57,6 +59,7 @@ export function ContratoAdjudicacionModal({ proyecto, proveedores, onClose }: Co
     codigoProyecto: proyecto.codigoProyecto || '',
     codigoCP: proyecto.codigoCP || '',
     tipoObra: proyecto.tipoObra || '[definir]',
+    descripcionProyecto: proyecto.descripcion?.trim() || 'Sin detalle adicional declarado en la Cartera de Proyectos.',
     campus: proyecto.campusNombre || proyecto.campusSigla || '—',
     edificio: proyecto.edificioSigla ? ` · Edificio ${proyecto.edificioSigla}` : '',
     direccionCampus: (() => {
@@ -73,7 +76,7 @@ export function ContratoAdjudicacionModal({ proyecto, proveedores, onClose }: Co
     fechaTermino: formatearFechaLarga(fechaTerminoVal),
     modalidadNombre: modalidadInicial,
     notaModalidadPrecio: resolverNotaModalidadPrecio(modalidadInicial),
-    notaGarantias: resolverNotaGarantiasContrato(proyecto.politicaGarantias),
+    notaGarantias: resolverNotaGarantiasContrato(proyecto.politicaGarantias, proyecto.montoAdjudicado || 0),
   });
 
   const datosMerge = construirDatosMerge(fechaInicioObra, fechaTermino);
@@ -270,8 +273,11 @@ export function ContratoAdjudicacionModal({ proyecto, proveedores, onClose }: Co
           )}
 
           {/* Documento capturable a PDF */}
-          <div ref={docRef} className="bg-white p-8 border border-slate-200 rounded-lg text-slate-900" style={{ width: '760px', margin: '0 auto', fontFamily: 'Georgia, serif' }}>
-            <div className="text-center border-b-2 border-slate-800 pb-3 mb-5">
+          <div ref={docRef} className="bg-white p-9 border border-slate-200 rounded-lg text-slate-900" style={{ width: '760px', margin: '0 auto', fontFamily: 'Georgia, serif' }}>
+            <div className="flex flex-col items-center text-center border-b-2 border-indigo-950 pb-4 mb-6">
+              <img src={`${import.meta.env.BASE_URL}logo-uct.png`} alt="Universidad Católica de Temuco" className="h-12 w-auto object-contain mb-2" />
+              <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-950">Universidad Católica de Temuco</p>
+              <p className="text-[9px] text-slate-500 mb-2">Subdirección de Infraestructura · Dirección de Gestión y Desarrollo de Campus</p>
               <h1 className="text-lg font-bold uppercase">Contrato de Construcción</h1>
               <p className="text-xs text-slate-600 mt-1 uppercase">Modalidad {modalidad}</p>
               <p className="text-xs text-slate-700 mt-1 font-bold">"{proyecto.nombre}"</p>
@@ -286,7 +292,7 @@ export function ContratoAdjudicacionModal({ proyecto, proveedores, onClose }: Co
                     <textarea
                       value={s.contenido}
                       onChange={e => actualizarSeccion(s.id, e.target.value)}
-                      rows={4}
+                      rows={Math.min(14, Math.max(4, Math.ceil(s.contenido.length / 75)))}
                       className="w-full text-xs leading-relaxed border border-slate-200 rounded-lg p-2 outline-none focus:ring-2 focus:ring-emerald-400"
                     />
                   ) : (

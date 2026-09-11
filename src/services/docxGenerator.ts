@@ -3,6 +3,7 @@ import {
   Packer,
   Paragraph,
   TextRun,
+  ImageRun,
   Table,
   TableRow,
   TableCell,
@@ -394,6 +395,18 @@ export async function generarDocumentoCuadroComparativoActa(
 
 const FUENTE_DOCUMENTO_LEGAL = 'Georgia';
 
+/** Trae el isotipo institucional para el membrete de los documentos Word. Si no está disponible
+ * (fetch falla, entorno sin red), retorna null y el documento se genera sin logo, sin bloquear. */
+async function obtenerLogoUCTBuffer(): Promise<ArrayBuffer | null> {
+  try {
+    const resp = await fetch(`${import.meta.env.BASE_URL}logo-uct.png`);
+    if (!resp.ok) return null;
+    return await resp.arrayBuffer();
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Exporta un documento genérico de secciones (título + contenido) a Word, en
  * un formato profesional de documento legal/institucional: membrete
@@ -423,12 +436,18 @@ export async function generarDocumentoSeccionesWord(opciones: {
     nombreArchivo,
   } = opciones;
 
+  // Los saltos de línea ("\n") del contenido no se ven solos en Word: hay que partir el texto y
+  // marcar cada línea siguiente con `break`, si no todo el párrafo queda pegado en una sola línea.
   const parrafoJustificado = (texto: string) =>
     new Paragraph({
       alignment: AlignmentType.JUSTIFIED,
       spacing: { after: 200, line: 276 },
-      children: [new TextRun({ text: texto, size: 22, font: FUENTE_DOCUMENTO_LEGAL })],
+      children: texto.split('\n').map((linea, i) =>
+        new TextRun({ text: linea, size: 22, font: FUENTE_DOCUMENTO_LEGAL, break: i > 0 ? 1 : undefined })
+      ),
     });
+
+  const logoBuffer = await obtenerLogoUCTBuffer();
 
   const doc = new Document({
     sections: [
@@ -446,13 +465,20 @@ export async function generarDocumentoSeccionesWord(opciones: {
         headers: {
           default: new Header({
             children: [
+              ...(logoBuffer
+                ? [new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    spacing: { after: 60 },
+                    children: [new ImageRun({ type: 'png', data: logoBuffer, transformation: { width: 140, height: 48 } })],
+                  })]
+                : []),
               new Paragraph({
                 alignment: AlignmentType.CENTER,
                 border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: '1A365D', space: 4 } },
                 spacing: { after: 100 },
                 children: [
                   new TextRun({ text: institucion.toUpperCase(), bold: true, size: 18, font: FUENTE_DOCUMENTO_LEGAL, color: '1A365D' }),
-                  new TextRun({ text: `\n${subdireccion}`, size: 15, font: FUENTE_DOCUMENTO_LEGAL, color: '475569' }),
+                  new TextRun({ text: subdireccion, size: 15, font: FUENTE_DOCUMENTO_LEGAL, color: '475569', break: 1 }),
                 ],
               }),
             ],

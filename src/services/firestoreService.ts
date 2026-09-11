@@ -23,6 +23,7 @@ import {
 import { db } from '../lib/firebase';
 import { formatearRUT } from '../utils/rutUtils';
 import { normalizarNombreProyecto } from '../utils/spellCorrector';
+import { construirSeccionesBasesDesdeCero, CAMPOS_QUE_AFECTAN_BASES } from '../utils/basesGenerator';
 import type {
   Proveedor,
   HistorialObra,
@@ -328,9 +329,47 @@ export async function updateProyectoMaestro(
   id: string,
   data: Partial<ProyectoMaestro>
 ): Promise<void> {
+  let datosFinales = data;
+
+  // Si el update toca un campo que el texto de las Bases ya generadas cita textualmente
+  // (presupuesto, plazo, tipo de obra, garantías, etc.), las Bases quedan desactualizadas:
+  // si siguen en Borrador se regeneran solas con los datos nuevos; si ya están en Revisión
+  // Legal o Aprobadas (documento legal "cerrado") no se sobrescriben solas, solo se marcan
+  // para que quien las gestiona decida si corresponde regenerarlas.
+  // No aplica si quien llama YA viene actualizando `bases` explícitamente (ej. el propio
+  // modal de Bases guardando su edición) — evita sobrescribirse a sí mismo.
+  if (!('bases' in data) && CAMPOS_QUE_AFECTAN_BASES.some(campo => campo in data)) {
+    const snap = await getDoc(doc(db, 'proyectos', id));
+    if (snap.exists()) {
+      const actual = { id, ...(snap.data() as Omit<ProyectoMaestro, 'id'>) } as ProyectoMaestro;
+      if (actual.bases) {
+        const dataIndexable = data as unknown as Record<string, unknown>;
+        const actualIndexable = actual as unknown as Record<string, unknown>;
+        const cambioReal = CAMPOS_QUE_AFECTAN_BASES.some(
+          campo => campo in data && JSON.stringify(dataIndexable[campo]) !== JSON.stringify(actualIndexable[campo])
+        );
+        if (cambioReal) {
+          const proyectoConCambios = { ...actual, ...data } as ProyectoMaestro;
+          datosFinales = {
+            ...data,
+            bases: actual.bases.estado === 'Borrador'
+              ? {
+                  ...actual.bases,
+                  version: actual.bases.version + 1,
+                  secciones: construirSeccionesBasesDesdeCero(proyectoConCambios),
+                  fechaActualizacion: new Date().toISOString(),
+                  desactualizada: false,
+                }
+              : { ...actual.bases, desactualizada: true },
+          };
+        }
+      }
+    }
+  }
+
   await updateDoc(doc(db, 'proyectos', id), {
-    ...data,
-    ...(data.nombre !== undefined ? { nombre: normalizarNombreProyecto(data.nombre) } : {}),
+    ...datosFinales,
+    ...(datosFinales.nombre !== undefined ? { nombre: normalizarNombreProyecto(datosFinales.nombre) } : {}),
     _updatedAt: serverTimestamp(),
   });
 }

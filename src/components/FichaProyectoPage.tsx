@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import {
   ArrowLeft, FileText, CheckCircle2, Upload,
@@ -18,6 +18,7 @@ import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
 import { AumentosObraPanel } from './AumentosObraPanel';
 import { ItemizadoProyectoPanel } from './ItemizadoProyectoPanel';
+import { ProgramaTrabajoPanel } from './ProgramaTrabajoPanel';
 import { BitacoraProyectoPanel } from './BitacoraProyectoPanel';
 import { CargaOrdenCompraModal } from './CargaOrdenCompraModal';
 import { PremiumDatePicker } from './PremiumDatePicker';
@@ -142,7 +143,26 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
   }, [proyecto]);
 
   const licitacionEfectiva = 'montoEstimado' in proyecto ? proyecto : (licitacionVinculada || undefined);
-  const proyectoMaestroEfectivo = 'valorAprox' in proyecto ? proyecto : (proyectoMaestroVinculado || undefined);
+
+  // Id del ProyectoMaestro real, apenas se conoce (directo si `proyecto` ya es uno, o una vez que
+  // la búsqueda cruzada de arriba resuelve el vinculado a partir de una LicitacionProyecto).
+  const idProyectoMaestro = 'valorAprox' in proyecto ? proyecto.id : proyectoMaestroVinculado?.id;
+
+  // Suscripción en vivo al documento del ProyectoMaestro: sin esto, guardar cambios desde paneles
+  // hijos (ej. Itemizado) escribe bien en Firestore pero esta página sigue mostrando los datos
+  // con los que se abrió — ni el Presupuesto Estimado ni el checklist se refrescan solos.
+  const [proyectoMaestroLive, setProyectoMaestroLive] = useState<ProyectoMaestro | null>(null);
+  useEffect(() => {
+    if (!idProyectoMaestro) {
+      setProyectoMaestroLive(null);
+      return;
+    }
+    return onSnapshot(doc(db, 'proyectos', idProyectoMaestro), snap => {
+      if (snap.exists()) setProyectoMaestroLive({ id: snap.id, ...(snap.data() as Omit<ProyectoMaestro, 'id'>) });
+    });
+  }, [idProyectoMaestro]);
+
+  const proyectoMaestroEfectivo = proyectoMaestroLive || ('valorAprox' in proyecto ? proyecto : (proyectoMaestroVinculado || undefined));
 
   // Normalización de datos unificados entre LicitacionProyecto y ProyectoMaestro
   const id = proyecto.id;
@@ -242,18 +262,16 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
     return []; // Sin documentos por defecto
   });
 
-  // State para Checklist de Carátula
+  // Checklist de Carátula — SOLO documentos de definición del proyecto (previos a licitar).
+  // Los hitos propios del proceso de licitación (visita a terreno, consultas, ofertas, cuadro
+  // comparativo, OC/cierre) tienen su propia trazabilidad en LicitacionWorkspacePage → Resumen,
+  // para no duplicar el mismo checklist en dos lugares con datos distintos.
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([
     { id: 'ch-01', label: '1. Bases Administrativas / Términos de Referencia', descripcion: 'Reglas del proceso y criterios de evaluación', completado: false },
     { id: 'ch-02', label: '2. Especificaciones Técnicas (EETT)', descripcion: 'Detalle de materiales, cubicaciones y requerimientos de obra', completado: false },
     { id: 'ch-03', label: '3. Planos de Arquitectura y Especialidades (DWG / PDF)', descripcion: 'Planos acotados, instalaciones eléctricas y sanitarias', completado: false },
     { id: 'ch-04', label: '4. Presupuesto Detallado e Itemizado (XLSX)', descripcion: 'Cubicaciones y desglose de costos por partida', completado: false },
     { id: 'ch-05', label: '5. Programa de Trabajo y Carta Gantt', descripcion: 'Cronograma de ejecución y plazos por etapa', completado: false },
-    { id: 'ch-06', label: '6. Certificado / Informe de Visita a Terreno', descripcion: 'Registro oficial de contratistas asistentes', completado: false },
-    { id: 'ch-07', label: '7. Aclaraciones y Respuestas (Consultas)', descripcion: 'Acta de respuestas a consultas de proveedores', completado: false },
-    { id: 'ch-08', label: '8. Cotizaciones / Ofertas de Proveedores Recibidas', descripcion: 'Propuestas económicas y técnicas en sistema', completado: false },
-    { id: 'ch-09', label: '9. Cuadro Comparativo & Acta de Adjudicación', descripcion: 'Evaluación parametrizada y resolución de adjudicación', completado: false },
-    { id: 'ch-10', label: '10. Orden de Compra (OP/OT) & Decreto de Cierre', descripcion: 'Documentos presupuestarios finales aprobados', completado: false },
   ]);
 
   /**
@@ -272,13 +290,9 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
         } else if (item.id === 'ch-03') {
           completado = docs.some(d => d.tipo === 'Planos DWG' || d.tipo === 'Planos PDF');
         } else if (item.id === 'ch-04') {
-          completado = docs.some(d => d.tipo === 'Presupuesto');
+          completado = docs.some(d => d.tipo === 'Presupuesto') || Boolean(proyectoMaestroEfectivo?.itemizado && proyectoMaestroEfectivo.itemizado.length > 0);
         } else if (item.id === 'ch-05') {
-          completado = docs.some(d => d.tipo === 'Carta Gantt');
-        } else if (item.id === 'ch-06' || item.id === 'ch-07') {
-          completado = docs.some(d => d.tipo === 'Anexo');
-        } else if (item.id === 'ch-08' || item.id === 'ch-09' || item.id === 'ch-10') {
-          completado = Boolean(estaAdjudicado || ordenCompraNumero);
+          completado = docs.some(d => d.tipo === 'Carta Gantt') || Boolean(proyectoMaestroEfectivo?.programaTrabajo);
         }
 
         return { ...item, completado };
@@ -623,10 +637,10 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
     }
   };
 
-  // Validar checklist cuando cambian los documentos
+  // Validar checklist cuando cambian los documentos o el itemizado (ch-04: Presupuesto Detallado)
   useEffect(() => {
     validateChecklistFromDocuments(documentos);
-  }, [documentos]);
+  }, [documentos, proyectoMaestroEfectivo?.itemizado]);
 
   const handleDeleteProyectoFromFicha = async () => {
     const nombreProy = nombreProyecto || 'este proyecto';
@@ -1112,7 +1126,11 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
         </div>
 
       {proyectoMaestroEfectivo && (
-        <ItemizadoProyectoPanel proyecto={proyectoMaestroEfectivo} />
+        <ItemizadoProyectoPanel proyecto={proyectoMaestroEfectivo} configFirmas={configFirmas} />
+      )}
+
+      {proyectoMaestroEfectivo && (
+        <ProgramaTrabajoPanel proyecto={proyectoMaestroEfectivo} />
       )}
 
       {/* Grid Principal: Carátula Oficial (Izquierda) + CheckList y Documentos (Derecha) */}

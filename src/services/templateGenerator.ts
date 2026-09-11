@@ -284,7 +284,7 @@ export async function generarPlantillaCotizacionExcel(licitacion?: LicitacionPro
 
   // 9. Cargar Logo UCT
   try {
-    const response = await fetch('/logo-uct.png');
+    const response = await fetch(`${import.meta.env.BASE_URL}logo-uct.png`);
     const blob = await response.blob();
     const base64data = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();

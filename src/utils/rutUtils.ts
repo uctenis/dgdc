@@ -134,6 +134,32 @@ export function desformatearEntero(val: string | number | undefined | null): num
 }
 
 /**
+ * Igual que `formatearEnteroConMiles`, pero admite decimales (formato es-CL: punto de
+ * miles, coma decimal) — para cantidades de obra que no son enteras (ej. 12,5 m3).
+ * Ej: '12500,5' -> '12.500,5'. Deja la coma final mientras el usuario la está escribiendo.
+ */
+export function formatearNumeroConMiles(val: number | string | undefined | null): string {
+  if (val === '' || val === null || val === undefined) return '';
+  const limpio = String(val).replace(',', '.').replace(/[^0-9.]/g, '');
+  if (!limpio) return '';
+  const [entero, ...resto] = limpio.split('.');
+  const decimales = resto.join('').slice(0, 2);
+  const enteroFormateado = entero ? new Intl.NumberFormat('es-CL').format(Number(entero)) : '';
+  return limpio.includes('.') ? `${enteroFormateado},${decimales}` : enteroFormateado;
+}
+
+/**
+ * Convierte un texto formateado con `formatearNumeroConMiles` de vuelta a un número.
+ * Ej: '12.500,5' -> 12500.5
+ */
+export function desformatearNumero(val: string | number | undefined | null): number {
+  if (val === '' || val === null || val === undefined) return 0;
+  const limpio = String(val).replace(/[^0-9,]/g, '').replace(',', '.');
+  const num = parseFloat(limpio);
+  return Number.isNaN(num) ? 0 : num;
+}
+
+/**
  * Validador booleano simple.
  */
 export function esRUTValido(rutCompleto: string): boolean {

@@ -98,6 +98,16 @@ export interface ProyectoMaestro {
    * Es independiente del itemizado de cada Cotización (`ItemCotizacion`), que es la oferta del proveedor. */
   itemizado?: ItemItemizadoProyecto[];
 
+  /** Programa de Trabajo / Carta Gantt referencial — calculado a partir de las fases del
+   * itemizado (peso presupuestario de cada una) y la duración total declarada del proyecto,
+   * con la secuencia y traslapes típicos de obra que sugiere la IA (ver ProgramaTrabajoPanel).
+   * Es un programa REFERENCIAL para la Ficha, no reemplaza la Carta Gantt formal de licitación. */
+  programaTrabajo?: {
+    fechaGeneracion: string;
+    duracionTotalDias: number;
+    fases: { fase: string; diaInicio: number; diaTermino: number }[];
+  };
+
   /** Aprobación explícita para entrar al Presupuesto Anual Proyectado — distinta de `prioridad`,
    * que es solo un criterio de apoyo para decidir. Solo los proyectos con `aprobado: true`
    * comprometen el techo institucional (`presupuestoAnualAprobado`) en el Flujo de Caja / Avance Financiero. */
@@ -135,6 +145,15 @@ export interface ProyectoMaestro {
     actualizadoPor?: string;
     fechaAprobacion?: string;
     aprobadoPor?: string;
+    /** true si algún dato citado en el texto (presupuesto, plazo, tipo de obra, garantías, etc.)
+     * cambió en el proyecto después de generar/aprobar estas Bases — ver updateProyectoMaestro. */
+    desactualizada?: boolean;
+    // Documento final (Word/PDF) editado fuera del sistema y vuelto a subir — es el que realmente
+    // se publica/firma; independiente del borrador de texto editable en `secciones`.
+    archivoFinalURL?: string;
+    archivoFinalNombre?: string;
+    archivoFinalFechaCarga?: string;
+    archivoFinalCargadoPor?: string;
   };
 
   // Contrato de Adjudicación — se genera al adjudicar, con los datos reales del proveedor ganador
@@ -175,6 +194,20 @@ export interface ItemCotizacion {
 // ─── ITEMIZADO DE REFERENCIA DEL PROYECTO (ProyectoMaestro.itemizado) ─────
 // Desglose de partidas del presupuesto estimado, previo a licitar. `origen: 'IA'`
 // marca partidas propuestas por el asistente (el usuario completa cantidad y precio).
+
+/** Fases estándar de un proyecto de obra, en orden de ejecución — usadas para agrupar y
+ * renumerar el itemizado (ver ItemizadoProyectoPanel). La IA etiqueta cada partida sugerida
+ * con una de estas; las partidas manuales pueden asignarse a cualquiera. */
+export const FASES_ITEMIZADO = [
+  'Instalación de Faenas',
+  'Desarme y Retiro',
+  'Obra Gruesa',
+  'Instalaciones',
+  'Terminaciones',
+  'Aseo y Entrega',
+] as const;
+export type FaseItemizado = typeof FASES_ITEMIZADO[number];
+
 export interface ItemItemizadoProyecto {
   id: string;
   item: string;
@@ -184,6 +217,8 @@ export interface ItemItemizadoProyecto {
   precioUnitario: number;
   precioTotal: number;
   origen: 'Manual' | 'IA';
+  /** Sin valor = itemizado creado antes de esta clasificación, o partida aún sin asignar. */
+  fase?: FaseItemizado | string;
 }
 
 // ─── COTIZACIÓN (cargada por admin) ───────────────────────────────────────

@@ -103,7 +103,7 @@ const PLANTILLA_OBRA_CIVIL: SeccionBases[] = [
   {
     id: 'objeto',
     titulo: '1. Objeto de la Licitación',
-    contenido: 'Describa el objeto del contrato: {{nombreProyecto}} ({{tipoObra}}), ubicado en {{campus}}{{edificio}}{{direccionCampus}}. Detalle el alcance de los trabajos de construcción a ejecutar, incluyendo obra gruesa, terminaciones y especialidades.',
+    contenido: 'Describa el objeto del contrato: {{nombreProyecto}} ({{tipoObra}}), ubicado en {{campus}}{{edificio}}{{direccionCampus}}. Detalle el alcance de los trabajos de construcción a ejecutar, incluyendo obra gruesa, terminaciones y especialidades.\n\nAlcance declarado en la Cartera de Proyectos: {{descripcionProyecto}}',
   },
   {
     id: 'modalidad',
@@ -162,7 +162,7 @@ const PLANTILLA_OBRA_MENOR: SeccionBases[] = [
   {
     id: 'objeto',
     titulo: '1. Objeto de la Licitación',
-    contenido: 'Describa el objeto del contrato: {{nombreProyecto}} ({{tipoObra}}), ubicado en {{campus}}{{edificio}}{{direccionCampus}}. Detalle el alcance de los trabajos de remodelación/habilitación a ejecutar y las partidas afectadas.',
+    contenido: 'Describa el objeto del contrato: {{nombreProyecto}} ({{tipoObra}}), ubicado en {{campus}}{{edificio}}{{direccionCampus}}. Detalle el alcance de los trabajos de remodelación/habilitación a ejecutar y las partidas afectadas.\n\nAlcance declarado en la Cartera de Proyectos: {{descripcionProyecto}}',
   },
   {
     id: 'modalidad',
@@ -221,7 +221,7 @@ const PLANTILLA_DISENO: SeccionBases[] = [
   {
     id: 'objeto',
     titulo: '1. Objeto de la Licitación',
-    contenido: 'Describa el objeto del contrato de consultoría: desarrollo del diseño de {{nombreProyecto}}, ubicado en {{campus}}{{edificio}}{{direccionCampus}}. Especifique las especialidades requeridas (arquitectura, cálculo estructural, eléctrico, sanitario, climatización, u otras).',
+    contenido: 'Describa el objeto del contrato de consultoría: desarrollo del diseño de {{nombreProyecto}}, ubicado en {{campus}}{{edificio}}{{direccionCampus}}. Especifique las especialidades requeridas (arquitectura, cálculo estructural, eléctrico, sanitario, climatización, u otras).\n\nAlcance declarado en la Cartera de Proyectos: {{descripcionProyecto}}',
   },
   {
     id: 'modalidad',
@@ -280,7 +280,7 @@ const PLANTILLA_SUMINISTRO: SeccionBases[] = [
   {
     id: 'objeto',
     titulo: '1. Objeto de la Licitación',
-    contenido: 'Describa el objeto del contrato: suministro de {{nombreProyecto}} para {{campus}}{{edificio}}{{direccionCampus}}. Detalle los bienes/elementos a adquirir, cantidades y características técnicas.',
+    contenido: 'Describa el objeto del contrato: suministro de {{nombreProyecto}} para {{campus}}{{edificio}}{{direccionCampus}}. Detalle los bienes/elementos a adquirir, cantidades y características técnicas.\n\nAlcance declarado en la Cartera de Proyectos: {{descripcionProyecto}}',
   },
   {
     id: 'modalidad',
@@ -345,12 +345,14 @@ const PLANTILLAS_POR_FAMILIA: Record<FamiliaBases, SeccionBases[]> = {
 /** @deprecated usar PLANTILLAS_POR_FAMILIA['obra-civil'] */
 export const PLANTILLA_BASES_SUMA_ALZADA = PLANTILLA_OBRA_CIVIL;
 
+// v4: se agregó {{descripcionProyecto}} al objeto de cada familia — el cambio de versión en la
+// llave fuerza a que todos los navegadores reciban el default nuevo (localStorage no se auto-migra).
 const STORAGE_KEY_POR_FAMILIA: Record<FamiliaBases, string> = {
-  'obra-civil': 'infra_app_plantilla_bases_v3_obra-civil',
-  'obra-menor': 'infra_app_plantilla_bases_v3_obra-menor',
-  'diseno': 'infra_app_plantilla_bases_v3_diseno',
-  'suministro': 'infra_app_plantilla_bases_v3_suministro',
-  'otros': 'infra_app_plantilla_bases_v3_otros',
+  'obra-civil': 'infra_app_plantilla_bases_v4_obra-civil',
+  'obra-menor': 'infra_app_plantilla_bases_v4_obra-menor',
+  'diseno': 'infra_app_plantilla_bases_v4_diseno',
+  'suministro': 'infra_app_plantilla_bases_v4_suministro',
+  'otros': 'infra_app_plantilla_bases_v4_otros',
 };
 
 /** Obtiene la plantilla maestra (editable en Configuración) de una familia de bases, persistida en localStorage. */

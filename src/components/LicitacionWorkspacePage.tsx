@@ -213,6 +213,8 @@ function ResumenLicitacion({ licitacion, oferta, ofertasCount, onNavigate, cotiz
   // ─ Trazabilidad documental
   const hitos = [
     { label: 'Bases y planos', ok: Boolean(licitacion.antecedentesTecnicos?.length), tab: 'expediente' as TabId },
+    { label: 'Visita a terreno', ok: Boolean(licitacion.fechaVisitaTerreno), tab: 'expediente' as TabId },
+    { label: 'Consultas respondidas', ok: Boolean(licitacion.fechaRespuestaConsultas), tab: 'expediente' as TabId },
     { label: 'Empresas invitadas', ok: Boolean(licitacion.proveedoresInvitadosIds?.length), tab: 'invitados' as TabId },
     { label: 'Ofertas recibidas', ok: ofertasCount > 0, tab: 'ofertas' as TabId },
     { label: 'Empresa adjudicada', ok: Boolean(empresaAdjudicada), tab: 'evaluacion' as TabId },
