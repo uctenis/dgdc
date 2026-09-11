@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   BookOpen, Plus, Trash2, Search,
   X, DollarSign, Calendar, MapPin, Building, User,
-  FileText, Paperclip, FolderPlus, ScrollText, Hammer, ShieldCheck
+  FileText, Paperclip, FolderPlus, ScrollText, Hammer, ShieldCheck, Clock
 } from 'lucide-react';
 import {
   subscribeToProyectos,
@@ -26,6 +26,7 @@ import { RepararCarteraModal, BotonRepararCartera } from './RepararCarteraModal'
 import { BasesLicitacionModal } from './BasesLicitacionModal';
 import { ContratoAdjudicacionModal } from './ContratoAdjudicacionModal';
 import { ImportarProyectosExcelModal } from './ImportarProyectosExcelModal';
+import { PremiumDatePicker } from './PremiumDatePicker';
 import { useAuth } from '../context/AuthContext';
 import type { ProyectoMaestro, LicitacionProyecto, Proveedor, ConfiguracionFirmas } from '../types';
 
@@ -46,6 +47,8 @@ const EMPTY_FORM = {
   nombre: '',
   descripcion: '',
   valorAprox: 0,
+  duracionEstimadaDias: 0,
+  fechaInicio: '',
   estado: 'Pendiente' as ProyectoMaestro['estado'],
   fechaCreacion: new Date().toISOString(),
   campusSigla: '',
@@ -199,6 +202,8 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           nombre: normalizarNombreProyecto(form.nombre),
           descripcion: form.descripcion,
           valorAprox: form.valorAprox,
+          duracionEstimadaDias: form.duracionEstimadaDias || undefined,
+          fechaInicio: form.fechaInicio || undefined,
           estado: form.estado,
           campusSigla: form.campusSigla,
           campusNombre: form.campusSigla ? obtenerCampusPorSigla(form.campusSigla)?.nombre : '',
@@ -222,6 +227,8 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           nombre: normalizarNombreProyecto(form.nombre),
           descripcion: form.descripcion,
           valorAprox: form.valorAprox,
+          duracionEstimadaDias: form.duracionEstimadaDias || undefined,
+          fechaInicio: form.fechaInicio || undefined,
           estado: form.estado,
           fechaCreacion: new Date().toISOString(),
           campusSigla: form.campusSigla,
@@ -828,17 +835,34 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                     </td>
                     <td className="px-2 py-1.5 text-center sticky right-0 z-10 bg-white border-l border-slate-200" onClick={e => e.stopPropagation()}>
                       {!modoSelector && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenFicha?.(p);
-                          }}
-                          className="p-1.5 text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-lg transition border border-sky-200 shadow-sm"
-                          title="Ver Ficha del Proyecto (editar, generar Bases, eliminar)"
-                        >
-                          <FileText className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setBasesProyecto(p);
+                            }}
+                            className={`p-1.5 rounded-lg transition border shadow-sm ${
+                              p.bases?.estado === 'Aprobada' ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200' :
+                              p.bases ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200' :
+                              'text-slate-400 bg-slate-50 hover:bg-slate-100 border-slate-200'
+                            }`}
+                            title={p.bases ? `Continuar Bases (${p.bases.estado}) — última edición ${new Date(p.bases.fechaActualizacion).toLocaleDateString('es-CL')}` : 'Generar Bases Administrativas y Técnicas'}
+                          >
+                            <ScrollText className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenFicha?.(p);
+                            }}
+                            className="p-1.5 text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-lg transition border border-sky-200 shadow-sm"
+                            title="Ver Ficha del Proyecto (editar, generar Bases, eliminar)"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       )}
                       {modoSelector && (
                         <span className="text-indigo-600 font-bold text-xs">Seleccionar →</span>
@@ -954,15 +978,14 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                     </div>
 
                     <div>
-                      <label className="block font-semibold text-slate-700 mb-1">N° Orden Compra (OC)</label>
+                      <label className="block font-semibold text-slate-500 mb-1">N° Orden Compra (OC)</label>
                       <input
                         type="text"
-                        placeholder="Ej: OC-6790"
-                        value={form.ordenCompraNumero || form.codigoOC || ''}
-                        onChange={e => setForm(f => ({ ...f, ordenCompraNumero: e.target.value.toUpperCase(), codigoOC: e.target.value.toUpperCase() }))}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none font-extrabold text-purple-900"
+                        disabled
+                        value={form.ordenCompraNumero || form.codigoOC || 'Asignación Post-Adjudicación'}
+                        className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-slate-500 outline-none text-[11px] font-semibold cursor-not-allowed"
                       />
-                      <span className="text-[10px] text-purple-700 font-semibold mt-0.5 block">N° OC de la universidad</span>
+                      <span className="text-[10px] text-amber-700 font-semibold mt-0.5 block">Se carga al adjudicar la licitación (con el PDF de la OC)</span>
                     </div>
 
                     <div>
@@ -1130,6 +1153,67 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                     </div>
                   </div>
 
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                        <DollarSign className="w-3.5 h-3.5 text-emerald-600" /> Presupuesto Estimado (CLP con separador de miles) *
+                      </label>
+                      <div className="relative flex items-center">
+                        <span className="absolute left-3 text-slate-400 font-bold">$</span>
+                        <input
+                          type="text"
+                          placeholder="15.000.000"
+                          value={formatearEnteroConMiles(form.valorAprox)}
+                          onChange={e => setForm(f => ({ ...f, valorAprox: desformatearEntero(e.target.value) }))}
+                          className="w-full pl-7 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-emerald-700"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 text-amber-600" /> Duración Aproximada (días)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        placeholder="Ej: 60"
+                        value={form.duracionEstimadaDias || ''}
+                        onChange={e => setForm(f => ({ ...f, duracionEstimadaDias: Number(e.target.value) || 0 }))}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700"
+                      />
+                      <span className="text-[10px] text-slate-400 mt-0.5 block">
+                        {form.duracionEstimadaDias > 0 ? `≈ ${(form.duracionEstimadaDias / 30).toFixed(1)} meses` : 'Estimación previa a licitar — se reemplaza por el plazo real al adjudicar'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                        <Calendar className="w-3.5 h-3.5 text-sky-600" /> Fecha Inicio Estimada
+                      </label>
+                      <PremiumDatePicker
+                        value={form.fechaInicio}
+                        onChange={value => setForm(f => ({ ...f, fechaInicio: value }))}
+                        className="flex items-center gap-2 w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium text-slate-700 text-left"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                        <Calendar className="w-3.5 h-3.5 text-sky-600" /> Estado de la Cartera
+                      </label>
+                      <select
+                        value={form.estado}
+                        onChange={e => setForm(f => ({ ...f, estado: e.target.value as ProyectoMaestro['estado'] }))}
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                      >
+                        <option value="Pendiente">Pendiente</option>
+                        <option value="En Proceso">En Proceso</option>
+                        <option value="Completado">Completado</option>
+                      </select>
+                    </div>
+                  </div>
+
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1 flex items-center gap-1">
                       <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
@@ -1149,38 +1233,6 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                       Sugerencia para {formatoMonedaCLP(form.valorAprox || 0)}: <strong className="text-slate-600">{sugerirPoliticaGarantias(form.valorAprox || 0)}</strong>.
                       {' '}No es obligatorio exigir boletas en contratos de bajo monto — esta política ajusta el texto de la sección de Garantías en las Bases.
                     </p>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block font-semibold text-slate-700 mb-1 flex items-center gap-1">
-                        <DollarSign className="w-3.5 h-3.5 text-emerald-600" /> Presupuesto Estimado (CLP con separador de miles) *
-                      </label>
-                      <div className="relative flex items-center">
-                        <span className="absolute left-3 text-slate-400 font-bold">$</span>
-                        <input
-                          type="text"
-                          placeholder="15.000.000"
-                          value={formatearEnteroConMiles(form.valorAprox)}
-                          onChange={e => setForm(f => ({ ...f, valorAprox: desformatearEntero(e.target.value) }))}
-                          className="w-full pl-7 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-emerald-700"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block font-semibold text-slate-700 mb-1 flex items-center gap-1">
-                        <Calendar className="w-3.5 h-3.5 text-sky-600" /> Estado de la Cartera
-                      </label>
-                      <select
-                        value={form.estado}
-                        onChange={e => setForm(f => ({ ...f, estado: e.target.value as ProyectoMaestro['estado'] }))}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
-                      >
-                        <option value="Pendiente">Pendiente</option>
-                        <option value="En Proceso">En Proceso</option>
-                        <option value="Completado">Completado</option>
-                      </select>
-                    </div>
                   </div>
 
                   <div className="flex justify-end gap-3 pt-3 border-t">

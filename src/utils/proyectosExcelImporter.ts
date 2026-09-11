@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
 import type { ProyectoMaestro } from '../types';
+import { getRubrosList } from '../data/rubrosData';
 
 export interface FilaProyectoImportada {
   fila: number; // número de fila en el Excel (para referenciar errores)
@@ -15,19 +16,24 @@ export interface FilaProyectoImportada {
     edificioSigla: string;
     tipoObra: string;
     uso: string;
+    rubro: string;
     responsableNombre: string;
     responsableEmail: string;
     prioridad: ProyectoMaestro['prioridad'];
     modalidadContrato: ProyectoMaestro['modalidadContrato'];
+    fechaInicio?: string;
+    fechaTermino?: string;
+    presupuestoAprobado: boolean;
   };
   errores: string[];
 }
 
 const ENCABEZADOS = [
   'Centro de Costo (CP)', 'Código Proyecto', 'Nombre del Proyecto', 'Descripción',
-  'Presupuesto Estimado (CLP)', 'Campus (Sigla)', 'Edificio', 'Tipo de Obra', 'Uso',
+  'Presupuesto Estimado (CLP)', 'Campus (Sigla)', 'Edificio', 'Tipo de Obra', 'Uso', 'Rubro',
   'Responsable', 'Email Responsable', 'Prioridad (Alta/Media/Baja)',
   'Modalidad Contrato (Suma Alzada/Serie de Precios/Administración Directa)',
+  'Fecha Inicio (DD-MM-AAAA)', 'Fecha Término (DD-MM-AAAA)', 'Aprobado Ppto. Anual (Sí/No)',
 ];
 
 export async function generarPlantillaProyectosExcel(): Promise<void> {
@@ -48,14 +54,66 @@ export async function generarPlantillaProyectosExcel(): Promise<void> {
   const ejemplo = ws.getRow(2);
   ejemplo.values = [
     '409-1722', '2026_050', 'REMODELACIÓN LABORATORIO CRC17', 'Tabiquería, cielo falso e iluminación LED',
-    15000000, 'CRC', 'CRC17', 'REMODELACION', 'DOCENCIA',
+    15000000, 'CRC', 'CRC17', 'REMODELACION', 'DOCENCIA', 'Tabiquería, Cielos y Terminaciones',
     'David Silva Roco', 'dsilva@uct.cl', 'Media', 'Suma Alzada',
+    '01-03-2026', '30-06-2026', 'Sí',
   ];
   ejemplo.font = { name: 'Arial', italic: true, color: { argb: '888888' }, size: 10 };
+
+  // Las 3 últimas columnas son opcionales, pero sin ellas el proyecto no aparece en
+  // Avance Financiero (necesita fechas) ni queda aprobado para el presupuesto anual.
+  const nota = ws.getRow(4);
+  nota.getCell(1).value =
+    'Las columnas Rubro, Fecha Inicio, Fecha Término y "Aprobado Ppto. Anual" son opcionales, ' +
+    'pero se recomienda llenarlas: sin fechas el proyecto no se puede proyectar mes a mes en ' +
+    'Avance Financiero, y sin "Aprobado Ppto. Anual = Sí" no compromete el presupuesto anual.';
+  ws.mergeCells(4, 1, 4, ENCABEZADOS.length);
+  nota.getCell(1).font = { name: 'Arial', italic: true, size: 9, color: { argb: '9A6B00' } };
+  nota.getCell(1).alignment = { wrapText: true };
+  nota.height = 30;
 
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   saveAs(blob, 'Plantilla_Carga_Proyectos_Cartera_UCT.xlsx');
+}
+
+function aFechaISO(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Excel puede entregar la fecha como Date, número serial o texto DD-MM-AAAA / DD/MM/AAAA / AAAA-MM-DD.
+ * Siempre devuelve 'AAAA-MM-DD' (sin hora), el mismo formato que usa PremiumDatePicker en toda la app. */
+function parsearFecha(v: unknown): string | undefined {
+  if (v == null || v === '') return undefined;
+  if (v instanceof Date && !Number.isNaN(v.getTime())) return aFechaISO(v);
+  if (typeof v === 'number') {
+    const ms = Math.round((v - 25569) * 86400 * 1000); // serial Excel -> epoch Unix
+    const d = new Date(ms);
+    return Number.isNaN(d.getTime()) ? undefined : aFechaISO(d);
+  }
+  const s = String(v).trim();
+  if (!s) return undefined;
+  const m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (m) {
+    const [, dd, mm, yyyy] = m;
+    const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+    return Number.isNaN(d.getTime()) ? undefined : aFechaISO(d);
+  }
+  const d2 = new Date(s);
+  return Number.isNaN(d2.getTime()) ? undefined : aFechaISO(d2);
+}
+
+/** Normaliza el Rubro escrito libremente al nombre oficial del catálogo (coincidencia insensible a mayúsculas). */
+function normalizarRubro(v: unknown): string {
+  const texto = String(v ?? '').trim();
+  if (!texto) return '';
+  const oficial = getRubrosList().find(r => r.nombre.toLowerCase() === texto.toLowerCase());
+  return oficial ? oficial.nombre : texto;
+}
+
+function normalizarSiNo(v: unknown): boolean {
+  const n = String(v ?? '').trim().toLowerCase();
+  return n === 'si' || n === 'sí' || n === 'x' || n === 'yes' || n === 'true' || n === '1';
 }
 
 function normalizarEncabezado(v: unknown): string {
@@ -98,7 +156,7 @@ export async function parseProyectosExcel(file: File): Promise<{
 }> {
   const erroresGenerales: string[] = [];
   const arrayBuffer = await file.arrayBuffer();
-  const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+  const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
@@ -118,10 +176,14 @@ export async function parseProyectosExcel(file: File): Promise<{
     edificioSigla: buscarColumna(headerRow, 'edificio'),
     tipoObra: buscarColumna(headerRow, 'tipo de obra', 'tipo obra'),
     uso: buscarColumna(headerRow, 'uso'),
+    rubro: buscarColumna(headerRow, 'rubro'),
     responsableNombre: buscarColumnaExcluyendo(headerRow, ['email'], 'responsable'),
     responsableEmail: buscarColumna(headerRow, 'email'),
     prioridad: buscarColumna(headerRow, 'prioridad'),
     modalidadContrato: buscarColumna(headerRow, 'modalidad'),
+    fechaInicio: buscarColumna(headerRow, 'inicio'),
+    fechaTermino: buscarColumna(headerRow, 'término', 'termino', 'fecha fin', 'fecha final'),
+    presupuestoAprobado: buscarColumna(headerRow, 'aprobado'),
   };
 
   if (idx.nombre < 0) {
@@ -148,6 +210,12 @@ export async function parseProyectosExcel(file: File): Promise<{
       errores.push(`Email de responsable inválido: "${responsableEmail}".`);
     }
 
+    const fechaInicio = parsearFecha(idx.fechaInicio >= 0 ? row[idx.fechaInicio] : undefined);
+    const fechaTermino = parsearFecha(idx.fechaTermino >= 0 ? row[idx.fechaTermino] : undefined);
+    if (fechaInicio && fechaTermino && new Date(fechaTermino) < new Date(fechaInicio)) {
+      errores.push('La Fecha Término es anterior a la Fecha Inicio.');
+    }
+
     filas.push({
       fila: r + 1,
       datos: {
@@ -160,10 +228,14 @@ export async function parseProyectosExcel(file: File): Promise<{
         edificioSigla: get(idx.edificioSigla).toUpperCase(),
         tipoObra: get(idx.tipoObra).toUpperCase(),
         uso: get(idx.uso).toUpperCase(),
+        rubro: normalizarRubro(idx.rubro >= 0 ? row[idx.rubro] : ''),
         responsableNombre: get(idx.responsableNombre),
         responsableEmail,
         prioridad: normalizarPrioridad(idx.prioridad >= 0 ? row[idx.prioridad] : ''),
         modalidadContrato: normalizarModalidad(idx.modalidadContrato >= 0 ? row[idx.modalidadContrato] : ''),
+        fechaInicio,
+        fechaTermino,
+        presupuestoAprobado: normalizarSiNo(idx.presupuestoAprobado >= 0 ? row[idx.presupuestoAprobado] : ''),
       },
       errores,
     });

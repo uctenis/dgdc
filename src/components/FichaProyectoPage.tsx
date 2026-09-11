@@ -7,7 +7,7 @@ import {
   MapPin, ShieldCheck, CheckSquare, Square, Printer, FolderCheck, Edit3, Cloud, AlertCircle, CalendarDays,
   ScrollText,
 } from 'lucide-react';
-import type { AumentoObra, Cotizacion, LicitacionProyecto, ProyectoMaestro, Proveedor } from '../types';
+import type { AumentoObra, Cotizacion, LicitacionProyecto, ProyectoMaestro, Proveedor, ConfiguracionFirmas } from '../types';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { normalizarNombreProyecto, corregirOrtografiaEspanol, corregirTextoAvanzado } from '../utils/spellCorrector';
 import { rewriteTextWithAI, isAIConfigured } from '../services/aiService';
@@ -17,12 +17,13 @@ import { getCampusList, obtenerEdificiosDeCampus } from '../data/campusData';
 import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
 import { AumentosObraPanel } from './AumentosObraPanel';
+import { ItemizadoProyectoPanel } from './ItemizadoProyectoPanel';
 import { BitacoraProyectoPanel } from './BitacoraProyectoPanel';
 import { CargaOrdenCompraModal } from './CargaOrdenCompraModal';
 import { PremiumDatePicker } from './PremiumDatePicker';
 import { BasesLicitacionModal } from './BasesLicitacionModal';
 import { ContratoAdjudicacionModal } from './ContratoAdjudicacionModal';
-import { requiereContratoFormal } from '../data/contratoTemplateData';
+import { requiereContratoFormal, UMBRAL_CONTRATO_FORMAL } from '../data/contratoTemplateData';
 
 interface DocumentoProyecto {
   id: string;
@@ -51,6 +52,7 @@ interface FichaProyectoPageProps {
   hideBack?: boolean;
   proveedorAdjudicado?: Proveedor;
   cotizacionAdjudicada?: Cotizacion;
+  configFirmas?: ConfiguracionFirmas;
 }
 
 const normalizarTipoDocumento = (tipo: string): DocumentoProyecto['tipo'] => {
@@ -82,7 +84,9 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
   hideBack = false,
   proveedorAdjudicado,
   cotizacionAdjudicada,
+  configFirmas,
 }) => {
+  const umbralContratoFormal = configFirmas?.parametrosSgc?.umbralContratoFormal;
   const [licitacionVinculada, setLicitacionVinculada] = useState<LicitacionProyecto | null>(null);
   const [proyectoMaestroVinculado, setProyectoMaestroVinculado] = useState<ProyectoMaestro | null>(null);
 
@@ -703,12 +707,12 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
             className={`px-4 py-2.5 font-bold rounded-xl text-sm transition flex items-center gap-2 border shadow-sm ${
               proyectoMaestroEfectivo.contrato?.estado === 'Firmado' ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200' :
               proyectoMaestroEfectivo.contrato ? 'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200' :
-              requiereContratoFormal(proyectoMaestroEfectivo.montoAdjudicado || 0) ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200' :
+              requiereContratoFormal(proyectoMaestroEfectivo.montoAdjudicado || 0, umbralContratoFormal) ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200' :
               'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
             }`}
             title={
               proyectoMaestroEfectivo.contrato ? `Contrato: ${proyectoMaestroEfectivo.contrato.estado}` :
-              requiereContratoFormal(proyectoMaestroEfectivo.montoAdjudicado || 0) ? 'Este monto requiere Contrato formal firmado (no basta con la OC)' :
+              requiereContratoFormal(proyectoMaestroEfectivo.montoAdjudicado || 0, umbralContratoFormal) ? `Desde ${formatoMonedaCLP(umbralContratoFormal ?? UMBRAL_CONTRATO_FORMAL)} (Anexo 1, Resolución VRAE 02/2014) se exige Licitación con Contrato formal firmado y equipo evaluador (Director de Proyecto/Unidad, VRAE o delegado, Secretaría General como ministro de fe) — no basta con la OC` :
               'Generar Contrato de Adjudicación (opcional bajo este monto)'
             }
           >
@@ -1106,6 +1110,10 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
             </div>
           </div>
         </div>
+
+      {proyectoMaestroEfectivo && (
+        <ItemizadoProyectoPanel proyecto={proyectoMaestroEfectivo} />
+      )}
 
       {/* Grid Principal: Carátula Oficial (Izquierda) + CheckList y Documentos (Derecha) */}
       {licitacionEfectiva && estaAdjudicado && (

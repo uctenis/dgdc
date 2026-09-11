@@ -254,6 +254,7 @@ function AdminApp() {
           <FichaProyectoPage
             proyecto={proyectoParaFicha}
             onBack={() => setActiveTab('licitaciones')}
+            configFirmas={configFirmas}
           />
         )}
 

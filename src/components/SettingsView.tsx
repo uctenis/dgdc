@@ -237,6 +237,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     tasaIva: 19,
     umbralActaObligatoria: 800001,
     umbralAprobacionVrae: 5000001,
+    umbralContratoFormal: 25000001,
   };
 
   const sumaPonderaciones =
@@ -1068,7 +1069,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <Building2 className="w-4 h-4 text-purple-600" />
                     <span>Umbrales Financieros</span>
                   </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div>
                       <label className="block font-semibold text-slate-700 mb-1">Tasa Impuesto IVA (%)</label>
                       <div className="flex items-center gap-2">
@@ -1118,7 +1119,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       />
                       <span className="text-[10px] text-purple-700 font-medium">Aprobación Vicerrectoría: {formatoMonedaCLP(paramSgc.umbralAprobacionVrae)}</span>
                     </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Contrato Formal (CLP)</label>
+                      <input
+                        type="number"
+                        value={paramSgc.umbralContratoFormal ?? 25000001}
+                        onChange={e =>
+                          updateFormData(prev => ({
+                            ...prev,
+                            parametrosSgc: { ...paramSgc, umbralContratoFormal: Number(e.target.value) },
+                          }))
+                        }
+                        className="w-full px-3.5 py-2 border border-slate-300 rounded-xl outline-none font-mono font-bold"
+                      />
+                      <span className="text-[10px] text-rose-700 font-medium">Licitación + Contrato: {formatoMonedaCLP(paramSgc.umbralContratoFormal)}</span>
+                    </div>
                   </div>
+                  <p className="text-[10px] text-slate-500">
+                    Tramos según Anexo 1 de la Resolución VRAE 02/2014: bajo "Acta Obligatoria" basta con Orden de Compra; entre ese monto y "Firma VRAE" se exigen 3 cotizaciones; desde "Firma VRAE" se suma el V°B° de la Vicerrectoría; desde "Contrato Formal" se exige Licitación (Privada o Pública) con Contrato firmado.
+                  </p>
                 </div>
 
               </div>

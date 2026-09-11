@@ -142,6 +142,7 @@ export function LicitacionWorkspacePage({
           hideBack
           proveedorAdjudicado={proveedorAdjudicado}
           cotizacionAdjudicada={ofertaAdjudicada}
+          configFirmas={configFirmas}
         />
       )}
       {activeTab === 'invitados' && (

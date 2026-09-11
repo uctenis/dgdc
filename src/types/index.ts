@@ -88,6 +88,15 @@ export interface ProyectoMaestro {
   prioridad?: 'Alta' | 'Media' | 'Baja';
   fechaInicio?: string;
   fechaTermino?: string;
+  /** Duración aproximada en días, estimada al crear el proyecto (antes de licitar) — distinta de
+   * `plazoEjecucionDias`, que es el plazo REAL del contrato adjudicado. Sirve de respaldo para
+   * proyectar `fechaTermino` en Avance Financiero mientras el proyecto todavía no tiene licitación. */
+  duracionEstimadaDias?: number;
+
+  /** Itemizado / partidas de referencia del proyecto — desglose progresivo del Presupuesto Estimado,
+   * partida por partida, que se completa en la Ficha del Proyecto a medida que se detalla el alcance.
+   * Es independiente del itemizado de cada Cotización (`ItemCotizacion`), que es la oferta del proveedor. */
+  itemizado?: ItemItemizadoProyecto[];
 
   /** Aprobación explícita para entrar al Presupuesto Anual Proyectado — distinta de `prioridad`,
    * que es solo un criterio de apoyo para decidir. Solo los proyectos con `aprobado: true`
@@ -161,6 +170,20 @@ export interface ItemCotizacion {
   cantidad: number;
   precioUnitario: number;
   precioTotal: number;
+}
+
+// ─── ITEMIZADO DE REFERENCIA DEL PROYECTO (ProyectoMaestro.itemizado) ─────
+// Desglose de partidas del presupuesto estimado, previo a licitar. `origen: 'IA'`
+// marca partidas propuestas por el asistente (el usuario completa cantidad y precio).
+export interface ItemItemizadoProyecto {
+  id: string;
+  item: string;
+  descripcion: string;
+  unidad: string;
+  cantidad: number;
+  precioUnitario: number;
+  precioTotal: number;
+  origen: 'Manual' | 'IA';
 }
 
 // ─── COTIZACIÓN (cargada por admin) ───────────────────────────────────────
@@ -553,6 +576,9 @@ export interface ParametrosLicitacionSGC {
   tasaIva: number;                 // 19
   umbralActaObligatoria: number;   // 800001
   umbralAprobacionVrae: number;    // 5000001
+  /** Umbral desde el cual se exige Licitación (Privada o Pública) + Contrato formal firmado,
+   * según el Anexo 1 de la Resolución VRAE 02/2014 (tramo "$25.000.001 y superior"). */
+  umbralContratoFormal: number;    // 25000001
 }
 
 export interface ConfiguracionFirmas {

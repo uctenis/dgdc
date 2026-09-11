@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  FileCheck2, Trophy, X, Edit3, Save, Printer, ShieldCheck
+  FileCheck2, Trophy, X, Edit3, Save, Printer, ShieldCheck, AlertTriangle
 } from 'lucide-react';
 import type { LicitacionProyecto, Cotizacion, Proveedor, ConfiguracionFirmas, EvaluacionResultado } from '../types';
 import { formatoMonedaCLP, evaluarCotizaciones } from '../services/evaluationEngine';
@@ -57,7 +57,9 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
   const plazoAdjudicadoDias = cotizacionGanadoraSel?.plazoDias || licitacion.plazoAdjudicadoDias;
   const umbralActa = configFirmas.parametrosSgc?.umbralActaObligatoria ?? 800001;
   const umbralVrae = configFirmas.parametrosSgc?.umbralAprobacionVrae ?? 5000001;
+  const umbralContrato = configFirmas.parametrosSgc?.umbralContratoFormal ?? 25000001;
   const requiereFirmaVicerrectora = montoAdjudicadoTotal > umbralVrae;
+  const requiereEquipoEvaluador = montoAdjudicadoTotal >= umbralContrato;
   const cotizacionPorId = new Map(cotizacionesLicitacion.map(cotizacion => [cotizacion.id, cotizacion]));
   const montoNetoAdjudicado = cotizacionGanadoraSel?.montoNeto
     ?? (montoAdjudicadoTotal ? Math.round(montoAdjudicadoTotal / 1.19) : undefined);
@@ -689,6 +691,15 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
                   </div>
                 )}
               </div>
+
+              {requiereEquipoEvaluador && (
+                <div className="p-3 bg-amber-50 border-2 border-amber-300 rounded-xl text-[10px] text-amber-950 flex items-start gap-2 no-print">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                  <span>
+                    <strong>Monto adjudicado ({formatoMonedaCLP(montoAdjudicadoTotal)}) ≥ {formatoMonedaCLP(umbralContrato)}:</strong> según el Anexo 1 de la Resolución VRAE 02/2014, este tramo exige Licitación (Privada o Pública) y un equipo evaluador conformado por el Director de Proyecto o Unidad, la VRAE (o quien delegue), un representante VRA cuando la naturaleza de la adquisición lo requiera, y Secretaría General como ministro de fe — además del Contrato formal firmado.
+                  </span>
+                </div>
+              )}
 
             </div>
 

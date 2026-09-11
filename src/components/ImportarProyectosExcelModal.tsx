@@ -62,10 +62,16 @@ export function ImportarProyectosExcelModal({ onClose, onImportado }: ImportarPr
           edificioSigla: f.datos.edificioSigla,
           uso: f.datos.uso,
           tipoObra: f.datos.tipoObra,
+          rubro: f.datos.rubro,
           responsableNombre: f.datos.responsableNombre,
           responsableEmail: f.datos.responsableEmail,
           prioridad: f.datos.prioridad,
           modalidadContrato: f.datos.modalidadContrato,
+          fechaInicio: f.datos.fechaInicio,
+          fechaTermino: f.datos.fechaTermino,
+          presupuesto: f.datos.presupuestoAprobado
+            ? { aprobado: true, fecha: new Date().toISOString(), aprobadoPorNombre: 'Importación Excel' }
+            : { aprobado: false },
           documentosAntecedentes: [],
         });
         ok++;
@@ -143,6 +149,8 @@ export function ImportarProyectosExcelModal({ onClose, onImportado }: ImportarPr
                           <th className="p-2 text-left">Nombre</th>
                           <th className="p-2 text-right">Presupuesto</th>
                           <th className="p-2 text-left">Campus</th>
+                          <th className="p-2 text-left">Ventana</th>
+                          <th className="p-2 text-center">Ppto.</th>
                           <th className="p-2 text-left">Estado</th>
                         </tr>
                       </thead>
@@ -153,6 +161,14 @@ export function ImportarProyectosExcelModal({ onClose, onImportado }: ImportarPr
                             <td className="p-2 font-semibold text-slate-800">{f.datos.nombre || '—'}</td>
                             <td className="p-2 text-right">{formatoMonedaCLP(f.datos.valorAprox)}</td>
                             <td className="p-2">{f.datos.campusSigla || '—'}</td>
+                            <td className="p-2 text-[10px] text-slate-500 whitespace-nowrap">
+                              {f.datos.fechaInicio ? new Date(f.datos.fechaInicio).toLocaleDateString('es-CL') : '—'}
+                              {' → '}
+                              {f.datos.fechaTermino ? new Date(f.datos.fechaTermino).toLocaleDateString('es-CL') : '—'}
+                            </td>
+                            <td className="p-2 text-center">
+                              {f.datos.presupuestoAprobado ? <span className="text-indigo-700 font-bold">✓</span> : <span className="text-slate-300">-</span>}
+                            </td>
                             <td className="p-2">
                               {f.errores.length ? (
                                 <span className="text-rose-700 font-semibold" title={f.errores.join(' ')}>⚠ {f.errores[0]}</span>

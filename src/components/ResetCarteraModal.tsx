@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { X, AlertOctagon, Loader2, Trash2 } from 'lucide-react';
-import { contarCarteraYLicitaciones, resetCarteraYLicitaciones } from '../services/firestoreService';
+import { X, AlertOctagon, Loader2, Trash2, ShieldAlert } from 'lucide-react';
+import { contarCarteraYLicitaciones, resetCarteraYLicitaciones, type ProyectoConGastoEfectivo } from '../services/firestoreService';
+import { formatoMonedaCLP } from '../services/evaluationEngine';
 
 const FRASE_CONFIRMACION = 'BORRAR CARTERA';
 
@@ -9,9 +10,16 @@ interface ResetCarteraModalProps {
   onCompletado?: () => void;
 }
 
+interface ConteoCartera {
+  proyectos: number;
+  licitaciones: number;
+  cotizaciones: number;
+  proyectosConGastoEfectivo: ProyectoConGastoEfectivo[];
+}
+
 export function ResetCarteraModal({ onClose, onCompletado }: ResetCarteraModalProps) {
   const [cargando, setCargando] = useState(true);
-  const [conteo, setConteo] = useState<{ proyectos: number; licitaciones: number; cotizaciones: number } | null>(null);
+  const [conteo, setConteo] = useState<ConteoCartera | null>(null);
   const [frase, setFrase] = useState('');
   const [borrando, setBorrando] = useState(false);
   const [resultado, setResultado] = useState<{ proyectos: number; licitaciones: number; cotizaciones: number } | null>(null);
@@ -23,7 +31,8 @@ export function ResetCarteraModal({ onClose, onCompletado }: ResetCarteraModalPr
     });
   }, []);
 
-  const puedeBorrar = frase.trim().toUpperCase() === FRASE_CONFIRMACION;
+  const bloqueadoPorGastoEfectivo = (conteo?.proyectosConGastoEfectivo.length || 0) > 0;
+  const puedeBorrar = !bloqueadoPorGastoEfectivo && frase.trim().toUpperCase() === FRASE_CONFIRMACION;
 
   const ejecutar = async () => {
     if (!puedeBorrar || !conteo) return;
@@ -65,6 +74,23 @@ export function ResetCarteraModal({ onClose, onCompletado }: ResetCarteraModalPr
             <p className="mt-3 text-xs text-emerald-700">Proveedores, configuración de firmas, responsables y usuarios no fueron afectados.</p>
             <button onClick={onClose} className="mt-4 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">Cerrar</button>
           </div>
+        ) : bloqueadoPorGastoEfectivo ? (
+          <>
+            <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 text-sm text-amber-950 space-y-2">
+              <p className="font-bold flex items-center gap-2"><ShieldAlert className="w-4 h-4 shrink-0" /> Borrado bloqueado: hay pagos reales ya cursados</p>
+              <p className="text-xs text-amber-800">
+                {conteo!.proyectosConGastoEfectivo.length} proyecto(s) ya registran Gasto Efectivo (dinero público ya pagado) y no se pueden incluir en un borrado masivo. Elimínelos manualmente desde la Cartera de Proyectos si de verdad corresponde anularlos, o contacte al administrador.
+              </p>
+              <ul className="list-disc pl-5 text-xs space-y-0.5">
+                {conteo!.proyectosConGastoEfectivo.map(p => (
+                  <li key={p.id}><strong>{p.codigoProyecto}</strong> — {p.nombre}: {formatoMonedaCLP(p.gastoEfectivo)}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="flex justify-end pt-2">
+              <button onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium text-xs">Cerrar</button>
+            </div>
+          </>
         ) : (
           <>
             <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-sm text-rose-900 space-y-2">

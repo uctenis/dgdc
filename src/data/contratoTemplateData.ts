@@ -5,15 +5,16 @@ export type SeccionContrato = SeccionBases;
 /**
  * Umbral desde el cual una licitación adjudicada requiere un Contrato formal
  * bilateral (además de la Orden de Compra). Bajo este monto, la OC es
- * suficiente respaldo administrativo. Reutiliza el mismo tramo que activa las
- * boletas de garantía completas (ver basesTemplateData.ts) porque un contrato
- * que exige boletas bancarias completas amerita, por coherencia, quedar
- * formalizado en un contrato firmado, no solo en una Orden de Compra.
+ * suficiente respaldo administrativo. Corresponde al último tramo de la
+ * Resolución VRAE 02/2014 (Anexo 1: Tabla de exigencias según monto de
+ * compra) — "$25.000.001 y superior" exige Licitación (Privada o Pública)
+ * con Contrato, además de la Orden de Compra. Entre $5.000.001 y $25.000.000
+ * solo se exige V°B° VRAE (ver `umbralAprobacionVrae`), NO contrato formal.
  */
-export const UMBRAL_CONTRATO_FORMAL = 5000001;
+export const UMBRAL_CONTRATO_FORMAL = 25000001;
 
-export function requiereContratoFormal(montoAdjudicado: number): boolean {
-  return montoAdjudicado >= UMBRAL_CONTRATO_FORMAL;
+export function requiereContratoFormal(montoAdjudicado: number, umbral: number = UMBRAL_CONTRATO_FORMAL): boolean {
+  return montoAdjudicado >= umbral;
 }
 
 /**

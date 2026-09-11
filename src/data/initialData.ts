@@ -30,6 +30,7 @@ export const INITIAL_CONFIG_FIRMAS: ConfiguracionFirmas = {
     tasaIva: 19,
     umbralActaObligatoria: 800001,
     umbralAprobacionVrae: 5000001,
+    umbralContratoFormal: 25000001,
   },
 };
 

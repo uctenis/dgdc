@@ -76,13 +76,16 @@ export function mesesEntreFechas(fechaInicio: string, fechaFin: string): string[
   return meses;
 }
 
-/** Fecha de término efectiva: la declarada, o fechaInicio + plazoEjecucionDias como respaldo. */
+/** Fecha de término efectiva: la declarada, o fechaInicio + plazo como respaldo — primero el plazo
+ * REAL del contrato adjudicado (`plazoEjecucionDias`), y si el proyecto aún no se licita, la
+ * duración aproximada estimada al crearlo (`duracionEstimadaDias`). */
 export function calcularFechaTerminoEfectiva(proyecto: ProyectoMaestro): string | undefined {
   if (proyecto.fechaTermino) return proyecto.fechaTermino;
-  if (proyecto.fechaInicio && proyecto.plazoEjecucionDias) {
+  const plazoDias = proyecto.plazoEjecucionDias || proyecto.duracionEstimadaDias;
+  if (proyecto.fechaInicio && plazoDias) {
     const d = new Date(proyecto.fechaInicio);
     if (!Number.isNaN(d.getTime())) {
-      d.setDate(d.getDate() + proyecto.plazoEjecucionDias);
+      d.setDate(d.getDate() + plazoDias);
       return d.toISOString();
     }
   }
