@@ -609,11 +609,11 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
                 />
               </div>
 
-              {/* Parámetros Técnicos SGC (Ponderación 35%) */}
+              {/* Parámetros Técnicos (Ponderación 35%) */}
               <div className="space-y-2 bg-sky-50/50 p-4 rounded-xl border border-sky-100">
                 <span className="font-bold text-sky-950 block text-xs flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4 text-sky-600" />
-                  <span>Parámetros de Evaluación Técnica (SGC 35%)</span>
+                  <span>Parámetros de Evaluación Técnica (35%)</span>
                 </span>
 
                 <label className="flex items-center justify-between cursor-pointer p-2 bg-white rounded-lg border border-slate-200">
@@ -647,11 +647,11 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
                 </label>
               </div>
 
-              {/* Parámetro Sustentabilidad SGC (Ponderación 10%) */}
+              {/* Parámetro Sustentabilidad (Ponderación 10%) */}
               <div className="space-y-2 bg-emerald-50/50 p-4 rounded-xl border border-emerald-100">
                 <span className="font-bold text-emerald-950 block text-xs flex items-center gap-1.5">
                   <Leaf className="w-4 h-4 text-emerald-600" />
-                  <span>Parámetro de Sustentabilidad Institucional (SGC 10%)</span>
+                  <span>Parámetro de Sustentabilidad Institucional (10%)</span>
                 </span>
 
                 <label className="flex items-center justify-between cursor-pointer p-2 bg-white rounded-lg border border-slate-200">

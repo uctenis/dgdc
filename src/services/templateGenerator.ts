@@ -61,7 +61,7 @@ export async function generarPlantillaCotizacionExcel(licitacion?: LicitacionPro
     'UNIVERSIDAD CATÓLICA DE TEMUCO',
     'SUBDIRECCIÓN DE INFRAESTRUCTURA — DIRECCIÓN DE GESTIÓN DEL CAMPUS',
     'FORMULARIO ESTÁNDAR DE COTIZACIÓN DE OBRAS Y SERVICIOS',
-    'Código SGC: PS-FOR-DGDC0003'
+    'Código: PS-FOR-DGDC0003'
   ], [30, 20, 20, 16]);
 
   ws.getRow(5).height = 10;

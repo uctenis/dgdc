@@ -4,21 +4,25 @@ import { db } from '../lib/firebase';
 import {
   ArrowLeft, FileText, CheckCircle2, Upload,
   Trash2, Building, User, DollarSign,
-  MapPin, ShieldCheck, CheckSquare, Square, Printer, FolderCheck, Edit3, Cloud, AlertCircle, CalendarDays
+  MapPin, ShieldCheck, CheckSquare, Square, Printer, FolderCheck, Edit3, Cloud, AlertCircle, CalendarDays,
+  ScrollText,
 } from 'lucide-react';
 import type { AumentoObra, Cotizacion, LicitacionProyecto, ProyectoMaestro, Proveedor } from '../types';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
-import { normalizarNombreProyecto, corregirOrtografiaEspanol } from '../utils/spellCorrector';
+import { normalizarNombreProyecto, corregirOrtografiaEspanol, corregirTextoAvanzado } from '../utils/spellCorrector';
 import { rewriteTextWithAI, isAIConfigured } from '../services/aiService';
 import { updateLicitacion, updateProyectoMaestro, deleteLicitacion, deleteProyectoMaestro, syncOCToProyectoMaestro } from '../services/firestoreService';
 import { uploadProyectoDocumento } from '../services/storageService';
-import { CAMPUS_UCT, obtenerEdificiosDeCampus } from '../data/campusData';
+import { getCampusList, obtenerEdificiosDeCampus } from '../data/campusData';
 import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
 import { AumentosObraPanel } from './AumentosObraPanel';
 import { BitacoraProyectoPanel } from './BitacoraProyectoPanel';
 import { CargaOrdenCompraModal } from './CargaOrdenCompraModal';
 import { PremiumDatePicker } from './PremiumDatePicker';
+import { BasesLicitacionModal } from './BasesLicitacionModal';
+import { ContratoAdjudicacionModal } from './ContratoAdjudicacionModal';
+import { requiereContratoFormal } from '../data/contratoTemplateData';
 
 interface DocumentoProyecto {
   id: string;
@@ -234,17 +238,17 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
     return []; // Sin documentos por defecto
   });
 
-  // State para Checklist de Carátula SGC
+  // State para Checklist de Carátula
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([
-    { id: 'ch-01', label: '1. Bases Administrativas / Términos de Referencia', descripcion: 'Reglas del proceso y criterios de evaluación SGC', completado: false },
+    { id: 'ch-01', label: '1. Bases Administrativas / Términos de Referencia', descripcion: 'Reglas del proceso y criterios de evaluación', completado: false },
     { id: 'ch-02', label: '2. Especificaciones Técnicas (EETT)', descripcion: 'Detalle de materiales, cubicaciones y requerimientos de obra', completado: false },
     { id: 'ch-03', label: '3. Planos de Arquitectura y Especialidades (DWG / PDF)', descripcion: 'Planos acotados, instalaciones eléctricas y sanitarias', completado: false },
     { id: 'ch-04', label: '4. Presupuesto Detallado e Itemizado (XLSX)', descripcion: 'Cubicaciones y desglose de costos por partida', completado: false },
     { id: 'ch-05', label: '5. Programa de Trabajo y Carta Gantt', descripcion: 'Cronograma de ejecución y plazos por etapa', completado: false },
     { id: 'ch-06', label: '6. Certificado / Informe de Visita a Terreno', descripcion: 'Registro oficial de contratistas asistentes', completado: false },
-    { id: 'ch-07', label: '7. Aclaraciones y Respuestas (Consultas SGC)', descripcion: 'Acta de respuestas a consultas de proveedores', completado: false },
+    { id: 'ch-07', label: '7. Aclaraciones y Respuestas (Consultas)', descripcion: 'Acta de respuestas a consultas de proveedores', completado: false },
     { id: 'ch-08', label: '8. Cotizaciones / Ofertas de Proveedores Recibidas', descripcion: 'Propuestas económicas y técnicas en sistema', completado: false },
-    { id: 'ch-09', label: '9. Cuadro Comparativo & Acta de Adjudicación SGC', descripcion: 'Evaluación parametrizada y resolución de adjudicación', completado: false },
+    { id: 'ch-09', label: '9. Cuadro Comparativo & Acta de Adjudicación', descripcion: 'Evaluación parametrizada y resolución de adjudicación', completado: false },
     { id: 'ch-10', label: '10. Orden de Compra (OP/OT) & Decreto de Cierre', descripcion: 'Documentos presupuestarios finales aprobados', completado: false },
   ]);
 
@@ -278,7 +282,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
     );
   };
 
-  // Sincronizar dinámicamente la lista de documentos y validar el checklist SGC
+  // Sincronizar dinámicamente la lista de documentos y validar el checklist
   useEffect(() => {
     const docsBase: DocumentoProyecto[] = [];
 
@@ -322,7 +326,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
             driveFileId: (d as any).driveFileId,
             driveLink: (d as any).driveLink || d.archivoURL,
             fechaCarga: d.fechaCarga || new Date().toLocaleDateString('es-CL'),
-            cargadoPor: d.cargadoPor || 'Sistema SGC',
+            cargadoPor: d.cargadoPor || 'Sistema',
             estado: (d as any).driveFileId ? 'almacenado' : 'local',
           });
         }
@@ -371,6 +375,8 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
     }
   });
   const [isEditingDesc, setIsEditingDesc] = useState(false);
+  const [basesAbierto, setBasesAbierto] = useState(false);
+  const [contratoAbierto, setContratoAbierto] = useState(false);
   const [aiProcessing, setAiProcessing] = useState(false);
   const [hasChanges, setHasChanges] = useState(false); // Track cambios
   const [showOCModal, setShowOCModal] = useState(false);
@@ -677,6 +683,39 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
           <FolderCheck className="w-4 h-4" />
           <span>{isSaving ? 'Guardando...' : hasChanges ? 'Guardar Cambios' : 'Guardar Expediente'}</span>
         </button>
+        {proyectoMaestroEfectivo && (
+          <button
+            onClick={() => setBasesAbierto(true)}
+            className={`px-4 py-2.5 font-bold rounded-xl text-sm transition flex items-center gap-2 border shadow-sm ${
+              proyectoMaestroEfectivo.bases?.estado === 'Aprobada' ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200' :
+              proyectoMaestroEfectivo.bases ? 'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200' :
+              'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+            }`}
+            title={proyectoMaestroEfectivo.bases ? `Bases: ${proyectoMaestroEfectivo.bases.estado}` : 'Generar Bases Administrativas y Técnicas'}
+          >
+            <ScrollText className="w-4 h-4" />
+            <span>Bases</span>
+          </button>
+        )}
+        {proyectoMaestroEfectivo && (proyectoMaestroEfectivo.montoAdjudicado || 0) > 0 && (
+          <button
+            onClick={() => setContratoAbierto(true)}
+            className={`px-4 py-2.5 font-bold rounded-xl text-sm transition flex items-center gap-2 border shadow-sm ${
+              proyectoMaestroEfectivo.contrato?.estado === 'Firmado' ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200' :
+              proyectoMaestroEfectivo.contrato ? 'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200' :
+              requiereContratoFormal(proyectoMaestroEfectivo.montoAdjudicado || 0) ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200' :
+              'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+            }`}
+            title={
+              proyectoMaestroEfectivo.contrato ? `Contrato: ${proyectoMaestroEfectivo.contrato.estado}` :
+              requiereContratoFormal(proyectoMaestroEfectivo.montoAdjudicado || 0) ? 'Este monto requiere Contrato formal firmado (no basta con la OC)' :
+              'Generar Contrato de Adjudicación (opcional bajo este monto)'
+            }
+          >
+            <FileText className="w-4 h-4" />
+            <span>Contrato</span>
+          </button>
+        )}
         <button
           onClick={handleDeleteProyectoFromFicha}
           className="px-4 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-xl text-sm transition flex items-center gap-2 border border-rose-200 shadow-sm"
@@ -793,7 +832,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
                 className="w-full bg-slate-800 text-white text-xs font-bold border border-slate-600 rounded p-1 outline-none focus:ring-1 focus:ring-indigo-500"
               >
                 <option value="">UCT Central</option>
-                {CAMPUS_UCT.map(c => <option key={c.sigla} value={c.sigla}>{c.sigla}</option>)}
+                {getCampusList().map(c => <option key={c.sigla} value={c.sigla}>{c.sigla}</option>)}
               </select>
               <select
                 value={mainData.edificioSigla}
@@ -1045,7 +1084,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
               <div className="flex items-center justify-between mb-3">
                 <span className="text-white font-extrabold text-sm flex items-center gap-2">
                   <ShieldCheck className="w-5 h-5" />
-                  Estado del Expediente SGC
+                  Estado del Expediente
                 </span>
                 <span className="text-white font-bold text-lg">{porcentajeAvance}% Completo</span>
               </div>
@@ -1086,19 +1125,19 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
-        {/* COLUMNA IZQUIERDA: CARÁTULA OFICIAL DEL PROYECTO SGC */}
+        {/* COLUMNA IZQUIERDA: CARÁTULA OFICIAL DEL PROYECTO */}
         <div className="lg:col-span-5 space-y-6">
           
           <div className="bg-white rounded-2xl border-2 border-slate-900 shadow-md overflow-hidden caratula-print">
-            {/* Encabezado Carátula SGC */}
+            {/* Encabezado Carátula */}
             <div className="bg-slate-900 text-white p-4 text-center border-b-2 border-slate-900 space-y-1">
               <span className="text-[10px] font-mono tracking-widest text-sky-300 uppercase block">
                 UNIVERSIDAD CATÓLICA DE TEMUCO • SUBDIRECCIÓN DE INFRAESTRUCTURA
               </span>
               <h3 className="text-base font-black uppercase tracking-wide">
-                CARÁTULA OFICIAL DE EXPEDIENTE SGC
+                CARÁTULA OFICIAL DE EXPEDIENTE
               </h3>
-              <p className="text-[11px] text-slate-300 font-medium">SGC PS-FOR-DGDC 0003 • Sistema de Control de Obras</p>
+              <p className="text-[11px] text-slate-300 font-medium">PS-FOR-DGDC 0003 • Sistema de Control de Obras</p>
             </div>
 
             {/* Datos Resumen del Proyecto */}
@@ -1228,7 +1267,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
               <div>
                 <h4 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
                   <CheckSquare className="w-4 h-4 text-emerald-600" />
-                  <span>Checklist de Contenidos del Proyecto (Expediente SGC)</span>
+                  <span>Checklist de Contenidos del Proyecto (Expediente)</span>
                 </h4>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Marque los componentes e hito documentales verificados en la carátula oficial.
@@ -1286,8 +1325,9 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
                 />
                 <div className="flex items-center justify-end gap-3 mt-3">
                   <button
-                    onClick={() => setDescripcionLocal(corregirOrtografiaEspanol(descripcionLocal))}
+                    onClick={() => setDescripcionLocal(corregirTextoAvanzado(descripcionLocal))}
                     className="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-sm"
+                    title="Corrige tildes y errores de tipeo comparando cada palabra contra un vocabulario base"
                   >Corregir ortografía</button>
 
                   {isAIConfigured() && (
@@ -1527,6 +1567,22 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
           onSuccess={() => {
             onUpdateSuccess?.();
           }}
+        />
+      )}
+
+      {basesAbierto && proyectoMaestroEfectivo && (
+        <BasesLicitacionModal
+          proyecto={proyectoMaestroEfectivo}
+          licitacion={licitacionEfectiva}
+          onClose={() => setBasesAbierto(false)}
+        />
+      )}
+
+      {contratoAbierto && proyectoMaestroEfectivo && (
+        <ContratoAdjudicacionModal
+          proyecto={proyectoMaestroEfectivo}
+          proveedores={proveedorAdjudicado ? [proveedorAdjudicado] : []}
+          onClose={() => setContratoAbierto(false)}
         />
       )}
 

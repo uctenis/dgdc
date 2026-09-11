@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  BookOpen, Plus, Edit3, Trash2, Search,
+  BookOpen, Plus, Trash2, Search,
   X, DollarSign, Calendar, MapPin, Building, User,
   FileText, Paperclip, FolderPlus, ScrollText, Hammer, ShieldCheck
 } from 'lucide-react';
@@ -10,12 +10,12 @@ import {
   subscribeToProveedores,
   addProyectoMaestro,
   updateProyectoMaestro,
-  deleteProyectoMaestro,
+  setAprobacionPresupuesto,
 } from '../services/firestoreService';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
-import { corregirOrtografiaEspanol, normalizarNombreProyecto, ATRIBUTOS_ORTOGRAFIA_ES } from '../utils/spellCorrector';
-import { CAMPUS_UCT, obtenerEdificiosDeCampus, obtenerCampusPorSigla } from '../data/campusData';
+import { corregirOrtografiaEspanol, corregirTextoAvanzado, normalizarNombreProyecto, ATRIBUTOS_ORTOGRAFIA_ES } from '../utils/spellCorrector';
+import { getCampusList, obtenerEdificiosDeCampus, obtenerCampusPorSigla } from '../data/campusData';
 import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
 import { getCentrosCostoList } from '../data/centrosCostoData';
 import { getRubrosList } from '../data/rubrosData';
@@ -25,15 +25,15 @@ import { VisualizadorOCModal } from './VisualizadorOCModal';
 import { RepararCarteraModal, BotonRepararCartera } from './RepararCarteraModal';
 import { BasesLicitacionModal } from './BasesLicitacionModal';
 import { ContratoAdjudicacionModal } from './ContratoAdjudicacionModal';
-import { requiereContratoFormal } from '../data/contratoTemplateData';
 import { ImportarProyectosExcelModal } from './ImportarProyectosExcelModal';
 import { useAuth } from '../context/AuthContext';
-import type { ProyectoMaestro, LicitacionProyecto, Proveedor } from '../types';
+import type { ProyectoMaestro, LicitacionProyecto, Proveedor, ConfiguracionFirmas } from '../types';
 
 interface ProyectosMaestrosProps {
   onSelectProyecto?: (p: ProyectoMaestro) => void;
   onOpenFicha?: (p: ProyectoMaestro) => void;
   modoSelector?: boolean;
+  configFirmas?: ConfiguracionFirmas;
 }
 
 const EMPTY_FORM = {
@@ -69,8 +69,9 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   onSelectProyecto,
   onOpenFicha,
   modoSelector = false,
+  configFirmas,
 }) => {
-  const { isAdmin } = useAuth();
+  const { isAdmin, user, profile } = useAuth();
   const [proyectos, setProyectos] = useState<ProyectoMaestro[]>([]);
   const [licitaciones, setLicitaciones] = useState<LicitacionProyecto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -137,34 +138,6 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
     setForm({
       ...EMPTY_FORM,
       codigoProyecto: '',
-    });
-    setTabActivaModal('datos');
-    setShowModal(true);
-  };
-
-  const openEdit = (p: ProyectoMaestro) => {
-    setEditingId(p.id);
-    setForm({
-      codigoCP: p.codigoCP || '409-',
-      codigoOP: p.codigoOP || '',
-      codigoOT: p.codigoOT || '',
-      ordenCompraNumero: p.ordenCompraNumero || p.codigoOC || '',
-      codigoOC: p.codigoOC || p.ordenCompraNumero || '',
-      codigoProyecto: p.codigoProyecto || '',
-      nombre: p.nombre || '',
-      descripcion: p.descripcion || '',
-      valorAprox: p.valorAprox || 0,
-      estado: p.estado || 'Pendiente',
-      fechaCreacion: p.fechaCreacion || new Date().toISOString(),
-      campusSigla: p.campusSigla || '',
-      edificioSigla: p.edificioSigla || '',
-      uso: p.uso || '',
-      tipoObra: p.tipoObra || '',
-      rubro: p.rubro || '',
-      politicaGarantias: p.politicaGarantias || '',
-      responsableNombre: p.responsableNombre || '',
-      responsableEmail: p.responsableEmail || '',
-      documentosAntecedentes: p.documentosAntecedentes || [],
     });
     setTabActivaModal('datos');
     setShowModal(true);
@@ -300,15 +273,6 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
     }
   };
 
-  const handleDelete = async (p: ProyectoMaestro) => {
-    if (!confirm(`¿Eliminar el proyecto "${p.nombre}" de la Cartera de Proyectos 2026?`)) return;
-    try {
-      await deleteProyectoMaestro(p.id);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'No se pudo eliminar el proyecto.');
-    }
-  };
-
   const [filtroPrioridad, setFiltroPrioridad] = useState('Todas');
   const [filtroEstado, setFiltroEstado] = useState('Todos');
   const [filtroLicitacion, setFiltroLicitacion] = useState<'Todos' | 'Con' | 'Sin'>('Todos');
@@ -324,8 +288,28 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   const totalBajaCount = proyectos.filter(p => p.prioridad === 'Baja').length;
 
   const totalPresupuestoGeneral = proyectos.reduce((sum, p) => sum + (p.valorAprox || 0), 0);
-  const totalAdjudicadoGeneral = proyectos.reduce((sum, p) => sum + (p.montoAdjudicado || 0), 0);
   const totalGastoEfectivoGeneral = proyectos.reduce((sum, p) => sum + (p.gastoEfectivo || 0), 0);
+
+  // Solo los proyectos con Presupuesto Aprobado comprometen el techo institucional — el resto
+  // de la cartera (totalPresupuestoGeneral) queda "en espera" y no cuenta para ese control.
+  const proyectosAprobadosPpto = proyectos.filter(p => p.presupuesto?.aprobado);
+  const totalPresupuestoAprobado = proyectosAprobadosPpto.reduce((sum, p) => sum + (p.montoAdjudicado || p.valorAprox || 0), 0);
+
+  // Techo institucional anual (distinto de la suma de montos adjudicados): lo que hay que
+  // controlar para que la Cartera no se pase, comparado contra lo ya comprometido (estimado).
+  const presupuestoAnualAprobado = configFirmas?.presupuestoAnualAprobado || 0;
+  const pctPresupuestoUsado = presupuestoAnualAprobado > 0
+    ? Math.round((totalPresupuestoAprobado / presupuestoAnualAprobado) * 100)
+    : 0;
+  const presupuestoColor = pctPresupuestoUsado > 100 ? 'text-rose-700' : pctPresupuestoUsado >= 85 ? 'text-amber-700' : 'text-indigo-700';
+
+  const handleToggleAprobacionPresupuesto = async (p: ProyectoMaestro) => {
+    const yaAprobado = Boolean(p.presupuesto?.aprobado);
+    await setAprobacionPresupuesto(p.id, !yaAprobado, {
+      nombre: profile?.displayName || user?.displayName,
+      email: user?.email,
+    });
+  };
 
   const filtered = proyectos.filter(p => {
     const q = search.toLowerCase().trim();
@@ -350,130 +334,124 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
     return matchSearch && matchCampus && matchResponsable && matchRubro && matchPrioridad && matchEstado && matchLicitacion;
   });
 
+  const hayFiltrosActivos =
+    search.trim() !== '' ||
+    filtroCampus !== 'Todos' ||
+    filtroResponsable !== 'Todos' ||
+    filtroRubro !== 'Todos' ||
+    filtroPrioridad !== 'Todas' ||
+    filtroEstado !== 'Todos' ||
+    filtroLicitacion !== 'Todos';
+
+  const totalEstimadoFiltrado = filtered.reduce((sum, p) => sum + (p.valorAprox || 0), 0);
+  const totalAdjudicadoFiltrado = filtered.reduce((sum, p) => sum + (p.montoAdjudicado || 0), 0);
+  const totalGastoEfectivoFiltrado = filtered.reduce((sum, p) => sum + (p.gastoEfectivo || 0), 0);
+
+  const limpiarFiltros = () => {
+    setSearch('');
+    setFiltroCampus('Todos');
+    setFiltroResponsable('Todos');
+    setFiltroRubro('Todos');
+    setFiltroPrioridad('Todas');
+    setFiltroEstado('Todos');
+    setFiltroLicitacion('Todos');
+  };
+
   return (
-    <div className="space-y-6">
-      {/* Header & KPI Summary Cards */}
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-          <div>
-            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-              <BookOpen className="w-6 h-6 text-indigo-600" />
-              Cartera de Proyectos 2026 (Presupuesto Anual)
-            </h2>
-            <p className="text-xs text-slate-500 mt-1">
-              Gestión oficial de la cartera de iniciativas 2026, centros de costos (CC), priorización financiera y avance de obras.
-            </p>
+    <div className="space-y-2.5">
+      {/* Header compacto: fila 1 = título + prioridades + acciones · fila 2 = totales financieros */}
+      <div className="bg-white px-4 py-2 rounded-2xl shadow-sm border border-slate-200">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <h2 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 shrink-0">
+            <BookOpen className="w-4 h-4 text-indigo-600" />
+            Cartera 2026
+          </h2>
+
+          <div className="flex items-center gap-1 text-[10px] shrink-0">
+            <span title={`Prioridad Alta: ${formatoMonedaCLP(totalAltaVal)}`} className="flex items-center gap-1 font-bold text-red-700 bg-red-50 border border-red-200 rounded-md pl-1.5 pr-2 py-1 whitespace-nowrap cursor-default">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0"></span>
+              P1 <span className="opacity-70">{totalAltaCount}</span>
+            </span>
+            <span title={`Prioridad Media: ${formatoMonedaCLP(totalMediaVal)}`} className="flex items-center gap-1 font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-md pl-1.5 pr-2 py-1 whitespace-nowrap cursor-default">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></span>
+              P2 <span className="opacity-70">{totalMediaCount}</span>
+            </span>
+            <span title={`Prioridad Baja: ${formatoMonedaCLP(totalBajaVal)}`} className="flex items-center gap-1 font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md pl-1.5 pr-2 py-1 whitespace-nowrap cursor-default">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
+              P3 <span className="opacity-70">{totalBajaCount}</span>
+            </span>
           </div>
+
+          <div className="flex-1 min-w-[4px]" />
+
           {!modoSelector && (
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0">
               {isAdmin && <BotonRepararCartera onOpen={() => setRepararAbierto(true)} />}
               <button
                 onClick={() => setImportarExcelAbierto(true)}
-                className="flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-semibold px-3 py-2 rounded-xl text-xs shrink-0"
+                className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-semibold px-2.5 py-1.5 rounded-lg text-[11px] shrink-0"
                 title="Importar varios proyectos desde una planilla Excel"
               >
-                <FolderPlus className="w-4 h-4" />
-                <span>Importar Excel</span>
+                <FolderPlus className="w-3.5 h-3.5" />
+                <span className="hidden lg:inline">Importar Excel</span>
               </button>
               <button
                 onClick={openAdd}
-                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2.5 rounded-xl shadow-sm transition text-xs shrink-0"
+                className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-3 py-1.5 rounded-lg shadow-sm transition text-[11px] shrink-0"
               >
-                <Plus className="w-4 h-4" />
-                <span>Nuevo Proyecto Cartera 2026</span>
+                <Plus className="w-3.5 h-3.5" />
+                <span>Nuevo Proyecto</span>
               </button>
             </div>
           )}
         </div>
 
-        {/* Tarjetas de Resumen por Prioridad y Totales */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <div className="bg-red-50/70 border border-red-200 rounded-xl p-3.5 flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-red-800 uppercase flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-red-600"></span>
-                Prioridad Alta (P1)
-              </span>
-              <span className="text-[10px] font-extrabold bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
-                {totalAltaCount} proj
-              </span>
+        {/* Totales financieros — franja propia para distinguirlos de la distribución por prioridad */}
+        <div className="mt-1.5 pt-1.5 border-t border-slate-100 flex flex-wrap items-center gap-x-6 gap-y-1">
+          {presupuestoAnualAprobado > 0 ? (
+            <div className="flex items-baseline gap-1.5" title="Techo institucional anual, comparado solo contra los proyectos con Presupuesto Aprobado (columna Prioridad)">
+              <span className="text-[9px] font-bold uppercase tracking-wide text-indigo-400">Presupuesto Anual Aprobado</span>
+              <span className="text-xs font-black text-indigo-900">{formatoMonedaCLP(presupuestoAnualAprobado)}</span>
+              <span className={`text-[9px] font-extrabold ${presupuestoColor}`}>({pctPresupuestoUsado}% comprometido)</span>
             </div>
-            <div className="mt-2">
-              <span className="text-base font-black text-red-900 block">{formatoMonedaCLP(totalAltaVal)}</span>
-              <span className="text-[10px] text-red-600 font-medium">Presupuesto estimado crítico</span>
+          ) : (
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-[9px] font-bold uppercase tracking-wide text-amber-500">Presupuesto Anual Aprobado</span>
+              <span className="text-[10px] font-bold text-amber-700 italic">Sin definir — configúrelo en Configuración → Parámetros</span>
             </div>
+          )}
+          <div className="flex items-baseline gap-1.5" title="Suma de proyectos con Presupuesto Aprobado — son los que se proyectan mes a mes en Avance Financiero">
+            <span className={`text-[9px] font-bold uppercase tracking-wide ${presupuestoColor}`}>Aprobado p/ Presupuesto ({proyectosAprobadosPpto.length})</span>
+            <span className={`text-xs font-black ${presupuestoColor}`}>{formatoMonedaCLP(totalPresupuestoAprobado)}</span>
           </div>
-
-          <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3.5 flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-amber-800 uppercase flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                Prioridad Media (P2)
-              </span>
-              <span className="text-[10px] font-extrabold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
-                {totalMediaCount} proj
-              </span>
-            </div>
-            <div className="mt-2">
-              <span className="text-base font-black text-amber-900 block">{formatoMonedaCLP(totalMediaVal)}</span>
-              <span className="text-[10px] text-amber-600 font-medium">Presupuesto regular</span>
-            </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Cartera Total ({proyectos.length})</span>
+            <span className="text-xs font-black text-slate-500">{formatoMonedaCLP(totalPresupuestoGeneral)}</span>
           </div>
-
-          <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3.5 flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-emerald-800 uppercase flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                Prioridad Baja (P3)
-              </span>
-              <span className="text-[10px] font-extrabold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-                {totalBajaCount} proj
-              </span>
-            </div>
-            <div className="mt-2">
-              <span className="text-base font-black text-emerald-900 block">{formatoMonedaCLP(totalBajaVal)}</span>
-              <span className="text-[10px] text-emerald-600 font-medium">Proyectos complementarios</span>
-            </div>
-          </div>
-
-          <div className="bg-slate-900 text-white rounded-xl p-3.5 flex flex-col justify-between shadow-md">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-slate-300 uppercase flex items-center gap-1.5">
-                <DollarSign className="w-3.5 h-3.5 text-indigo-400" />
-                Total Cartera 2026
-              </span>
-              <span className="text-[10px] font-extrabold bg-indigo-500 text-white px-2 py-0.5 rounded-full">
-                {proyectos.length} Proyectos
-              </span>
-            </div>
-            <div className="mt-2">
-              <span className="text-base font-black text-white block">{formatoMonedaCLP(totalPresupuestoGeneral)}</span>
-              <div className="flex justify-between text-[10px] text-slate-300 mt-0.5">
-                <span>Adj: <strong className="text-emerald-400">{formatoMonedaCLP(totalAdjudicadoGeneral)}</strong></span>
-                <span>Pagado: <strong className="text-sky-300">{formatoMonedaCLP(totalGastoEfectivoGeneral)}</strong></span>
-              </div>
-            </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-[9px] font-bold uppercase tracking-wide text-emerald-500">Gasto Efectivo Pagado</span>
+            <span className="text-xs font-black text-emerald-700">{formatoMonedaCLP(totalGastoEfectivoGeneral)}</span>
           </div>
         </div>
       </div>
 
       {/* Search & Location / Priority / Responsable Filters */}
-      <div className="grid grid-cols-1 sm:grid-cols-8 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
         <div className="sm:col-span-2 relative">
-          <Search className="absolute left-3.5 top-3.5 w-4 h-4 text-slate-400" />
+          <Search className="absolute left-2.5 top-2 w-3.5 h-3.5 text-slate-400" />
           <input
             type="text"
             placeholder="Buscar por nombre, CP, OC, Cód. Proyecto o responsable..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
+            className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
           />
         </div>
         <div>
           <select
             value={filtroResponsable}
             onChange={e => setFiltroResponsable(e.target.value)}
-            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm font-semibold"
+            className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm font-semibold"
           >
             <option value="Todos">Todos los Responsables</option>
             {RESPONSABLES_INFRAESTRUCTURA.map(r => (
@@ -487,10 +465,10 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           <select
             value={filtroCampus}
             onChange={e => setFiltroCampus(e.target.value)}
-            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm"
+            className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm"
           >
             <option value="Todos">Todos los Campus</option>
-            {CAMPUS_UCT.map(c => (
+            {getCampusList().map(c => (
               <option key={c.sigla} value={c.sigla}>
                 {c.sigla} — {c.nombre}
               </option>
@@ -501,7 +479,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           <select
             value={filtroPrioridad}
             onChange={e => setFiltroPrioridad(e.target.value)}
-            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm font-semibold"
+            className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm font-semibold"
           >
             <option value="Todas">Todas las Prioridades</option>
             <option value="Alta">🔴 Alta (P1)</option>
@@ -513,7 +491,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           <select
             value={filtroEstado}
             onChange={e => setFiltroEstado(e.target.value)}
-            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm font-semibold"
+            className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm font-semibold"
           >
             <option value="Todos">Todos los Estados</option>
             <option value="Pendiente">⏳ Pendiente</option>
@@ -525,7 +503,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           <select
             value={filtroRubro}
             onChange={e => setFiltroRubro(e.target.value)}
-            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm font-semibold"
+            className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm font-semibold"
           >
             <option value="Todos">Todos los Rubros</option>
             {rubrosDisponibles.map(r => (
@@ -539,7 +517,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           <select
             value={filtroLicitacion}
             onChange={e => setFiltroLicitacion(e.target.value as 'Todos' | 'Con' | 'Sin')}
-            className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm font-semibold"
+            className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm font-semibold"
           >
             <option value="Todos">Con / Sin Licitación</option>
             <option value="Con">📋 Con Licitación</option>
@@ -547,6 +525,38 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           </select>
         </div>
       </div>
+
+      {/* Totales del filtro activo — se recalculan sobre lo que muestra la tabla, no sobre toda la cartera */}
+      {!modoSelector && (
+        <div className={`flex flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 rounded-xl border text-[10px] ${
+          hayFiltrosActivos ? 'bg-sky-50 border-sky-200' : 'bg-slate-50 border-slate-200'
+        }`}>
+          <span className="font-bold uppercase tracking-wide text-slate-500">
+            {hayFiltrosActivos ? `Filtro activo · ${filtered.length} proyecto(s)` : `Todos los proyectos · ${filtered.length}`}
+          </span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="font-semibold uppercase tracking-wide text-slate-400">Estimado</span>
+            <span className="font-black text-slate-700">{formatoMonedaCLP(totalEstimadoFiltrado)}</span>
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="font-semibold uppercase tracking-wide text-indigo-400">Adjudicado</span>
+            <span className="font-black text-indigo-700">{formatoMonedaCLP(totalAdjudicadoFiltrado)}</span>
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="font-semibold uppercase tracking-wide text-emerald-500">Gasto Efectivo</span>
+            <span className="font-black text-emerald-700">{formatoMonedaCLP(totalGastoEfectivoFiltrado)}</span>
+          </div>
+          {hayFiltrosActivos && (
+            <button
+              type="button"
+              onClick={limpiarFiltros}
+              className="ml-auto font-bold text-sky-700 hover:text-sky-900 underline underline-offset-2"
+            >
+              Limpiar filtros
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Table */}
       {loading ? (
@@ -558,20 +568,18 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
         </div>
       ) : (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-auto max-h-[75vh]">
-          <table className="w-full text-xs min-w-[1000px]">
+          <table className={`w-full text-xs ${modoSelector ? 'min-w-[560px]' : 'min-w-[880px]'}`}>
             <thead className="bg-slate-900 text-white border-b border-slate-800">
               <tr>
-                <th className="px-3 py-3 text-center font-bold sticky top-0 z-10 bg-slate-900">Cód. Proyecto</th>
-                <th className="px-3 py-3 text-center font-bold sticky top-0 z-10 bg-slate-900">Centro Costo (CC)</th>
-                <th className="px-3 py-3 text-center font-bold sticky top-0 z-10 bg-slate-900">Orden Compra (OC)</th>
-                <th className="px-3 py-3 text-left font-bold sticky top-0 z-10 bg-slate-900">Proyecto Institucional</th>
-                <th className="px-3 py-3 text-left font-bold sticky top-0 z-10 bg-slate-900">Ubicación UCT</th>
-                <th className="px-3 py-3 text-center font-bold sticky top-0 z-10 bg-slate-900">Prioridad</th>
-                <th className="px-3 py-3 text-center font-bold sticky top-0 z-10 bg-slate-900">Estado / Avance</th>
-                <th className="px-3 py-3 text-right font-bold sticky top-0 z-10 bg-slate-900">Ppto. Estimado</th>
-                <th className="px-3 py-3 text-right font-bold sticky top-0 z-10 bg-slate-900">Ppto. Adjudicado</th>
-                <th className="px-3 py-3 text-right font-bold sticky top-0 z-10 bg-slate-900">Gasto Efectivo</th>
-                <th className="px-3 py-3 text-center font-bold sticky top-0 right-0 z-20 bg-slate-900 border-l border-slate-700">Acciones</th>
+                <th className="px-3 py-1.5 text-center font-bold sticky top-0 z-10 bg-slate-900">Cód. Proyecto</th>
+                {!modoSelector && <th className="px-3 py-1.5 text-center font-bold sticky top-0 z-10 bg-slate-900">Centro Costo (CC)</th>}
+                {!modoSelector && <th className="px-3 py-1.5 text-center font-bold sticky top-0 z-10 bg-slate-900">Orden Compra (OC)</th>}
+                <th className="px-3 py-1.5 text-left font-bold sticky top-0 z-10 bg-slate-900">Proyecto Institucional</th>
+                <th className="px-3 py-1.5 text-left font-bold sticky top-0 z-10 bg-slate-900">Ubicación UCT</th>
+                {!modoSelector && <th className="px-3 py-1.5 text-center font-bold sticky top-0 z-10 bg-slate-900">Prioridad</th>}
+                {!modoSelector && <th className="px-3 py-1.5 text-center font-bold sticky top-0 z-10 bg-slate-900">Estado / Avance</th>}
+                <th className="px-3 py-1.5 text-right font-bold sticky top-0 z-10 bg-slate-900 min-w-[190px]">Presupuesto (Estimado / Adjudicado / Gasto)</th>
+                <th className="px-2 py-1.5 text-center font-bold sticky top-0 right-0 z-20 bg-slate-900 border-l border-slate-700">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -590,98 +598,107 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                       }
                     }}
                   >
-                    <td className="px-3 py-3 text-center">
+                    <td className="px-3 py-1.5 text-center">
                       <span className="font-bold text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded w-fit font-mono inline-block">
                         {p.codigoProyecto || (p.correlativo ? String(p.correlativo).padStart(3, '0') : '-')}
                       </span>
                     </td>
-                    <td className="px-3 py-3 text-center">
-                      <span className="font-bold text-slate-800 bg-amber-50 text-amber-900 border border-amber-200 px-2 py-0.5 rounded w-fit font-mono inline-block">
-                        {p.codigoCP || '-'}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
-                      {p.ordenCompraNumero || p.codigoOC ? (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setVerPDFOCProyecto(p);
-                          }}
-                          className="font-extrabold text-purple-900 bg-purple-100 hover:bg-purple-200 hover:text-purple-950 border border-purple-300 px-2.5 py-1 rounded font-mono inline-flex items-center gap-1.5 transition shadow-sm cursor-pointer"
-                          title="Haga clic para ver el PDF de la Orden de Compra"
-                        >
-                          <FileText className="w-3.5 h-3.5 text-purple-700" />
-                          <span>{p.ordenCompraNumero || p.codigoOC}</span>
-                        </button>
-                      ) : (
-                        <span className="text-slate-300">-</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <p className="font-bold text-slate-800 line-clamp-1">{(p.nombre || '').toUpperCase()}</p>
+                    {!modoSelector && (
+                      <td className="px-3 py-1.5 text-center">
+                        <span className="font-bold text-slate-800 bg-amber-50 text-amber-900 border border-amber-200 px-2 py-0.5 rounded w-fit font-mono inline-block">
+                          {p.codigoCP || '-'}
+                        </span>
+                      </td>
+                    )}
+                    {!modoSelector && (
+                      <td className="px-3 py-1.5 text-center" onClick={e => e.stopPropagation()}>
+                        {p.ordenCompraNumero || p.codigoOC ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setVerPDFOCProyecto(p);
+                            }}
+                            className="font-extrabold text-purple-900 bg-purple-100 hover:bg-purple-200 hover:text-purple-950 border border-purple-300 px-2.5 py-1 rounded font-mono inline-flex items-center gap-1.5 transition shadow-sm cursor-pointer"
+                            title="Haga clic para ver el PDF de la Orden de Compra"
+                          >
+                            <FileText className="w-3.5 h-3.5 text-purple-700" />
+                            <span>{p.ordenCompraNumero || p.codigoOC}</span>
+                          </button>
+                        ) : (
+                          <span className="text-slate-300">-</span>
+                        )}
+                      </td>
+                    )}
+                    <td className={modoSelector ? 'px-3 py-2' : 'px-3 py-1.5'}>
+                      <div className="flex items-start gap-1.5">
+                        <p className={modoSelector ? 'font-bold text-slate-800 text-sm leading-snug' : 'font-bold text-slate-800 line-clamp-1'}>
+                          {(p.nombre || '').toUpperCase()}
+                        </p>
                         {tieneLicitacion(p) && (
                           <span
-                            className="shrink-0 inline-flex items-center gap-1 text-[9px] font-extrabold bg-indigo-100 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded-full"
+                            className="shrink-0 inline-flex items-center gap-1 text-[9px] font-extrabold bg-indigo-100 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded-full mt-0.5"
                             title="Este proyecto ya tiene una licitación creada"
                           >
                             <FileText className="w-2.5 h-2.5" />
-                            <span>Con Licitación</span>
                           </span>
                         )}
                       </div>
                       {p.responsableNombre ? (
-                        <p className="text-slate-500 text-[10px] line-clamp-1 mt-0.5 flex items-center gap-1">
-                          <User className="w-3 h-3 text-slate-400" />
-                          <span>Resp: {p.responsableNombre}</span>
+                        <p className="text-slate-500 text-[10px] line-clamp-1 flex items-center gap-1 mt-0.5">
+                          <User className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span>{p.responsableNombre}</span>
                         </p>
                       ) : (
-                        <p className="text-slate-400 text-[10px] italic">Sin responsable asignado</p>
+                        <p className="text-slate-400 text-[10px] italic mt-0.5">Sin responsable asignado</p>
                       )}
-                      <select
-                        value={p.tipoObra || ''}
-                        onClick={e => e.stopPropagation()}
-                        onChange={async (e) => {
-                          await updateProyectoMaestro(p.id, { tipoObra: e.target.value });
-                        }}
-                        className={`mt-1 text-[10px] font-semibold rounded px-1.5 py-0.5 outline-none cursor-pointer border transition w-full max-w-[220px] ${
-                          p.tipoObra
-                            ? 'text-amber-800 bg-amber-50 border-amber-200 hover:bg-amber-100'
-                            : 'text-slate-400 bg-slate-50 border-slate-200 hover:bg-slate-100 italic'
-                        }`}
-                        title="Asignar Tipo de Obra (define la plantilla de Bases)"
-                      >
-                        <option value="">-- Sin tipo de obra --</option>
-                        {tiposObraDisponibles.map(t => (
-                          <option key={t.id} value={t.nombre}>
-                            {t.nombre}
-                          </option>
-                        ))}
-                      </select>
-                      <select
-                        value={p.rubro || ''}
-                        onClick={e => e.stopPropagation()}
-                        onChange={async (e) => {
-                          await updateProyectoMaestro(p.id, { rubro: e.target.value });
-                        }}
-                        className={`mt-1 text-[10px] font-semibold rounded px-1.5 py-0.5 outline-none cursor-pointer border transition w-full max-w-[220px] ${
-                          p.rubro
-                            ? 'text-violet-800 bg-violet-50 border-violet-200 hover:bg-violet-100'
-                            : 'text-slate-400 bg-slate-50 border-slate-200 hover:bg-slate-100 italic'
-                        }`}
-                        title="Asignar Rubro del Proyecto"
-                      >
-                        <option value="">-- Sin rubro asignado --</option>
-                        {rubrosDisponibles.map(r => (
-                          <option key={r.id} value={r.nombre}>
-                            {r.nombre}
-                          </option>
-                        ))}
-                      </select>
+                      {!modoSelector && (
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <select
+                            value={p.tipoObra || ''}
+                            onClick={e => e.stopPropagation()}
+                            onChange={async (e) => {
+                              await updateProyectoMaestro(p.id, { tipoObra: e.target.value });
+                            }}
+                            className={`text-[9px] font-semibold rounded px-1 py-0.5 outline-none cursor-pointer border transition w-1/2 ${
+                              p.tipoObra
+                                ? 'text-amber-800 bg-amber-50 border-amber-200 hover:bg-amber-100'
+                                : 'text-slate-400 bg-slate-50 border-slate-200 hover:bg-slate-100 italic'
+                            }`}
+                            title="Asignar Tipo de Obra (define la plantilla de Bases)"
+                          >
+                            <option value="">-- Tipo obra --</option>
+                            {tiposObraDisponibles.map(t => (
+                              <option key={t.id} value={t.nombre}>
+                                {t.nombre}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            value={p.rubro || ''}
+                            onClick={e => e.stopPropagation()}
+                            onChange={async (e) => {
+                              await updateProyectoMaestro(p.id, { rubro: e.target.value });
+                            }}
+                            className={`text-[9px] font-semibold rounded px-1 py-0.5 outline-none cursor-pointer border transition w-1/2 ${
+                              p.rubro
+                                ? 'text-violet-800 bg-violet-50 border-violet-200 hover:bg-violet-100'
+                                : 'text-slate-400 bg-slate-50 border-slate-200 hover:bg-slate-100 italic'
+                            }`}
+                            title="Asignar Rubro del Proyecto"
+                          >
+                            <option value="">-- Rubro --</option>
+                            {rubrosDisponibles.map(r => (
+                              <option key={r.id} value={r.nombre}>
+                                {r.nombre}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                     </td>
-                    <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-                      <div className="flex flex-col gap-1 text-[10px] min-w-[120px]">
+                    <td className="px-3 py-1.5" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center gap-1 text-[10px] min-w-[140px]">
                         <select
                           value={p.campusSigla || ''}
                           onChange={async (e) => {
@@ -695,11 +712,11 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                               edificioSigla: primerEd,
                             });
                           }}
-                          className="font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5 outline-none cursor-pointer hover:bg-indigo-100 transition text-[10px] w-full"
+                          className="font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1 py-0.5 outline-none cursor-pointer hover:bg-indigo-100 transition text-[9px] w-1/2"
                           title="Cambiar Campus UCT"
                         >
                           <option value="">-- Campus --</option>
-                          {CAMPUS_UCT.map(c => (
+                          {getCampusList().map(c => (
                             <option key={c.sigla} value={c.sigla}>
                               {c.sigla} ({c.nombre})
                             </option>
@@ -713,7 +730,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                               const edSigla = e.target.value;
                               await updateProyectoMaestro(p.id, { edificioSigla: edSigla });
                             }}
-                            className="font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 outline-none cursor-pointer hover:bg-slate-100 transition text-[10px] w-full"
+                            className="font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded px-1 py-0.5 outline-none cursor-pointer hover:bg-slate-100 transition text-[9px] w-1/2"
                             title="Cambiar Edificio del Campus"
                           >
                             <option value="">-- Edificio --</option>
@@ -724,142 +741,104 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                             ))}
                           </select>
                         ) : (
-                          <span className="text-[9px] text-slate-400 italic">Seleccione campus</span>
+                          <span className="text-[9px] text-slate-400 italic w-1/2">Seleccione campus</span>
                         )}
                       </div>
                     </td>
-                    <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
-                      <select
-                        value={p.prioridad || 'Media'}
-                        onChange={async (e) => {
-                          const val = e.target.value as ProyectoMaestro['prioridad'];
-                          await updateProyectoMaestro(p.id, { prioridad: val });
-                        }}
-                        className={`text-[10px] font-bold outline-none cursor-pointer rounded px-2 py-1 border transition ${
-                          p.prioridad === 'Alta' ? 'bg-red-50 text-red-700 border-red-200' :
-                          p.prioridad === 'Baja' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                          'bg-amber-50 text-amber-700 border-amber-200'
-                        }`}
-                      >
-                        <option value="Alta">🔴 Alta (P1)</option>
-                        <option value="Media">🟡 Media (P2)</option>
-                        <option value="Baja">🟢 Baja (P3)</option>
-                      </select>
-                    </td>
-                    <td className="px-3 py-3 text-center">
-                      <div className="flex flex-col items-center gap-1">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                          p.estado === 'Completado' ? 'bg-emerald-100 text-emerald-800' :
-                          p.estado === 'En Proceso' ? 'bg-sky-100 text-sky-800' :
-                          'bg-slate-100 text-slate-600'
-                        }`}>
-                          {p.estado}
-                        </span>
-                        <div className="w-20 bg-slate-100 h-1.5 rounded-full overflow-hidden border border-slate-200">
-                          <div
-                            className={`h-full transition-all ${
-                              pctGasto >= 100 ? 'bg-emerald-500' : pctGasto > 50 ? 'bg-sky-500' : 'bg-amber-500'
+                    {!modoSelector && (
+                      <td className="px-3 py-1.5 text-center" onClick={e => e.stopPropagation()}>
+                        <div className="flex flex-col items-center gap-1">
+                          <select
+                            value={p.prioridad || 'Media'}
+                            onChange={async (e) => {
+                              const val = e.target.value as ProyectoMaestro['prioridad'];
+                              await updateProyectoMaestro(p.id, { prioridad: val });
+                            }}
+                            className={`text-[10px] font-bold outline-none cursor-pointer rounded px-2 py-1 border transition ${
+                              p.prioridad === 'Alta' ? 'bg-red-50 text-red-700 border-red-200' :
+                              p.prioridad === 'Baja' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                              'bg-amber-50 text-amber-700 border-amber-200'
                             }`}
-                            style={{ width: `${pctGasto}%` }}
-                          />
+                          >
+                            <option value="Alta">🔴 Alta (P1)</option>
+                            <option value="Media">🟡 Media (P2)</option>
+                            <option value="Baja">🟢 Baja (P3)</option>
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleAprobacionPresupuesto(p)}
+                            title={p.presupuesto?.aprobado
+                              ? `Aprobado para Presupuesto Anual por ${p.presupuesto.aprobadoPorNombre || p.presupuesto.aprobadoPorEmail || '—'} el ${p.presupuesto.fecha ? new Date(p.presupuesto.fecha).toLocaleDateString('es-CL') : '—'}. Clic para retirar.`
+                              : 'Fuera del Presupuesto Anual Proyectado. Clic para aprobar.'}
+                            className={`text-[9px] font-extrabold rounded-full px-2 py-0.5 border transition whitespace-nowrap ${
+                              p.presupuesto?.aprobado
+                                ? 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700'
+                                : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50 hover:text-slate-600'
+                            }`}
+                          >
+                            {p.presupuesto?.aprobado ? '✓ Aprob. Ppto' : 'Aprobar Ppto'}
+                          </button>
                         </div>
-                        <span className="text-[9px] font-bold text-slate-400">{pctGasto}% Avance</span>
+                      </td>
+                    )}
+                    {!modoSelector && (
+                      <td className="px-3 py-1.5 text-center">
+                        <div className="flex flex-col items-center gap-1">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                            p.estado === 'Completado' ? 'bg-emerald-100 text-emerald-800' :
+                            p.estado === 'En Proceso' ? 'bg-sky-100 text-sky-800' :
+                            'bg-slate-100 text-slate-600'
+                          }`}>
+                            {p.estado}
+                          </span>
+                          <div className="w-16 bg-slate-100 h-1.5 rounded-full overflow-hidden border border-slate-200" title={`${pctGasto}% de avance`}>
+                            <div
+                              className={`h-full transition-all ${
+                                pctGasto >= 100 ? 'bg-emerald-500' : pctGasto > 50 ? 'bg-sky-500' : 'bg-amber-500'
+                              }`}
+                              style={{ width: `${pctGasto}%` }}
+                            />
+                          </div>
+                        </div>
+                      </td>
+                    )}
+                    <td className="px-3 py-1.5">
+                      <div className="flex flex-col gap-0.5 min-w-[170px]">
+                        <div className="flex items-center justify-between gap-2 text-[10px]">
+                          <span className="text-slate-400 font-semibold">Estimado</span>
+                          <span className="font-bold text-slate-600">{formatoMonedaCLP(p.valorAprox)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-[10px]">
+                          <span className="text-indigo-400 font-semibold">Adjudicado</span>
+                          {p.montoAdjudicado ? (
+                            <span className="font-extrabold text-indigo-700">{formatoMonedaCLP(p.montoAdjudicado)}</span>
+                          ) : (
+                            <span className="text-slate-300">-</span>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-[11px] pt-0.5 border-t border-slate-100">
+                          <span className="text-emerald-600 font-bold">Gasto Efectivo</span>
+                          {p.gastoEfectivo ? (
+                            <span className="font-extrabold text-emerald-700">{formatoMonedaCLP(p.gastoEfectivo)} <span className="text-[9px] font-bold text-slate-400">({pctGasto}%)</span></span>
+                          ) : (
+                            <span className="text-slate-300">-</span>
+                          )}
+                        </div>
                       </div>
                     </td>
-                    <td className="px-3 py-3 text-right font-medium text-slate-600">
-                      {formatoMonedaCLP(p.valorAprox)}
-                    </td>
-                    <td className="px-3 py-3 text-right">
-                      {p.montoAdjudicado ? (
-                        <span className="font-extrabold text-indigo-700">{formatoMonedaCLP(p.montoAdjudicado)}</span>
-                      ) : (
-                        <span className="text-slate-300">-</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 text-right">
-                      {p.gastoEfectivo ? (
-                        <span className="font-extrabold text-emerald-700">{formatoMonedaCLP(p.gastoEfectivo)}</span>
-                      ) : (
-                        <span className="text-slate-300">-</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3 text-center sticky right-0 z-10 bg-white border-l border-slate-200" onClick={e => e.stopPropagation()}>
+                    <td className="px-2 py-1.5 text-center sticky right-0 z-10 bg-white border-l border-slate-200" onClick={e => e.stopPropagation()}>
                       {!modoSelector && (
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onOpenFicha?.(p);
-                            }}
-                            className="px-3 py-1.5 text-xs font-bold text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-lg transition flex items-center gap-1.5 border border-sky-200 shadow-sm"
-                            title="Ver Ficha del Proyecto (Acceso a detalles, edición y eliminación)"
-                          >
-                            <FileText className="w-4 h-4" />
-                            <span>Ficha</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setBasesProyecto(p);
-                            }}
-                            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 border shadow-sm ${
-                              p.bases?.estado === 'Aprobada' ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200' :
-                              p.bases ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200' :
-                              'text-slate-500 bg-slate-50 hover:bg-slate-100 border-slate-200'
-                            }`}
-                            title={p.bases ? `Bases: ${p.bases.estado}` : 'Generar Bases Administrativas y Técnicas'}
-                          >
-                            <ScrollText className="w-4 h-4" />
-                            <span>Bases</span>
-                          </button>
-                          {(p.montoAdjudicado || 0) > 0 && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setContratoProyecto(p);
-                              }}
-                              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 border shadow-sm ${
-                                p.contrato?.estado === 'Firmado' ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200' :
-                                p.contrato ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200' :
-                                requiereContratoFormal(p.montoAdjudicado || 0) ? 'text-rose-700 bg-rose-50 hover:bg-rose-100 border-rose-200' :
-                                'text-slate-500 bg-slate-50 hover:bg-slate-100 border-slate-200'
-                              }`}
-                              title={
-                                p.contrato ? `Contrato: ${p.contrato.estado}` :
-                                requiereContratoFormal(p.montoAdjudicado || 0) ? 'Este monto requiere Contrato formal firmado (no basta con la OC)' :
-                                'Generar Contrato de Adjudicación (opcional bajo este monto)'
-                              }
-                            >
-                              <FileText className="w-4 h-4" />
-                              <span>Contrato</span>
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openEdit(p);
-                            }}
-                            className="p-1.5 text-slate-500 bg-slate-50 hover:bg-slate-100 rounded-lg transition border border-slate-200 shadow-sm"
-                            title="Editar datos del proyecto"
-                          >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDelete(p);
-                            }}
-                            className="p-1.5 text-rose-500 bg-rose-50 hover:bg-rose-100 rounded-lg transition border border-rose-200 shadow-sm"
-                            title="Eliminar proyecto de la Cartera"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenFicha?.(p);
+                          }}
+                          className="p-1.5 text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-lg transition border border-sky-200 shadow-sm"
+                          title="Ver Ficha del Proyecto (editar, generar Bases, eliminar)"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                        </button>
                       )}
                       {modoSelector && (
                         <span className="text-indigo-600 font-bold text-xs">Seleccionar →</span>
@@ -1020,7 +999,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                       placeholder="Detalle los trabajos, recintos intervenidos y justificación de compra..."
                       value={form.descripcion}
                       onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))}
-                      onBlur={e => setForm(f => ({ ...f, descripcion: corregirOrtografiaEspanol(e.target.value) }))}
+                      onBlur={e => setForm(f => ({ ...f, descripcion: corregirTextoAvanzado(e.target.value) }))}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
                     />
                   </div>
@@ -1049,7 +1028,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                         className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
                       >
                         <option value="">-- Seleccionar Campus --</option>
-                        {CAMPUS_UCT.map(c => (
+                        {getCampusList().map(c => (
                           <option key={c.sigla} value={c.sigla}>
                             {c.sigla} — {c.nombre}
                           </option>

@@ -8,6 +8,7 @@ import { EvaluationMatrix } from './components/EvaluationMatrix';
 import { DocumentGenerator } from './components/DocumentGenerator';
 import { SettingsView } from './components/SettingsView';
 import { ProyectosMaestros } from './components/ProyectosMaestros';
+import { AvanceFinancieroPage } from './components/AvanceFinancieroPage';
 import { SgcProcessWorkflow } from './components/SgcProcessWorkflow';
 import { ReportesPage } from './components/ReportesPage';
 import { FichaProyectoPage } from './components/FichaProyectoPage';
@@ -40,7 +41,7 @@ import { isProjectResponsible } from './services/internalAccessService';
 
 function AdminApp() {
   const { user, isAdmin } = useAuth();
-  const [activeTab, setActiveTab] = useState<string>('licitaciones');
+  const [activeTab, setActiveTab] = useState<string>('proyectos-maestros');
 
   // Core App State
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
@@ -242,7 +243,11 @@ function AdminApp() {
         )}
 
         {activeTab === 'proyectos-maestros' && (
-          <ProyectosMaestros onOpenFicha={p => handleOpenFicha(p)} />
+          <ProyectosMaestros configFirmas={configFirmas} onOpenFicha={p => handleOpenFicha(p)} />
+        )}
+
+        {activeTab === 'avance-financiero' && (
+          <AvanceFinancieroPage configFirmas={configFirmas} />
         )}
 
         {activeTab === 'ficha-proyecto' && proyectoParaFicha && (
@@ -330,10 +335,10 @@ function AdminApp() {
       <footer className="bg-slate-900 text-slate-400 text-xs py-6 border-t border-slate-800 mt-auto">
         <div className="max-w-7xl mx-auto px-4 text-center space-y-1">
           <p className="font-semibold text-slate-300">
-            Universidad Católica de Temuco — Subdirección de Infraestructura (SGC-DGDC)
+            Universidad Católica de Temuco — Subdirección de Infraestructura (DGDC)
           </p>
           <p className="text-[11px] text-slate-500">
-            Sistema Inteligente de Gestión de Licitaciones, Evaluación Paramétrica y Generación de Actas SGC PS-FOR-DGDC0003
+            Sistema Inteligente de Gestión de Licitaciones, Evaluación Paramétrica y Generación de Actas PS-FOR-DGDC0003
           </p>
         </div>
       </footer>

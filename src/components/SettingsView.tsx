@@ -27,7 +27,7 @@ import {
   saveRubrosList,
   type RubroProveedor,
 } from '../data/rubrosData';
-import { CAMPUS_UCT } from '../data/campusData';
+import { getCampusList, saveCampusList, type CampusInfo } from '../data/campusData';
 import {
   Settings,
   Save,
@@ -52,6 +52,9 @@ import {
   BookmarkCheck,
   Briefcase,
   ScrollText,
+  MapPin,
+  X,
+  DollarSign,
 } from 'lucide-react';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { uploadFirmaImagen } from '../services/storageService';
@@ -206,6 +209,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     descripcion: '',
   });
 
+  // State de Campus y Edificios
+  const CAMPUS_VACIO: CampusInfo = { sigla: '', nombre: '', ciudad: '', direccion: '', edificios: [] };
+  const [campusList, setCampusList] = useState<CampusInfo[]>([]);
+  const [busquedaCampus, setBusquedaCampus] = useState('');
+  const [isEditingCampus, setIsEditingCampus] = useState(false);
+  const [campusEditando, setCampusEditando] = useState<CampusInfo>(CAMPUS_VACIO);
+  const [nuevoEdificioInput, setNuevoEdificioInput] = useState('');
+
   // Cargar datos iniciales
   useEffect(() => {
     setFormData(config);
@@ -214,10 +225,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setTiposObra(getTiposObraList());
     setEstadosProyecto(getEstadosProyectoList());
     setRubros(getRubrosList());
+    setCampusList(getCampusList());
     setHasChanges(false);
   }, [config]);
 
-  // Manejadores de Ponderaciones SGC
+  // Manejadores de Ponderaciones
   const paramSgc = formData.parametrosSgc || {
     porcentajeEconomico: 55,
     porcentajeTecnico: 35,
@@ -246,9 +258,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     saveTiposObraList(tiposObra);
     saveEstadosProyectoList(estadosProyecto);
     saveRubrosList(rubros);
+    saveCampusList(campusList);
     onSaveConfig(formData);
     setHasChanges(false);
-    alert('¡Configuración del Sistema SGC guardada exitosamente!');
+    alert('¡Configuración del Sistema guardada exitosamente!');
   };
 
   // CRUD Rubros de Proveedores
@@ -305,6 +318,65 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     saveRubrosList(actualizada);
     setHasChanges(true);
   };
+
+  // CRUD Campus y Edificios
+  const handleGuardarCampus = () => {
+    const sigla = campusEditando.sigla.trim().toUpperCase();
+    if (!sigla || !campusEditando.nombre.trim()) {
+      alert('Ingrese al menos la sigla y el nombre del Campus.');
+      return;
+    }
+
+    const index = campusList.findIndex(c => c.sigla === sigla);
+    let actualizada: CampusInfo[];
+    if (index >= 0 && isEditingCampus) {
+      actualizada = [...campusList];
+      actualizada[index] = { ...campusEditando, sigla };
+    } else {
+      if (campusList.some(c => c.sigla === sigla)) {
+        alert('Ya existe un Campus registrado con esa sigla.');
+        return;
+      }
+      actualizada = [...campusList, { ...campusEditando, sigla }];
+    }
+
+    setCampusList(actualizada);
+    saveCampusList(actualizada);
+    setCampusEditando(CAMPUS_VACIO);
+    setNuevoEdificioInput('');
+    setIsEditingCampus(false);
+    setHasChanges(true);
+  };
+
+  const handleEliminarCampus = (sigla: string) => {
+    if (confirm(`¿Confirma eliminar el Campus "${sigla}" y su lista de edificios? Los proyectos ya asociados a esta sigla conservarán el valor guardado.`)) {
+      const filtrada = campusList.filter(c => c.sigla !== sigla);
+      setCampusList(filtrada);
+      saveCampusList(filtrada);
+      setHasChanges(true);
+    }
+  };
+
+  const handleAgregarEdificio = () => {
+    const nuevo = nuevoEdificioInput.trim().toUpperCase();
+    if (!nuevo) return;
+    if (campusEditando.edificios.includes(nuevo)) {
+      setNuevoEdificioInput('');
+      return;
+    }
+    setCampusEditando({ ...campusEditando, edificios: [...campusEditando.edificios, nuevo] });
+    setNuevoEdificioInput('');
+  };
+
+  const handleQuitarEdificio = (edificio: string) => {
+    setCampusEditando({ ...campusEditando, edificios: campusEditando.edificios.filter(e => e !== edificio) });
+  };
+
+  const campusFiltrados = campusList.filter(c =>
+    c.sigla.toLowerCase().includes(busquedaCampus.toLowerCase()) ||
+    c.nombre.toLowerCase().includes(busquedaCampus.toLowerCase()) ||
+    c.ciudad.toLowerCase().includes(busquedaCampus.toLowerCase())
+  );
 
   const rubrosFiltrados = rubros.filter(r =>
     r.nombre.toLowerCase().includes(busquedaRubro.toLowerCase()) ||
@@ -543,13 +615,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       tiposObra,
       estadosProyecto,
       fechaExportacion: new Date().toISOString(),
-      version: 'SGC-2026-v5',
+      version: '2026-v5',
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `SGC_Configuracion_Infraestructura_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `Configuracion_Infraestructura_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -600,7 +672,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
           <div>
             <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-              <span>Configuración del Sistema SGC & Infraestructura</span>
+              <span>Configuración del Sistema & Infraestructura</span>
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
               Administración centralizada de parámetros de licitación, centros de costo, tipos de obra, estados de proyectos, responsables, firmantes y sedes.
@@ -643,7 +715,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             >
               <div className="flex items-center gap-2.5">
                 <Sliders className="w-4 h-4" />
-                <span>1. Parámetros SGC</span>
+                <span>1. Parámetros de Licitación</span>
               </div>
               <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${
                 activeTab === 'parametros' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
@@ -788,7 +860,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <span className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${
                 activeTab === 'campus' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
               }`}>
-                {CAMPUS_UCT.length}
+                {campusList.length}
               </span>
             </button>
 
@@ -839,7 +911,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <div className="lg:col-span-3">
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm min-h-[500px]">
 
-            {/* TAB 1: PARÁMETROS SGC */}
+            {/* TAB 1: PARÁMETROS DE LICITACIÓN */}
             {activeTab === 'parametros' && (
               <div className="space-y-6 text-xs">
                 
@@ -875,7 +947,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <div>
                       <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
                         <Sliders className="w-4 h-4 text-sky-600" />
-                        <span>Matriz de Ponderaciones (SGC PS-FOR-DGDC 0003)</span>
+                        <span>Matriz de Ponderaciones (PS-FOR-DGDC 0003)</span>
                       </h4>
                       <p className="text-[11px] text-slate-500 mt-0.5">
                         Defina los pesos de ponderación para la evaluación objetiva de ofertas de infraestructura.
@@ -967,10 +1039,34 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
                 </div>
 
+                <div className="bg-indigo-50 p-5 rounded-2xl border border-indigo-200 space-y-3">
+                  <h4 className="font-bold text-indigo-950 text-sm flex items-center gap-2">
+                    <DollarSign className="w-4 h-4 text-indigo-600" />
+                    <span>Presupuesto Anual Aprobado 2026</span>
+                  </h4>
+                  <p className="text-[11px] text-indigo-800">
+                    Techo institucional del año. La Cartera de Proyectos lo usa para avisar si el total comprometido/adjudicado se acerca o sobrepasa este monto — no es lo mismo que la suma de montos adjudicados por proyecto.
+                  </p>
+                  <div>
+                    <input
+                      type="number"
+                      value={formData.presupuestoAnualAprobado || 0}
+                      onChange={e =>
+                        updateFormData(prev => ({
+                          ...prev,
+                          presupuestoAnualAprobado: Number(e.target.value),
+                        }))
+                      }
+                      className="w-full px-3.5 py-2 border border-indigo-300 rounded-xl outline-none font-mono font-bold text-indigo-900 bg-white"
+                    />
+                    <span className="text-[10px] text-indigo-700 font-semibold">{formatoMonedaCLP(formData.presupuestoAnualAprobado || 0)}</span>
+                  </div>
+                </div>
+
                 <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-4">
                   <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
                     <Building2 className="w-4 h-4 text-purple-600" />
-                    <span>Umbrales Financieros SGC</span>
+                    <span>Umbrales Financieros</span>
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
@@ -1924,7 +2020,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 <div className="bg-sky-50 p-4 rounded-2xl border border-sky-200 text-sky-950 space-y-1">
-                  <h4 className="font-bold text-sm">Nómina Institucional de Firmantes en Actas SGC</h4>
+                  <h4 className="font-bold text-sm">Nómina Institucional de Firmantes en Actas</h4>
                   <p className="text-[11px] text-sky-800">
                     Los nombres y cargos se reflejan automáticamente en el acta oficial impresa o exportada a PDF.
                   </p>
@@ -2065,34 +2161,184 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {/* TAB 7: SEDES Y CAMPUS */}
             {activeTab === 'campus' && (
               <div className="space-y-5 text-xs">
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex items-center justify-between">
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
                     <h4 className="font-bold text-slate-900 text-sm">Catálogo de Campus UCT y Edificios</h4>
                     <p className="text-[11px] text-slate-500">
-                      Resumen de las 15 sedes universitarias para la ubicación de obras y proyectos.
+                      Agregue o quite edificios y registre la dirección de cada sede — se usa para completar Bases y Contratos automáticamente.
                     </p>
                   </div>
-                  <span className="text-xs font-bold bg-sky-100 text-sky-900 px-3 py-1 rounded-full border border-sky-300">
-                    {CAMPUS_UCT.length} Sedes Registradas
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-xs font-bold bg-sky-100 text-sky-900 px-3 py-1 rounded-full border border-sky-300">
+                      {campusList.length} Sedes Registradas
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCampusEditando(CAMPUS_VACIO);
+                        setNuevoEdificioInput('');
+                        setIsEditingCampus(false);
+                      }}
+                      className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-xl shadow-sm transition flex items-center gap-1.5"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Añadir Nuevo Campus</span>
+                    </button>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {CAMPUS_UCT.map(c => (
-                    <div key={c.sigla} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-2 hover:border-sky-300 transition">
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono font-extrabold text-xs bg-slate-900 text-white px-2 py-0.5 rounded">
-                          {c.sigla}
-                        </span>
-                        <span className="text-[10px] text-slate-500 font-medium">{c.ciudad}</span>
+                <div className="relative">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                  <input
+                    type="text"
+                    placeholder="Buscar por sigla, nombre o ciudad..."
+                    value={busquedaCampus}
+                    onChange={e => setBusquedaCampus(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-sky-500 font-medium"
+                  />
+                </div>
+
+                {/* Formulario Inline Campus */}
+                {(campusEditando.sigla !== '' || !isEditingCampus) && (
+                  <div className="bg-sky-50/60 p-4 rounded-2xl border border-sky-200 space-y-3">
+                    <h5 className="font-bold text-sky-950 text-xs flex items-center gap-2">
+                      {isEditingCampus ? <Edit2 className="w-4 h-4 text-sky-600" /> : <Plus className="w-4 h-4 text-sky-600" />}
+                      <span>{isEditingCampus ? `Editar Campus: ${campusEditando.sigla}` : 'Formulario Nuevo Campus'}</span>
+                    </h5>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Sigla *</label>
+                        <input
+                          type="text"
+                          disabled={isEditingCampus}
+                          placeholder="Ej: CJP"
+                          value={campusEditando.sigla}
+                          onChange={e => setCampusEditando({ ...campusEditando, sigla: e.target.value.toUpperCase() })}
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none font-bold text-slate-900 disabled:bg-slate-100 disabled:text-slate-500"
+                        />
                       </div>
-                      <h5 className="font-bold text-slate-900 text-xs leading-snug">{c.nombre}</h5>
-                      <div className="pt-1 flex items-center justify-between text-[11px] text-slate-600 border-t border-slate-100">
-                        <span>Edificios asociados:</span>
-                        <strong className="text-sky-700 font-mono">{c.edificios.length}</strong>
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Nombre del Campus *</label>
+                        <input
+                          type="text"
+                          placeholder="Ej: Campus San Juan Pablo II"
+                          value={campusEditando.nombre}
+                          onChange={e => setCampusEditando({ ...campusEditando, nombre: e.target.value })}
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none font-medium"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1">Ciudad</label>
+                        <input
+                          type="text"
+                          placeholder="Ej: Temuco"
+                          value={campusEditando.ciudad}
+                          onChange={e => setCampusEditando({ ...campusEditando, ciudad: e.target.value })}
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none font-medium"
+                        />
                       </div>
                     </div>
-                  ))}
+
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-sky-600" /> Dirección del Campus</label>
+                      <input
+                        type="text"
+                        placeholder="Ej: Av. Alemania 0211, Temuco"
+                        value={campusEditando.direccion || ''}
+                        onChange={e => setCampusEditando({ ...campusEditando, direccion: e.target.value })}
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none font-medium"
+                      />
+                      <p className="text-[10px] text-slate-400 mt-1">Se usa para completar automáticamente el texto de Bases y Contratos de los proyectos de este campus.</p>
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">Edificios del Campus</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          placeholder="Ej: CJP01"
+                          value={nuevoEdificioInput}
+                          onChange={e => setNuevoEdificioInput(e.target.value.toUpperCase())}
+                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAgregarEdificio(); } }}
+                          className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none font-mono font-bold"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAgregarEdificio}
+                          className="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl shadow-sm transition flex items-center gap-1 shrink-0"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Agregar</span>
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {campusEditando.edificios.length === 0 ? (
+                          <span className="text-[11px] text-slate-400 italic">Sin edificios agregados aún.</span>
+                        ) : (
+                          campusEditando.edificios.map(ed => (
+                            <span key={ed} className="flex items-center gap-1 bg-white border border-slate-300 rounded-lg px-2 py-1 font-mono font-bold text-[11px] text-slate-700">
+                              {ed}
+                              <button type="button" onClick={() => handleQuitarEdificio(ed)} className="text-slate-400 hover:text-rose-600">
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => { setCampusEditando(CAMPUS_VACIO); setNuevoEdificioInput(''); setIsEditingCampus(false); }}
+                        className="px-3 py-1.5 text-slate-600 hover:bg-slate-200 rounded-lg font-medium"
+                      >
+                        Limpiar Formulario
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleGuardarCampus}
+                        className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-sm flex items-center gap-1"
+                      >
+                        <Check className="w-4 h-4" />
+                        <span>{isEditingCampus ? 'Actualizar Campus' : 'Guardar Campus'}</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {campusFiltrados.length === 0 ? (
+                    <p className="col-span-full text-center text-slate-400 py-6">No se encontraron campus registrados.</p>
+                  ) : (
+                    campusFiltrados.map(c => (
+                      <div key={c.sigla} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-2 hover:border-sky-300 transition">
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono font-extrabold text-xs bg-slate-900 text-white px-2 py-0.5 rounded">
+                            {c.sigla}
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-slate-500 font-medium">{c.ciudad}</span>
+                            <button type="button" title="Editar" onClick={() => { setCampusEditando(c); setIsEditingCampus(true); }} className="p-1 text-sky-700 hover:bg-sky-100 rounded-lg transition">
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button type="button" title="Eliminar" onClick={() => handleEliminarCampus(c.sigla)} className="p-1 text-rose-600 hover:bg-rose-100 rounded-lg transition">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                        <h5 className="font-bold text-slate-900 text-xs leading-snug">{c.nombre}</h5>
+                        {c.direccion && (
+                          <p className="flex items-start gap-1 text-[11px] text-slate-500"><MapPin className="w-3 h-3 mt-0.5 shrink-0 text-sky-600" /> {c.direccion}</p>
+                        )}
+                        <div className="pt-1 flex items-center justify-between text-[11px] text-slate-600 border-t border-slate-100">
+                          <span>Edificios asociados:</span>
+                          <strong className="text-sky-700 font-mono">{c.edificios.length}</strong>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             )}
@@ -2178,7 +2424,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
                   <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
                     <Download className="w-4 h-4 text-sky-600" />
-                    <span>Exportar e Importar Respaldos SGC (.json)</span>
+                    <span>Exportar e Importar Respaldos (.json)</span>
                   </h4>
                   <p className="text-slate-600 leading-relaxed">
                     Exporte una copia en formato JSON de la configuración del sistema para respaldar o migrar los datos a otra instalación.

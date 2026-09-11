@@ -45,7 +45,7 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
           <span>Acta oficial de evaluación y adjudicación</span>
         </h2>
         <p className="text-xs text-slate-500 mt-1">
-          Esta es la misma acta SGC disponible desde la ficha de la licitación. Su salida oficial se obtiene mediante “Imprimir / Exportar PDF”.
+          Esta es la misma acta disponible desde la ficha de la licitación. Su salida oficial se obtiene mediante “Imprimir / Exportar PDF”.
         </p>
       </div>
 
@@ -54,7 +54,7 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-extrabold bg-sky-100 text-sky-800 px-2.5 py-0.5 rounded border border-sky-200">
-                SGC PS-FOR-DGDC0003
+                PS-FOR-DGDC0003
               </span>
               <span className="text-[10px] font-semibold text-emerald-700">Documento oficial PDF</span>
             </div>
@@ -71,7 +71,7 @@ export const DocumentGenerator: React.FC<DocumentGeneratorProps> = ({
               </div>
               <div className="flex items-center gap-2 text-slate-700">
                 <ShieldCheck className="w-4 h-4 text-purple-600" />
-                <span>Firmantes y umbrales tomados de la configuración SGC.</span>
+                <span>Firmantes y umbrales tomados de la configuración.</span>
               </div>
             </div>
           </div>

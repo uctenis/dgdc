@@ -4,7 +4,7 @@ import {
   CalendarDays, CircleDollarSign, Clock3, Loader2, Receipt, Save, TrendingUp,
   Trophy, Upload, WalletCards, ShieldCheck, LockKeyhole,
   AlertTriangle, ShieldAlert, Award, CheckSquare, Minus, TrendingDown, BarChart3,
-  Camera, Plus, Trash2, Image as ImageIcon,
+  Camera, Plus, Trash2, Image as ImageIcon, Users,
 } from 'lucide-react';
 
 import type {
@@ -20,7 +20,9 @@ import { EstadoPagoDocumentModal } from './EstadoPagoDocumentModal';
 import { CargaFacturaEstadoPagoModal } from './CargaFacturaEstadoPagoModal';
 import { ActaRecepcionModal } from './ActaRecepcionModal';
 import { EvaluacionDesempenoModal } from './EvaluacionDesempenoModal';
+import { InvitadosManager } from './InvitadosManager';
 import { PremiumDatePicker } from './PremiumDatePicker';
+import { HITOS_LICITACION, calcularEstadosHitos, obtenerFechasHitos, formatearFechaCorta, ESTADO_HITO_DOT, ESTADO_HITO_TEXT, LIFECYCLE_COLOR, LIFECYCLE_LABEL } from '../utils/hitosLicitacion';
 import { parseOrdenDeCompra } from '../utils/ocParser';
 import { uploadLicitacionDocument } from '../services/storageService';
 import {
@@ -30,7 +32,7 @@ import { useAuth } from '../context/AuthContext';
 import { isProjectResponsible } from '../services/internalAccessService';
 import { firmarEstadoPagoSeguro } from '../services/paymentSignatureService';
 
-type TabId = 'resumen' | 'expediente' | 'ofertas' | 'evaluacion' | 'actas' | 'oc' | 'pagos';
+type TabId = 'resumen' | 'expediente' | 'invitados' | 'ofertas' | 'evaluacion' | 'actas' | 'oc' | 'pagos';
 
 interface Props {
   licitacion: LicitacionProyecto;
@@ -46,6 +48,7 @@ interface Props {
 const tabs: { id: TabId; label: string; icon: typeof FileText }[] = [
   { id: 'resumen', label: 'Resumen', icon: ClipboardCheck },
   { id: 'expediente', label: 'Ficha', icon: FolderOpen },
+  { id: 'invitados', label: 'Invitados', icon: Users },
   { id: 'ofertas', label: 'Ofertas', icon: Receipt },
   { id: 'evaluacion', label: 'Evaluación', icon: Trophy },
   { id: 'actas', label: 'Actas', icon: FileCheck2 },
@@ -141,6 +144,14 @@ export function LicitacionWorkspacePage({
           cotizacionAdjudicada={ofertaAdjudicada}
         />
       )}
+      {activeTab === 'invitados' && (
+        <InvitadosManager
+          licitacion={licitacion}
+          proveedores={proveedores}
+          configFirmas={configFirmas}
+          onClose={() => setActiveTab('resumen')}
+        />
+      )}
       {activeTab === 'ofertas' && (
         <QuotationIngestion licitacion={licitacion} proveedores={proveedores} cotizaciones={cotizaciones} onAddCotizacion={onAddCotizacion} onDeleteCotizacion={onDeleteCotizacion} />
       )}
@@ -184,7 +195,12 @@ function ResumenLicitacion({ licitacion, oferta, ofertasCount, onNavigate, cotiz
   const maxOferta = montos[montos.length - 1] || 0;
   const spreadPct = maxOferta > 0 ? ((maxOferta - minOferta) / maxOferta * 100) : 0;
   const invitados = licitacion.proveedoresInvitadosIds?.length || 0;
-  const tasaParticipacion = invitados > 0 ? (ofertasLic.length / invitados * 100) : null;
+  // Proveedores distintos con oferta (no cotizaciones totales): una empresa puede tener
+  // más de una cotización cargada (ej. una versión corregida), y eso no debe inflar la
+  // tasa de participación. Se acota a 100% además, porque puede llegar una oferta de una
+  // empresa no invitada formalmente (dato inconsistente) sin que la tasa deje de ser legible.
+  const proveedoresConOferta = new Set(ofertasLic.map(c => c.proveedorId)).size;
+  const tasaParticipacion = invitados > 0 ? Math.min(100, (proveedoresConOferta / invitados) * 100) : null;
 
   // ─ Plazo y avance
   const fechaInicio = licitacion.fechaInicioObra || '';
@@ -196,7 +212,7 @@ function ResumenLicitacion({ licitacion, oferta, ofertasCount, onNavigate, cotiz
   // ─ Trazabilidad documental
   const hitos = [
     { label: 'Bases y planos', ok: Boolean(licitacion.antecedentesTecnicos?.length), tab: 'expediente' as TabId },
-    { label: 'Empresas invitadas', ok: Boolean(licitacion.proveedoresInvitadosIds?.length), tab: 'expediente' as TabId },
+    { label: 'Empresas invitadas', ok: Boolean(licitacion.proveedoresInvitadosIds?.length), tab: 'invitados' as TabId },
     { label: 'Ofertas recibidas', ok: ofertasCount > 0, tab: 'ofertas' as TabId },
     { label: 'Empresa adjudicada', ok: Boolean(empresaAdjudicada), tab: 'evaluacion' as TabId },
     { label: 'Acta de evaluación', ok: Boolean(licitacion.actaFirmaDigital), tab: 'actas' as TabId },
@@ -208,8 +224,40 @@ function ResumenLicitacion({ licitacion, oferta, ofertasCount, onNavigate, cotiz
   ];
   const hitosOk = hitos.filter(h => h.ok).length;
 
+  const fechasHitos = obtenerFechasHitos(licitacion);
+  const estadosHitos = calcularEstadosHitos(fechasHitos);
+
   return (
     <div className="space-y-5">
+
+      {/* ─── CALENDARIO DE HITOS + ETAPA DEL CICLO DE VIDA ───────────────────── */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-black text-slate-900 text-sm flex items-center gap-2">
+            <CalendarDays className="w-4 h-4 text-sky-600" />
+            Calendario de la Licitación
+          </h3>
+          {licitacion.estadoLifecycle && (
+            <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${LIFECYCLE_COLOR[licitacion.estadoLifecycle] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+              {LIFECYCLE_LABEL[licitacion.estadoLifecycle] || licitacion.estadoLifecycle}
+            </span>
+          )}
+        </div>
+        <div className="flex items-start">
+          {HITOS_LICITACION.map((h, i) => (
+            <div key={h.campo} className="flex items-start flex-1 min-w-0">
+              <div className="flex-1 min-w-0 text-center px-1">
+                <span className={`block w-2.5 h-2.5 rounded-full mx-auto ${ESTADO_HITO_DOT[estadosHitos[i]]}`} />
+                <span className="block text-[9px] font-bold uppercase text-slate-400 mt-1.5 truncate">{h.label}</span>
+                <span className={`block text-xs font-bold mt-0.5 ${ESTADO_HITO_TEXT[estadosHitos[i]]}`}>{formatearFechaCorta(fechasHitos[i])}</span>
+              </div>
+              {i < HITOS_LICITACION.length - 1 && (
+                <div className={`h-0.5 flex-1 mt-[5px] ${estadosHitos[i] === 'cumplido' ? 'bg-emerald-300' : 'bg-slate-200'}`} />
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* ─── PANEL FINANCIERO ────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

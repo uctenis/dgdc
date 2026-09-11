@@ -29,7 +29,7 @@ export const VisualizadorOCModal: React.FC<VisualizadorOCModalProps> = ({
   const montoNeto = Math.round(montoTotal / 1.19);
   const montoIva = montoTotal - montoNeto;
 
-  const proveedorNombre = proyecto.proveedorAdjudicadoNombre || (proyecto as any).proveedorGanadorNombre || 'PROVEEDOR ADJUDICADO SGC';
+  const proveedorNombre = proyecto.proveedorAdjudicadoNombre || (proyecto as any).proveedorGanadorNombre || 'PROVEEDOR ADJUDICADO';
   const proveedorRut = proyecto.proveedorAdjudicadoRut || '76.123.456-7';
   const campus = proyecto.campusSigla || 'CJP';
   const edificio = proyecto.edificioSigla || '01';
@@ -144,7 +144,7 @@ export const VisualizadorOCModal: React.FC<VisualizadorOCModalProps> = ({
 
                 <div className="bg-slate-900 text-white p-3.5 rounded-xl text-center space-y-1 border border-slate-800 shrink-0">
                   <span className="text-[10px] font-bold text-purple-300 uppercase tracking-widest block font-mono">
-                    DOCUMENTO OFICIAL SGC
+                    DOCUMENTO OFICIAL
                   </span>
                   <h2 className="text-lg font-black text-white font-mono tracking-wider">
                     ORDEN DE COMPRA
@@ -243,7 +243,7 @@ export const VisualizadorOCModal: React.FC<VisualizadorOCModalProps> = ({
                         <td className="p-3">
                           <strong className="text-slate-900 block text-xs uppercase">{nombreProyecto}</strong>
                           <p className="text-slate-500 text-[11px] mt-0.5 line-clamp-2">
-                            {('descripcion' in proyecto ? proyecto.descripcion : '') || 'Ejecución de obras de remodelación e infraestructura según EETT y oferta adjudicada SGC.'}
+                            {('descripcion' in proyecto ? proyecto.descripcion : '') || 'Ejecución de obras de remodelación e infraestructura según EETT y oferta adjudicada.'}
                           </p>
                           <span className="text-[10px] text-indigo-700 font-semibold mt-1 block">
                             Responsable de Inspección Técnica: {responsable}
@@ -280,7 +280,7 @@ export const VisualizadorOCModal: React.FC<VisualizadorOCModalProps> = ({
                 </div>
               </div>
 
-              {/* Firmas SGC */}
+              {/* Firmas */}
               <div className="pt-6 border-t border-slate-300 grid grid-cols-2 gap-8 text-center text-xs">
                 <div className="space-y-1">
                   <div className="h-12 flex items-end justify-center">

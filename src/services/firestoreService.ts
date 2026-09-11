@@ -56,6 +56,23 @@ export function subscribeToProveedores(
   });
 }
 
+export async function getProveedorPorId(id: string): Promise<Proveedor | null> {
+  const snap = await getDoc(doc(db, 'proveedores', id));
+  if (!snap.exists()) return null;
+  const prov = { id: snap.id, ...(snap.data() as Omit<Proveedor, 'id'>) };
+  return { ...prov, rut: formatearRUT(prov.rut) };
+}
+
+export async function getProveedorPorEmail(email: string): Promise<Proveedor | null> {
+  const normalizado = email.trim().toLowerCase();
+  if (!normalizado) return null;
+  const snap = await getDocs(collection(db, 'proveedores'));
+  const match = snap.docs.find(d => (d.data().email || '').trim().toLowerCase() === normalizado);
+  if (!match) return null;
+  const prov = { id: match.id, ...(match.data() as Omit<Proveedor, 'id'>) };
+  return { ...prov, rut: formatearRUT(prov.rut) };
+}
+
 export async function getProveedores(): Promise<Proveedor[]> {
   const q = query(collection(db, 'proveedores'), orderBy('fechaRegistro', 'desc'));
   const snap = await getDocs(q);
@@ -316,6 +333,41 @@ export async function updateProyectoMaestro(
     ...(data.nombre !== undefined ? { nombre: normalizarNombreProyecto(data.nombre) } : {}),
     _updatedAt: serverTimestamp(),
   });
+}
+
+// Aprobación explícita para el Presupuesto Anual Proyectado (distinta de la prioridad,
+// que solo es un criterio de apoyo). Queda trazable quién y cuándo aprobó/retiró el proyecto.
+export async function setAprobacionPresupuesto(
+  id: string,
+  aprobado: boolean,
+  usuario: { nombre?: string | null; email?: string | null }
+): Promise<void> {
+  await updateDoc(doc(db, 'proyectos', id), {
+    presupuesto: aprobado
+      ? {
+          aprobado: true,
+          fecha: new Date().toISOString(),
+          aprobadoPorNombre: usuario.nombre || undefined,
+          aprobadoPorEmail: usuario.email || undefined,
+        }
+      : { aprobado: false },
+    _updatedAt: serverTimestamp(),
+  });
+}
+
+// Trae los Estados de Pago de varias licitaciones (subcolección por licitación) en paralelo.
+// Se usa para construir el Avance Financiero real de la Cartera sin depender de una
+// collection group query (evita depender de reglas de Firestore específicas para eso).
+export async function getEstadosPagoDeLicitaciones(
+  licitacionIds: string[]
+): Promise<EstadoPago[]> {
+  const resultados = await Promise.all(
+    licitacionIds.map(async id => {
+      const snap = await getDocs(collection(db, 'licitaciones', id, 'estadosPago'));
+      return snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<EstadoPago, 'id'>), licitacionId: id }));
+    })
+  );
+  return resultados.flat();
 }
 
 export async function deleteProyectoMaestro(id: string): Promise<void> {

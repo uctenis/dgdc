@@ -1,14 +1,14 @@
 import React, { useState, useMemo } from 'react';
 import type { LicitacionProyecto, Proveedor, ProyectoMaestro, Cotizacion, ConfiguracionFirmas } from '../types';
 import {
-  FolderKanban, Plus, Calendar, ArrowRight, Edit3, Trash2,
-  CheckCircle, Users, BookOpen, X, FileText, Sparkles, MapPin,
+  FolderKanban, Plus, Calendar, ArrowRight, ArrowLeft, Edit3, Trash2,
+  CheckCircle, Users, BookOpen, FileText, Sparkles, MapPin,
   Search, TrendingUp, TrendingDown, AlertTriangle,
   ChevronUp, ChevronDown, Activity, ShieldAlert,
 } from 'lucide-react';
 import { formatoMonedaCLP, ordenarCotizacionesPorResultado } from '../services/evaluationEngine';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
-import { corregirOrtografiaEspanol, normalizarNombreProyecto, ATRIBUTOS_ORTOGRAFIA_ES } from '../utils/spellCorrector';
+import { corregirTextoAvanzado, normalizarNombreProyecto, ATRIBUTOS_ORTOGRAFIA_ES } from '../utils/spellCorrector';
 import { InvitadosManager } from './InvitadosManager';
 import { AntecedentesManager } from './AntecedentesManager';
 import { ActaEvaluacionModal } from './ActaEvaluacionModal';
@@ -17,6 +17,8 @@ import { CargaOrdenCompraModal } from './CargaOrdenCompraModal';
 import { ProyectosMaestros } from './ProyectosMaestros';
 import { PremiumDatePicker } from './PremiumDatePicker';
 import { getCentrosCostoList } from '../data/centrosCostoData';
+import { getRubrosList } from '../data/rubrosData';
+import { HITOS_LICITACION, calcularEstadosHitos, obtenerFechasHitos, formatearFechaCorta, ESTADO_HITO_DOT, ESTADO_HITO_TEXT, LIFECYCLE_COLOR, LIFECYCLE_LABEL } from '../utils/hitosLicitacion';
 
 // ─── COLORES DE RIESGO ───────────────────────────────────────────────────────
 const RIESGO_COLOR: Record<string, string> = {
@@ -24,14 +26,6 @@ const RIESGO_COLOR: Record<string, string> = {
   Medio: 'bg-amber-100 text-amber-800 border-amber-200',
   Alto: 'bg-orange-100 text-orange-800 border-orange-200',
   Crítico: 'bg-red-100 text-red-800 border-red-200',
-};
-
-// ─── COLORES LIFECYCLE ───────────────────────────────────────────────────────
-const LIFECYCLE_LABEL: Record<string, string> = {
-  Bases: 'Bases', Invitando: 'Invitando', Evaluando: 'Evaluando',
-  Adjudicado: 'Adjudicado', OT_Emitida: 'OT Emitida', OP_Emitida: 'OP Emitida',
-  OC_Emitida: 'OC Emitida', En_Ejecucion: 'En Ejecución',
-  Recepcion_Solicitada: 'Recepción', Finalizado: 'Finalizado',
 };
 
 interface ProjectManagerProps {
@@ -166,9 +160,11 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
   const [edificioSigla, setEdificioSigla] = useState('');
   const [responsableNombre, setResponsableNombre] = useState('');
   const [responsableEmail, setResponsableEmail] = useState('');
+  const [tipoObra, setTipoObra] = useState('');
+  const [rubro, setRubro] = useState('');
   const [selectedMasterProyectoId, setSelectedMasterProyectoId] = useState<string | null>(null);
 
-  // Fechas Calendario SGC
+  // Fechas Calendario de la Licitación
   const getFutureDate = (daysAhead: number) => {
     const d = new Date();
     d.setDate(d.getDate() + daysAhead);
@@ -193,6 +189,8 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     setEdificioSigla('');
     setResponsableNombre('');
     setResponsableEmail('');
+    setTipoObra('');
+    setRubro('');
     setFechaVisitaTerreno(getFutureDate(5));
     setFechaRecepcionConsultas(getFutureDate(8));
     setFechaRespuestaConsultas(getFutureDate(10));
@@ -215,6 +213,8 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     setEdificioSigla(lic.edificioSigla || '');
     setResponsableNombre(lic.responsableNombre || '');
     setResponsableEmail(lic.responsableEmail || '');
+    setTipoObra(lic.tipoObra || '');
+    setRubro(lic.rubro || '');
     setFechaVisitaTerreno(lic.fechaVisitaTerreno || getFutureDate(5));
     setFechaRecepcionConsultas(lic.fechaRecepcionConsultas || getFutureDate(8));
     setFechaRespuestaConsultas(lic.fechaRespuestaConsultas || getFutureDate(10));
@@ -234,6 +234,8 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     setEdificioSigla(p.edificioSigla || '');
     setResponsableNombre(p.responsableNombre || '');
     setResponsableEmail(p.responsableEmail || '');
+    setTipoObra(p.tipoObra || '');
+    setRubro(p.rubro || '');
     setSelectedMasterProyectoId(p.id);
     setShowMasterSelector(false);
     setShowModal(true);
@@ -244,7 +246,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     if (!nombreProyecto) return;
 
     if (fechaVisitaTerreno > fechaRecepcionConsultas || fechaRecepcionConsultas > fechaRespuestaConsultas || fechaRespuestaConsultas > fechaEvaluacion) {
-      alert('El Calendario SGC tiene un orden inválido: Visita a Terreno → Recepción de Consultas → Respuesta de Consultas → Entrega de Propuestas deben ir en ese orden cronológico. Corrija las fechas antes de guardar.');
+      alert('El Calendario de la Licitación tiene un orden inválido: Visita a Terreno → Recepción de Consultas → Respuesta de Consultas → Entrega de Propuestas deben ir en ese orden cronológico. Corrija las fechas antes de guardar.');
       return;
     }
 
@@ -268,6 +270,8 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
         edificioSigla,
         responsableNombre,
         responsableEmail,
+        tipoObra,
+        rubro,
       });
     } else {
       await onAddLicitacion({
@@ -288,6 +292,8 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
         edificioSigla,
         responsableNombre,
         responsableEmail,
+        tipoObra,
+        rubro,
         estado: 'En Evaluacion',
         estadoLifecycle: 'Invitando',
         ...(selectedMasterProyectoId ? { proyectoMaestroId: selectedMasterProyectoId } : {}),
@@ -484,7 +490,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                       </span>
                     )}
                     {lic.estadoLifecycle && (
-                      <span className="font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                      <span className={`font-bold px-2 py-0.5 rounded border ${LIFECYCLE_COLOR[lic.estadoLifecycle] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
                         {LIFECYCLE_LABEL[lic.estadoLifecycle] || lic.estadoLifecycle}
                       </span>
                     )}
@@ -505,28 +511,40 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
               </div>
 
               {/* Stats & Key Dates Bar */}
-              <div className="mt-4 space-y-3">
-                <div className="grid grid-cols-3 gap-2 text-xs bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+              <div className="mt-4 space-y-2">
+                <div className="flex items-center justify-between text-xs bg-slate-50 p-2.5 rounded-xl border border-slate-100">
                   <div>
                     <span className="text-[10px] text-slate-400 font-semibold block uppercase">{tieneMontoAdjudicado ? 'Monto adjudicado' : 'Monto estimado'}</span>
                     <span className="font-extrabold text-emerald-700">{formatoMonedaCLP(tieneMontoAdjudicado ? montoAdjudicado! : lic.montoEstimado)}</span>
-                    {tieneMontoAdjudicado && <span className="block text-[9px] text-slate-400">Estimado: {formatoMonedaCLP(lic.montoEstimado)}</span>}
                   </div>
-
-                  <div>
-                    <span className="text-[10px] text-slate-400 font-semibold block uppercase">Entrega Propuestas</span>
-                    <span className="font-bold text-slate-700">{lic.fechaEvaluacion || 'Por definir'}</span>
-                  </div>
-
-                  <div>
-                    <span className="text-[10px] text-slate-400 font-semibold block uppercase">Visita / Consultas</span>
-                    <span className="font-semibold text-slate-600 text-[11px] truncate block">
-                      {lic.fechaVisitaTerreno || 'Sin fecha'}
-                    </span>
-                  </div>
+                  {tieneMontoAdjudicado && (
+                    <span className="text-[9px] text-slate-400 text-right">Estimado:<br />{formatoMonedaCLP(lic.montoEstimado)}</span>
+                  )}
                 </div>
 
-                {/* SGC Gestiones Integradas (Bases + Invitados) */}
+                {/* Mini-timeline de hitos de la licitación */}
+                {(() => {
+                  const fechas = obtenerFechasHitos(lic);
+                  const estados = calcularEstadosHitos(fechas);
+                  return (
+                    <div className="flex items-start bg-white border border-slate-100 rounded-xl px-2 py-2.5">
+                      {HITOS_LICITACION.map((h, i) => (
+                        <React.Fragment key={h.campo}>
+                          <div className="flex-1 min-w-0 text-center" title={`${h.label}: ${fechas[i] || 'sin definir'}`}>
+                            <span className={`block w-2 h-2 rounded-full mx-auto ${ESTADO_HITO_DOT[estados[i]]}`} />
+                            <span className="block text-[8px] font-bold uppercase text-slate-400 mt-1 truncate">{h.corto}</span>
+                            <span className={`block text-[9px] font-semibold ${ESTADO_HITO_TEXT[estados[i]]}`}>{formatearFechaCorta(fechas[i])}</span>
+                          </div>
+                          {i < HITOS_LICITACION.length - 1 && (
+                            <div className={`h-0.5 flex-1 mt-1 ${estados[i] === 'cumplido' ? 'bg-emerald-300' : 'bg-slate-200'}`} />
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  );
+                })()}
+
+                {/* Gestiones Integradas (Bases + Invitados) */}
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <button
                     type="button"
@@ -645,10 +663,10 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                         setActaLicitacion(lic);
                       }}
                       className="flex items-center gap-1.5 text-xs text-amber-900 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-xl transition font-bold border border-amber-300 shadow-sm"
-                      title="Ver y editar Acta de Evaluación Propuesta y Adjudicación SGC"
+                      title="Ver y editar Acta de Evaluación Propuesta y Adjudicación"
                     >
                       <FileText className="w-3.5 h-3.5 text-amber-700" />
-                      <span>Acta SGC</span>
+                      <span>Acta</span>
                     </button>
 
                     <button
@@ -686,7 +704,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                     title="Ver Ficha y Carátula del Proyecto"
                   >
                     <FileText className="w-3.5 h-3.5" />
-                    <span>Ficha SGC</span>
+                    <span>Ficha</span>
                   </button>
 
                   <button
@@ -760,46 +778,64 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
         <InvitadosManager
           licitacion={invitadosLicitacion}
           proveedores={proveedores}
+          configFirmas={configFirmas}
           onClose={() => setInvitadosLicitacion(null)}
         />
       )}
 
       {/* Selector de Proyecto desde Lista de Proyectos */}
       {showMasterSelector && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 p-6 flex items-center justify-center">
-          <div className="bg-white rounded-2xl max-w-4xl w-full p-6 space-y-4 max-h-[88vh] flex flex-col shadow-2xl border border-slate-200">
-            <div className="flex items-center justify-between border-b pb-3">
+        <div className="fixed inset-0 bg-white z-50 overflow-y-auto">
+          <div className="max-w-6xl mx-auto px-4 sm:px-8 py-6 sm:py-8 space-y-4">
+            <div className="flex items-center justify-between border-b pb-4">
               <div>
-                <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                  <BookOpen className="w-4 h-4 text-indigo-600" />
+                <button
+                  type="button"
+                  onClick={() => setShowMasterSelector(false)}
+                  className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition mb-2"
+                >
+                  <ArrowLeft className="w-4 h-4" /> Volver a Licitaciones
+                </button>
+                <span className="text-[10px] font-extrabold uppercase bg-indigo-100 text-indigo-900 px-2.5 py-0.5 rounded">
+                  Gestión de Licitaciones • Subdirección de Infraestructura
+                </span>
+                <h4 className="font-bold text-slate-800 text-lg flex items-center gap-2 mt-1.5">
+                  <BookOpen className="w-5 h-5 text-indigo-600" />
                   Paso 1: Seleccionar Proyecto desde la Cartera de Proyectos 2026
                 </h4>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Seleccione el proyecto presupuestado del año 2026 para autocompletar su información.
                 </p>
               </div>
-              <button onClick={() => setShowMasterSelector(false)} className="text-slate-400 hover:text-slate-700">
-                <X className="w-5 h-5" />
-              </button>
             </div>
-            <div className="flex-1 overflow-y-auto pr-1">
-              <ProyectosMaestros
-                modoSelector
-                onSelectProyecto={handleSelectFromMaster}
-              />
-            </div>
+            <ProyectosMaestros
+              modoSelector
+              onSelectProyecto={handleSelectFromMaster}
+            />
           </div>
         </div>
       )}
 
       {/* Modal Add / Edit */}
       {showModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b pb-3">
-              <h3 className="text-lg font-bold text-slate-800">
-                {editingId ? 'Editar Licitación' : 'Crear Nueva Licitación'}
-              </h3>
+        <div className="fixed inset-0 bg-white z-50 overflow-y-auto">
+          <div className="max-w-4xl mx-auto px-4 sm:px-8 py-6 sm:py-8 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-4">
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition mb-2"
+                >
+                  <ArrowLeft className="w-4 h-4" /> Volver a Licitaciones
+                </button>
+                <span className="text-[10px] font-extrabold uppercase bg-indigo-100 text-indigo-900 px-2.5 py-0.5 rounded">
+                  Gestión de Licitaciones • Subdirección de Infraestructura
+                </span>
+                <h3 className="text-xl font-bold text-slate-800 mt-1.5">
+                  {editingId ? 'Editar Licitación' : 'Crear Nueva Licitación'}
+                </h3>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowMasterSelector(true)}
@@ -810,7 +846,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+            <form onSubmit={handleSubmit} className="space-y-5 text-xs pb-10">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
                 <div className="flex flex-col h-full">
                   <label className="block font-semibold text-slate-700 mb-1 h-8 flex items-center">Cód. Proyecto *</label>
@@ -887,17 +923,39 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                   placeholder="Detalles de la obra, ubicación y alcances..."
                   value={descripcion}
                   onChange={e => setDescripcion(e.target.value)}
-                  onBlur={e => setDescripcion(corregirOrtografiaEspanol(e.target.value))}
+                  onBlur={e => setDescripcion(corregirTextoAvanzado(e.target.value))}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none resize-none"
                 />
               </div>
 
-              {/* Calendario de la Licitación (SGC) */}
+              {/* Calendario de la Licitación */}
               <div className="bg-sky-50/60 p-3.5 rounded-xl border border-sky-100 space-y-2">
                 <span className="text-[11px] font-bold text-sky-900 block flex items-center gap-1">
                   <Calendar className="w-3.5 h-3.5 text-sky-600" />
-                  Calendario SGC de la Licitación (Hitos Obligatorios)
+                  Calendario de la Licitación (Hitos Obligatorios)
                 </span>
+
+                {/* Vista previa del orden de hitos mientras se editan las fechas */}
+                {(() => {
+                  const fechasForm = [fechaVisitaTerreno, fechaRecepcionConsultas, fechaRespuestaConsultas, fechaEvaluacion];
+                  const estadosForm = calcularEstadosHitos(fechasForm);
+                  return (
+                    <div className="flex items-start bg-white/70 border border-sky-100 rounded-lg px-2 py-2">
+                      {HITOS_LICITACION.map((h, i) => (
+                        <React.Fragment key={h.campo}>
+                          <div className="flex-1 min-w-0 text-center">
+                            <span className={`block w-2 h-2 rounded-full mx-auto ${ESTADO_HITO_DOT[estadosForm[i]]}`} />
+                            <span className="block text-[8px] font-bold uppercase text-slate-400 mt-1 truncate">{h.corto}</span>
+                          </div>
+                          {i < HITOS_LICITACION.length - 1 && (
+                            <div className={`h-0.5 flex-1 mt-1 ${estadosForm[i] === 'cumplido' ? 'bg-emerald-300' : 'bg-slate-200'}`} />
+                          )}
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  );
+                })()}
+
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1 text-[11px]">1. Visita a Terreno</label>
@@ -964,7 +1022,33 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-3 border-t">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Tipo de Obra</label>
+                  <input
+                    type="text"
+                    disabled
+                    placeholder="Se importa de la Lista Maestra"
+                    value={tipoObra || 'Sin definir'}
+                    className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-slate-600 outline-none font-medium text-[11px]"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Rubro Requerido (para sugerir proveedores)</label>
+                  <select
+                    value={rubro}
+                    onChange={e => setRubro(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none font-semibold text-slate-700"
+                  >
+                    <option value="">-- Sin rubro --</option>
+                    {getRubrosList().map(r => (
+                      <option key={r.id} value={r.nombre}>{r.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-3 border-t sticky bottom-0 bg-white -mx-4 sm:-mx-8 px-4 sm:px-8 pb-4">
                 {editingId ? (
                   <button
                     type="button"

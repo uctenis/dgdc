@@ -8,8 +8,8 @@ import {
   updateProyectoMaestro
 } from '../services/firestoreService';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
-import { corregirOrtografiaEspanol, normalizarNombreProyecto, ATRIBUTOS_ORTOGRAFIA_ES } from '../utils/spellCorrector';
-import { CAMPUS_UCT, obtenerEdificiosDeCampus, obtenerCampusPorSigla } from '../data/campusData';
+import { corregirOrtografiaEspanol, corregirTextoAvanzado, normalizarNombreProyecto, ATRIBUTOS_ORTOGRAFIA_ES } from '../utils/spellCorrector';
+import { getCampusList, obtenerEdificiosDeCampus, obtenerCampusPorSigla } from '../data/campusData';
 import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
 import { getCentrosCostoList } from '../data/centrosCostoData';
 import type { ProyectoMaestro } from '../types';
@@ -306,7 +306,7 @@ export const ProyectoMaestroFormModal: React.FC<ProyectoMaestroFormModalProps> =
                   placeholder="Detalle los trabajos, recintos intervenidos y justificación de compra..."
                   value={form.descripcion}
                   onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))}
-                  onBlur={e => setForm(f => ({ ...f, descripcion: corregirOrtografiaEspanol(e.target.value) }))}
+                  onBlur={e => setForm(f => ({ ...f, descripcion: corregirTextoAvanzado(e.target.value) }))}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
                 />
               </div>
@@ -334,7 +334,7 @@ export const ProyectoMaestroFormModal: React.FC<ProyectoMaestroFormModalProps> =
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
                   >
                     <option value="">-- Seleccionar Campus --</option>
-                    {CAMPUS_UCT.map(c => (
+                    {getCampusList().map(c => (
                       <option key={c.sigla} value={c.sigla}>
                         {c.sigla} — {c.nombre}
                       </option>

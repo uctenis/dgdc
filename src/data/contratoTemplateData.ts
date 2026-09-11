@@ -33,7 +33,7 @@ export const PLANTILLA_CONTRATO_OBRA_CIVIL: SeccionContrato[] = [
   {
     id: 'antecedentes',
     titulo: 'Antecedentes',
-    contenido: 'I. La Universidad Católica de Temuco, en adelante el MANDANTE, ha adjudicado al PRESTADOR, mediante el proceso de licitación {{codigoProyecto}} (CP {{codigoCP}}), la ejecución de las obras de "{{nombreProyecto}}" ({{tipoObra}}), ubicadas en {{campus}}{{edificio}}. II. El PRESTADOR acepta ejecutar los trabajos de acuerdo con los antecedentes técnicos, Bases Administrativas y Técnicas, y la oferta presentada en dicho proceso, declarando conocerlos. III. Los antecedentes y argumentos que avalan la adjudicación figuran en el acta de adjudicación respectiva.',
+    contenido: 'I. La Universidad Católica de Temuco, en adelante el MANDANTE, ha adjudicado al PRESTADOR, mediante el proceso de licitación {{codigoProyecto}} (CP {{codigoCP}}), la ejecución de las obras de "{{nombreProyecto}}" ({{tipoObra}}), ubicadas en {{campus}}{{edificio}}{{direccionCampus}}. II. El PRESTADOR acepta ejecutar los trabajos de acuerdo con los antecedentes técnicos, Bases Administrativas y Técnicas, y la oferta presentada en dicho proceso, declarando conocerlos. III. Los antecedentes y argumentos que avalan la adjudicación figuran en el acta de adjudicación respectiva.',
   },
   {
     id: 'objeto',

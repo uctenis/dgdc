@@ -14,6 +14,7 @@ import {
 } from '../data/contratoTemplateData';
 import { useAuth } from '../context/AuthContext';
 import { PremiumDatePicker } from './PremiumDatePicker';
+import { obtenerCampusPorSigla } from '../data/campusData';
 
 interface ContratoAdjudicacionModalProps {
   proyecto: ProyectoMaestro;
@@ -58,6 +59,10 @@ export function ContratoAdjudicacionModal({ proyecto, proveedores, onClose }: Co
     tipoObra: proyecto.tipoObra || '[definir]',
     campus: proyecto.campusNombre || proyecto.campusSigla || '—',
     edificio: proyecto.edificioSigla ? ` · Edificio ${proyecto.edificioSigla}` : '',
+    direccionCampus: (() => {
+      const dir = obtenerCampusPorSigla(proyecto.campusSigla || '')?.direccion;
+      return dir ? `, ${dir}` : '';
+    })(),
     proveedorNombre: proyecto.proveedorAdjudicadoNombre || '[Razón Social del Proveedor]',
     proveedorRut: proyecto.proveedorAdjudicadoRut || '[RUT del Proveedor]',
     proveedorRepresentante: proveedorAdjudicado?.nombreContacto || '[Nombre representante legal]',

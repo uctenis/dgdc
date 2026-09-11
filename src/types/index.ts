@@ -89,6 +89,16 @@ export interface ProyectoMaestro {
   fechaInicio?: string;
   fechaTermino?: string;
 
+  /** Aprobación explícita para entrar al Presupuesto Anual Proyectado — distinta de `prioridad`,
+   * que es solo un criterio de apoyo para decidir. Solo los proyectos con `aprobado: true`
+   * comprometen el techo institucional (`presupuestoAnualAprobado`) en el Flujo de Caja / Avance Financiero. */
+  presupuesto?: {
+    aprobado: boolean;
+    fecha?: string;
+    aprobadoPorNombre?: string;
+    aprobadoPorEmail?: string;
+  };
+
   // Ubicación y Metadatos Institucionales (Filtros Avanzados)
   campusSigla?: string;      // ej: CSF, CJP, CRC
   campusNombre?: string;     // ej: Campus San Francisco
@@ -289,12 +299,14 @@ export interface LicitacionProyecto {
   edificioSigla?: string;
   uso?: string;
   tipoObra?: string;
+  /** Rubro del proveedor requerido (catálogo de rubrosData.ts) — se sincroniza desde ProyectoMaestro.rubro vía proyectoMaestroId. Distinto de tipoObra (texto libre). */
+  rubro?: string;
 
   // Responsable de Infraestructura
   responsableNombre?: string;
   responsableEmail?: string;
 
-  // Calendario SGC de la Licitación
+  // Calendario de la Licitación
   fechaVisitaTerreno?: string;       // Fecha de visita obligatoria / optativa a terreno
   fechaRecepcionConsultas?: string;  // Fecha límite para recepción de consultas de los oferentes
   fechaRespuestaConsultas?: string;  // Fecha en que la Universidad publica las respuestas a las consultas
@@ -302,7 +314,7 @@ export interface LicitacionProyecto {
   // Empresas Invitadas
   proveedoresInvitadosIds?: string[];
 
-  // Antecedentes Técnicos y Checklist de Verificación SGC
+  // Antecedentes Técnicos y Checklist de Verificación
   antecedentesTecnicos?: {
     id: string;
     nombre: string;
@@ -533,7 +545,7 @@ export interface UserProfile {
   firmaImagenURL?: string; // Imagen de la firma manuscrita (enrolada por el usuario), estampada en las actas al firmar digitalmente
 }
 
-// ─── CONFIGURACIÓN DE FIRMAS Y PARÁMETROS SGC ──────────────────────────────
+// ─── CONFIGURACIÓN DE FIRMAS Y PARÁMETROS ──────────────────────────────
 export interface ParametrosLicitacionSGC {
   porcentajeEconomico: number;     // 55
   porcentajeTecnico: number;       // 35
@@ -567,4 +579,6 @@ export interface ConfiguracionFirmas {
   institucion: string;
   subdireccion: string;
   parametrosSgc?: ParametrosLicitacionSGC;
+  /** Techo institucional anual (CLP) que la Cartera de Proyectos no debe sobrepasar — distinto del monto adjudicado, que es cuánto ya se comprometió contra ese techo. */
+  presupuestoAnualAprobado?: number;
 }

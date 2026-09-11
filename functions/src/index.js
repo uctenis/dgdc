@@ -14,6 +14,8 @@ const adobeRefreshToken = defineSecret('ADOBE_SIGN_REFRESH_TOKEN');
 const adobeApiAccessPoint = defineString('ADOBE_SIGN_API_ACCESS_POINT', {
   default: 'https://api.na1.adobesign.com',
 });
+const gmailUser = defineSecret('GMAIL_USER');
+const gmailAppPassword = defineSecret('GMAIL_APP_PASSWORD');
 
 const MAX_PDF_BYTES = 12 * 1024 * 1024;
 const db = getFirestore();
@@ -378,5 +380,116 @@ export const enviarCorreoAdjudicacion = onRequest({ cors: true, timeoutSeconds: 
   } catch (error) {
     console.error('Error al enviar correo', error);
     return sendError(res, 500, 'Error inesperado al enviar el correo.');
+  }
+});
+
+function formatearFechaEmail(fecha) {
+  if (!fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return 'No definida';
+  return new Intl.DateTimeFormat('es-CL').format(new Date(`${fecha}T12:00:00`));
+}
+
+/**
+ * Envía una invitación de licitación real y personalizada a cada proveedor invitado
+ * (uno por uno, no un solo BCC masivo), con copia al responsable del proyecto y a
+ * quien más se indique (ej. subdirector), vía Gmail/Workspace institucional (SMTP con
+ * App Password). El cuerpo del correo enlaza al portal de proveedores — ya existente,
+ * con login Google — en vez de adjuntar archivos pesados.
+ */
+export const enviarInvitacionesLicitacion = onRequest({
+  cors: true,
+  timeoutSeconds: 120,
+  secrets: [gmailUser, gmailAppPassword],
+}, async (req, res) => {
+  if (req.method !== 'POST') return sendError(res, 405, 'Método no permitido.');
+  try {
+    const firebaseUser = await requireFirebaseUser(req);
+    const licitacionId = String(req.body?.licitacionId || '').trim();
+    if (!licitacionId) return sendError(res, 400, 'Falta el ID de la licitación.');
+
+    const portalUrl = String(req.body?.portalUrl || '').trim();
+    if (!portalUrl.startsWith('https://') && !portalUrl.startsWith('http://localhost')) {
+      return sendError(res, 400, 'El enlace del portal de proveedores no es válido.');
+    }
+
+    const ccExtra = Array.isArray(req.body?.ccExtra)
+      ? req.body.ccExtra.filter(email => typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+      : [];
+
+    const licitacionRef = db.collection('licitaciones').doc(licitacionId);
+    const [licitacionSnap, invitadosSnap] = await Promise.all([
+      licitacionRef.get(),
+      licitacionRef.collection('invitados').get(),
+    ]);
+    if (!licitacionSnap.exists) return sendError(res, 404, 'Licitación no encontrada.');
+    const licitacion = licitacionSnap.data();
+
+    const checklist = licitacion.checklistAntecedentes || {};
+    const antecedentesCompletos = Boolean(
+      checklist.basesTecnicasOk && checklist.basesAdministrativasOk && checklist.planosOk &&
+      checklist.calendarioDefinidoOk && checklist.revisadoSecretariaGeneralOk
+    );
+    if (!antecedentesCompletos) {
+      return sendError(res, 409, 'El checklist de "Bases & Planos" (Antecedentes Técnicos) no está completo — no se pueden enviar invitaciones todavía.');
+    }
+
+    const invitados = invitadosSnap.docs
+      .map(doc => doc.data())
+      .filter(inv => inv.proveedorEmail);
+    if (!invitados.length) {
+      return sendError(res, 400, 'No hay proveedores invitados con correo registrado en su ficha.');
+    }
+
+    const cc = [licitacion.responsableEmail, ...ccExtra].filter(Boolean).join(',') || undefined;
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: gmailUser.value(), pass: gmailAppPassword.value() },
+    });
+
+    const asunto = `Invitación a licitación — ${licitacion.codigoProyecto || ''} ${licitacion.nombreProyecto || ''}`.trim();
+    const resultados = [];
+    for (const inv of invitados) {
+      const htmlBody = `
+        <div style="font-family: Arial, sans-serif; color: #1e293b; line-height: 1.6; font-size: 14px;">
+          <p>Estimados <strong>${inv.proveedorNombre || ''}</strong>,</p>
+          <p>Junto con saludar, les invitamos a participar en el proceso de licitación:</p>
+          <p style="background:#f1f5f9; border-radius:8px; padding:12px 16px;">
+            <strong>${licitacion.nombreProyecto || ''}</strong><br/>
+            Código de Proyecto: ${licitacion.codigoProyecto || 'No informado'} · Centro de Costo: ${licitacion.codigoCP || 'No informado'}
+          </p>
+          <p>Para revisar las bases, antecedentes técnicos y presentar su oferta, ingrese con su cuenta de correo al portal de proveedores:</p>
+          <p><a href="${portalUrl}" style="display:inline-block; background:#0369a1; color:#fff; text-decoration:none; padding:10px 18px; border-radius:8px; font-weight:bold;">Ingresar al Portal de Proveedores</a></p>
+          <p style="font-size:12px; color:#64748b;">Si el botón no funciona, copie y pegue este enlace en su navegador: ${portalUrl}</p>
+          <p><strong>Calendario del proceso:</strong></p>
+          <table style="border-collapse: collapse; font-size: 13px;">
+            <tr><td style="padding:4px 12px 4px 0; color:#64748b;">Visita a Terreno</td><td><strong>${formatearFechaEmail(licitacion.fechaVisitaTerreno)}</strong></td></tr>
+            <tr><td style="padding:4px 12px 4px 0; color:#64748b;">Recepción de Consultas</td><td><strong>${formatearFechaEmail(licitacion.fechaRecepcionConsultas)}</strong></td></tr>
+            <tr><td style="padding:4px 12px 4px 0; color:#64748b;">Respuesta de Consultas</td><td><strong>${formatearFechaEmail(licitacion.fechaRespuestaConsultas)}</strong></td></tr>
+            <tr><td style="padding:4px 12px 4px 0; color:#64748b;">Entrega de Propuestas</td><td><strong>${formatearFechaEmail(licitacion.fechaEntregaPropuestas || licitacion.fechaEvaluacion)}</strong></td></tr>
+          </table>
+          <p style="margin-top:16px;">Saludos cordiales,<br/>Subdirección de Infraestructura — Universidad Católica de Temuco</p>
+        </div>
+      `.trim();
+
+      try {
+        await transporter.sendMail({
+          from: `"Subdirección de Infraestructura UCT" <${gmailUser.value()}>`,
+          to: inv.proveedorEmail,
+          cc,
+          subject: asunto,
+          html: htmlBody,
+        });
+        resultados.push({ proveedorId: inv.proveedorId, email: inv.proveedorEmail, enviado: true });
+      } catch (err) {
+        console.error(`Error enviando invitación a ${inv.proveedorEmail}:`, err);
+        resultados.push({ proveedorId: inv.proveedorId, email: inv.proveedorEmail, enviado: false, error: err instanceof Error ? err.message : 'Error desconocido' });
+      }
+    }
+
+    console.log(`Invitaciones de licitación ${licitacionId} procesadas por ${firebaseUser.email}: ${resultados.filter(r => r.enviado).length}/${resultados.length} enviadas.`);
+    return res.json({ resultados });
+  } catch (error) {
+    console.error('Error enviando invitaciones de licitación', error);
+    if (error.message === 'AUTH_REQUIRED') return sendError(res, 401, 'Debe iniciar sesión para enviar invitaciones.');
+    return sendError(res, 500, error instanceof Error ? error.message : 'Error inesperado al enviar las invitaciones.');
   }
 });

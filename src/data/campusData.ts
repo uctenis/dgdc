@@ -2,10 +2,13 @@ export interface CampusInfo {
   sigla: string;
   nombre: string;
   ciudad: string;
+  direccion?: string;
   edificios: string[];
 }
 
-export const CAMPUS_UCT: CampusInfo[] = [
+const STORAGE_KEY = 'infra_app_campus_v1';
+
+export const INITIAL_CAMPUS_UCT: CampusInfo[] = [
   {
     "sigla": "CML",
     "nombre": "Campus Monseñor Alejandro Menchaca Lira",
@@ -294,20 +297,51 @@ export const TIPOS_OBRA = [
   'OTROS',
 ];
 
+// Catálogo editable desde Configuración → Sedes y Campus. Persiste en localStorage,
+// mismo patrón que rubrosData.ts/centrosCostoData.ts/tiposObraData.ts.
+export function getCampusList(): CampusInfo[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_CAMPUS_UCT));
+      return INITIAL_CAMPUS_UCT;
+    }
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed;
+    }
+    return INITIAL_CAMPUS_UCT;
+  } catch (e) {
+    console.error('Error leyendo catálogo de campus:', e);
+    return INITIAL_CAMPUS_UCT;
+  }
+}
+
+export function saveCampusList(list: CampusInfo[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.error('Error guardando catálogo de campus:', e);
+  }
+}
+
+/** @deprecated usar getCampusList() — se mantiene como snapshot inicial de referencia. */
+export const CAMPUS_UCT: CampusInfo[] = INITIAL_CAMPUS_UCT;
+
 export function obtenerCampusPorSigla(sigla: string): CampusInfo | undefined {
-  return CAMPUS_UCT.find(c => c.sigla === sigla.toUpperCase());
+  return getCampusList().find(c => c.sigla === sigla.toUpperCase());
 }
 
 export function obtenerEdificiosDeCampus(siglaCampus: string): string[] {
   if (!siglaCampus) return [];
-  const c = CAMPUS_UCT.find(camp => camp.sigla === siglaCampus.toUpperCase());
+  const c = getCampusList().find(camp => camp.sigla === siglaCampus.toUpperCase());
   return c ? c.edificios : [];
 }
 
 export function buscarCampusYEdificioPorTexto(texto: string): { campus?: CampusInfo; edificio?: string } {
   if (!texto) return {};
   const upper = texto.toUpperCase();
-  for (const campus of CAMPUS_UCT) {
+  for (const campus of getCampusList()) {
     for (const ed of campus.edificios) {
       if (upper.includes(ed)) {
         return { campus, edificio: ed };

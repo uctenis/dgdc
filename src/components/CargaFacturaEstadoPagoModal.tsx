@@ -162,7 +162,7 @@ export const CargaFacturaEstadoPagoModal: React.FC<CargaFacturaEstadoPagoModalPr
           <div>
             <span className="text-[10px] font-extrabold uppercase bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded flex items-center gap-1 w-fit">
               <Receipt className="w-3.5 h-3.5 text-emerald-700" />
-              Facturación & Control de Gasto Efectivo SGC
+              Facturación & Control de Gasto Efectivo
             </span>
             <h3 className="text-base font-bold text-slate-900 mt-1">
               Cargar y Corroborar Factura — Estado de Pago N° {estadoPago.numero}

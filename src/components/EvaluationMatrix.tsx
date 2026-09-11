@@ -65,7 +65,7 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
     if (!confirm(`¿Confirma adjudicar esta licitación a ${adjudicado.proveedorNombre}? Esta acción no se puede deshacer.`)) return;
     setIsAdjudicando(true);
     try {
-      await onAdjudicarLicitacion(licitacion.id, adjudicado.proveedorId, `Adjudicado automáticamente según menor precio y mejor puntaje ponderado SGC (${adjudicado.puntajeTotalPonderado} pts).`);
+      await onAdjudicarLicitacion(licitacion.id, adjudicado.proveedorId, `Adjudicado automáticamente según menor precio y mejor puntaje ponderado (${adjudicado.puntajeTotalPonderado} pts).`);
       confetti({
         particleCount: 100,
         spread: 70,
@@ -128,20 +128,20 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
               onClick={onNavigateToDocumentos}
               className="bg-white/10 hover:bg-white/20 text-white px-4 py-3 rounded-xl text-xs font-semibold backdrop-blur-sm border border-white/20 transition flex items-center gap-2"
             >
-              <span>Generar Documento SGC</span>
+              <span>Generar Documento</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
         </div>
       )}
 
-      {/* Main Table: Cuadro Comparativo SGC */}
+      {/* Main Table: Cuadro Comparativo */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="p-6 border-b border-slate-200 flex items-center justify-between">
           <div>
             <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
               <Award className="w-5 h-5 text-sky-600" />
-              <span>1. Cuadro Comparativo de Ofertas (SGC PS-FOR-DGDC0003)</span>
+              <span>1. Cuadro Comparativo de Ofertas (PS-FOR-DGDC0003)</span>
             </h3>
             <p className="text-xs text-slate-500 mt-1">
               CP: {licitacion.codigoCP} • OP: {licitacion.codigoOP} • OT: {licitacion.codigoOT} • Proyecto: {licitacion.nombreProyecto.toLocaleUpperCase('es-CL')}
@@ -149,7 +149,7 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
           </div>
 
           <span className="text-xs font-semibold bg-sky-50 text-sky-800 border border-sky-200 px-3 py-1 rounded-lg">
-            Fórmulas SGC Calculadas
+            Fórmulas Calculadas
           </span>
         </div>
 

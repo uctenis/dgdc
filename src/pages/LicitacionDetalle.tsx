@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Upload, CheckCircle2, AlertTriangle, AlertCircle,
   FileText, Save, Send, Clock, DollarSign, Calendar,
-  X, FileSpreadsheet, Loader2
+  X, FileSpreadsheet, Loader2, Download
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -313,6 +313,38 @@ export function LicitacionDetalle() {
                 </div>
               )}
             </div>
+          )}
+        </div>
+
+        {/* Antecedentes técnicos y Bases — descarga directa */}
+        <div
+          className="rounded-2xl p-5 space-y-3"
+          style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)' }}
+        >
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <FileText className="w-4 h-4 text-sky-400" />
+            Bases y Antecedentes Técnicos
+          </h3>
+          {licitacion.antecedentesTecnicos && licitacion.antecedentesTecnicos.length > 0 ? (
+            <div className="space-y-1.5">
+              {licitacion.antecedentesTecnicos.map(doc => (
+                <a
+                  key={doc.id}
+                  href={doc.archivoURL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center justify-between gap-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl px-3.5 py-2.5 transition"
+                >
+                  <div className="min-w-0">
+                    <span className="text-xs font-semibold text-slate-100 block truncate">{doc.nombre}</span>
+                    <span className="text-[10px] text-slate-400">{doc.tipo}</span>
+                  </div>
+                  <Download className="w-4 h-4 text-sky-400 shrink-0" />
+                </a>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400 italic">Aún no hay documentos de antecedentes disponibles para esta licitación.</p>
           )}
         </div>
 

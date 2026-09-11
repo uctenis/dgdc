@@ -10,6 +10,7 @@ import {
   LogOut,
   UserCircle2,
   BarChart3,
+  TrendingUp,
 } from 'lucide-react';
 import { generarPlantillaCotizacionExcel } from '../services/templateGenerator';
 import { useAuth } from '../context/AuthContext';
@@ -22,16 +23,17 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
   const { user, profile, isAdmin, logout } = useAuth();
   const allTabs = [
-    { id: 'licitaciones', label: 'Licitaciones', icon: FolderKanban },
     { id: 'proyectos-maestros', label: 'Cartera de Proyectos 2026', icon: FileText },
+    { id: 'avance-financiero', label: 'Avance Financiero', icon: TrendingUp },
+    { id: 'licitaciones', label: 'Licitaciones', icon: FolderKanban },
     { id: 'proveedores',  label: 'Proveedores', icon: Building2, adminOnly: true },
     { id: 'cotizaciones', label: 'Cotizaciones', icon: FileSpreadsheet, contextual: true, adminOnly: true },
     { id: 'ficha-proyecto', label: 'Ficha del Proyecto', icon: FileText, contextual: true },
     { id: 'evaluacion',   label: 'Evaluación', icon: FileCheck2, contextual: true },
-    { id: 'documentos',   label: 'Actas SGC', icon: FileText, contextual: true },
+    { id: 'documentos',   label: 'Actas', icon: FileText, contextual: true },
     { id: 'reportes', label: 'Reportes y Auditoría', icon: BarChart3 },
-    { id: 'diagrama-sgc', label: 'Flujo SGC 0021', icon: FileCheck2 },
-    { id: 'configuracion', label: 'Configuración SGC', icon: Settings, adminOnly: true },
+    { id: 'diagrama-sgc', label: 'Flujo 0021', icon: FileCheck2 },
+    { id: 'configuracion', label: 'Configuración', icon: Settings, adminOnly: true },
   ];
 
   const tabs = allTabs.filter(t => (!t.contextual || activeTab === t.id) && (!t.adminOnly || isAdmin));
@@ -73,7 +75,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
                 >
                   UCT · Infraestructura
                 </span>
-                <span className="text-[10px] text-slate-400 hidden sm:inline">SGC-DGDC</span>
+                <span className="text-[10px] text-slate-400 hidden sm:inline">DGDC</span>
               </div>
               <h1 className="text-base font-bold tracking-tight text-white leading-tight" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
                 Gestor de Adjudicaciones

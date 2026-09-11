@@ -55,7 +55,7 @@ export type PoliticaGarantias = 'Sin Garantías' | 'Retención sobre Estados de 
 
 /**
  * Umbrales sugeridos, alineados a los mismos tramos institucionales usados en
- * Parámetros SGC (umbralActaObligatoria / umbralAprobacionVrae). Es una
+ * Parámetros de Licitación (umbralActaObligatoria / umbralAprobacionVrae). Es una
  * sugerencia de partida, siempre editable por quien crea el proyecto — no
  * reemplaza la política oficial de garantías que defina Coordinación de Calidad.
  */
@@ -103,7 +103,7 @@ const PLANTILLA_OBRA_CIVIL: SeccionBases[] = [
   {
     id: 'objeto',
     titulo: '1. Objeto de la Licitación',
-    contenido: 'Describa el objeto del contrato: {{nombreProyecto}} ({{tipoObra}}), ubicado en {{campus}}{{edificio}}. Detalle el alcance de los trabajos de construcción a ejecutar, incluyendo obra gruesa, terminaciones y especialidades.',
+    contenido: 'Describa el objeto del contrato: {{nombreProyecto}} ({{tipoObra}}), ubicado en {{campus}}{{edificio}}{{direccionCampus}}. Detalle el alcance de los trabajos de construcción a ejecutar, incluyendo obra gruesa, terminaciones y especialidades.',
   },
   {
     id: 'modalidad',
@@ -143,7 +143,7 @@ const PLANTILLA_OBRA_CIVIL: SeccionBases[] = [
   {
     id: 'criterios-evaluacion',
     titulo: '9. Criterios de Evaluación',
-    contenido: 'Ponderación conforme a los parámetros SGC vigentes: Oferta Económica 55%, Oferta Técnica 35% (experiencia, plazo, metodología, cumplimiento de requerimientos y calidad de materiales), Sustentabilidad 10%. Verificar que estos porcentajes coincidan con los configurados en Parámetros SGC antes de convocar.',
+    contenido: 'Ponderación conforme a los parámetros vigentes: Oferta Económica 55%, Oferta Técnica 35% (experiencia, plazo, metodología, cumplimiento de requerimientos y calidad de materiales), Sustentabilidad 10%. Verificar que estos porcentajes coincidan con los configurados en Parámetros de Licitación antes de convocar.',
   },
   {
     id: 'recepcion',
@@ -162,7 +162,7 @@ const PLANTILLA_OBRA_MENOR: SeccionBases[] = [
   {
     id: 'objeto',
     titulo: '1. Objeto de la Licitación',
-    contenido: 'Describa el objeto del contrato: {{nombreProyecto}} ({{tipoObra}}), ubicado en {{campus}}{{edificio}}. Detalle el alcance de los trabajos de remodelación/habilitación a ejecutar y las partidas afectadas.',
+    contenido: 'Describa el objeto del contrato: {{nombreProyecto}} ({{tipoObra}}), ubicado en {{campus}}{{edificio}}{{direccionCampus}}. Detalle el alcance de los trabajos de remodelación/habilitación a ejecutar y las partidas afectadas.',
   },
   {
     id: 'modalidad',
@@ -202,7 +202,7 @@ const PLANTILLA_OBRA_MENOR: SeccionBases[] = [
   {
     id: 'criterios-evaluacion',
     titulo: '9. Criterios de Evaluación',
-    contenido: 'Ponderación conforme a los parámetros SGC vigentes: Oferta Económica 55%, Oferta Técnica 35% (experiencia, plazo, metodología), Sustentabilidad 10%. Verificar que estos porcentajes coincidan con los configurados en Parámetros SGC antes de convocar.',
+    contenido: 'Ponderación conforme a los parámetros vigentes: Oferta Económica 55%, Oferta Técnica 35% (experiencia, plazo, metodología), Sustentabilidad 10%. Verificar que estos porcentajes coincidan con los configurados en Parámetros de Licitación antes de convocar.',
   },
   {
     id: 'recepcion',
@@ -221,7 +221,7 @@ const PLANTILLA_DISENO: SeccionBases[] = [
   {
     id: 'objeto',
     titulo: '1. Objeto de la Licitación',
-    contenido: 'Describa el objeto del contrato de consultoría: desarrollo del diseño de {{nombreProyecto}}, ubicado en {{campus}}{{edificio}}. Especifique las especialidades requeridas (arquitectura, cálculo estructural, eléctrico, sanitario, climatización, u otras).',
+    contenido: 'Describa el objeto del contrato de consultoría: desarrollo del diseño de {{nombreProyecto}}, ubicado en {{campus}}{{edificio}}{{direccionCampus}}. Especifique las especialidades requeridas (arquitectura, cálculo estructural, eléctrico, sanitario, climatización, u otras).',
   },
   {
     id: 'modalidad',
@@ -261,7 +261,7 @@ const PLANTILLA_DISENO: SeccionBases[] = [
   {
     id: 'criterios-evaluacion',
     titulo: '9. Criterios de Evaluación',
-    contenido: 'Ponderación conforme a los parámetros SGC vigentes: Oferta Económica 55%, Oferta Técnica 35% (experiencia del equipo profesional, metodología y plazo de desarrollo), Sustentabilidad 10%. Verificar que estos porcentajes coincidan con los configurados en Parámetros SGC antes de convocar.',
+    contenido: 'Ponderación conforme a los parámetros vigentes: Oferta Económica 55%, Oferta Técnica 35% (experiencia del equipo profesional, metodología y plazo de desarrollo), Sustentabilidad 10%. Verificar que estos porcentajes coincidan con los configurados en Parámetros de Licitación antes de convocar.',
   },
   {
     id: 'recepcion',
@@ -280,7 +280,7 @@ const PLANTILLA_SUMINISTRO: SeccionBases[] = [
   {
     id: 'objeto',
     titulo: '1. Objeto de la Licitación',
-    contenido: 'Describa el objeto del contrato: suministro de {{nombreProyecto}} para {{campus}}{{edificio}}. Detalle los bienes/elementos a adquirir, cantidades y características técnicas.',
+    contenido: 'Describa el objeto del contrato: suministro de {{nombreProyecto}} para {{campus}}{{edificio}}{{direccionCampus}}. Detalle los bienes/elementos a adquirir, cantidades y características técnicas.',
   },
   {
     id: 'modalidad',
@@ -320,7 +320,7 @@ const PLANTILLA_SUMINISTRO: SeccionBases[] = [
   {
     id: 'criterios-evaluacion',
     titulo: '9. Criterios de Evaluación',
-    contenido: 'Ponderación conforme a los parámetros SGC vigentes: Oferta Económica 55%, Oferta Técnica 35% (plazo de entrega, calidad/marca, garantía post-venta), Sustentabilidad 10%. Verificar que estos porcentajes coincidan con los configurados en Parámetros SGC antes de convocar.',
+    contenido: 'Ponderación conforme a los parámetros vigentes: Oferta Económica 55%, Oferta Técnica 35% (plazo de entrega, calidad/marca, garantía post-venta), Sustentabilidad 10%. Verificar que estos porcentajes coincidan con los configurados en Parámetros de Licitación antes de convocar.',
   },
   {
     id: 'recepcion',
@@ -400,4 +400,30 @@ export function getPlantillaBasesSumaAlzada(): SeccionBases[] {
 /** Reemplaza los marcadores {{campo}} de una sección con los datos reales del proyecto. */
 export function aplicarDatosAPlantilla(contenido: string, datos: Record<string, string>): string {
   return contenido.replace(/\{\{(\w+)\}\}/g, (_match, campo) => datos[campo] ?? `{{${campo}}}`);
+}
+
+/**
+ * Enriquece las secciones ya generadas por familia con la normativa sectorial
+ * específica del Rubro del proyecto (ver normativaPorRubro.ts): agrega la
+ * exigencia de acreditaciones/licencias del rubro al final de "Requisitos de
+ * los Oferentes", y añade una sección nueva "Normativa Sectorial Aplicable"
+ * con las leyes/reglamentos/NCh que rigen ese rubro en particular. Si el
+ * rubro no tiene entrada en el catálogo (o no está definido), retorna las
+ * secciones sin cambios — la plantilla de familia ya es una base válida.
+ */
+export function aplicarNormativaPorRubro(secciones: SeccionBases[], clausula: { requisitosOferentesAdicionales: string; normativaAplicable: string } | null, rubro?: string): SeccionBases[] {
+  if (!clausula) return secciones;
+  const conRequisitosAmpliados = secciones.map(s =>
+    s.id === 'requisitos-oferentes'
+      ? { ...s, contenido: `${s.contenido} ${clausula.requisitosOferentesAdicionales}` }
+      : s
+  );
+  return [
+    ...conRequisitosAmpliados,
+    {
+      id: 'normativa-rubro',
+      titulo: `12. Normativa Sectorial Aplicable${rubro ? ` — ${rubro}` : ''}`,
+      contenido: clausula.normativaAplicable,
+    },
+  ];
 }

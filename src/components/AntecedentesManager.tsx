@@ -125,7 +125,7 @@ export const AntecedentesManager: React.FC<AntecedentesManagerProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-extrabold uppercase bg-indigo-100 text-indigo-800 px-2.5 py-0.5 rounded">
-                SGC Paso 3 · Antecedentes Técnicos
+                Paso 3 · Antecedentes Técnicos
               </span>
               <span className="text-[10px] text-slate-500 font-medium">Cód: {licitacion.codigoProyecto}</span>
             </div>
@@ -170,7 +170,7 @@ export const AntecedentesManager: React.FC<AntecedentesManagerProps> = ({
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
             <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
               <ShieldCheck className="w-4 h-4 text-indigo-600" />
-              Checklist de Validación Pre-Invitación (Requisito SGC)
+              Checklist de Validación Pre-Invitación
             </h4>
             <div className="space-y-2 text-xs">
               {checklistItems.map(item => (

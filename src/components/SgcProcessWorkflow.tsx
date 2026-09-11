@@ -165,7 +165,7 @@ export const SgcProcessWorkflow: React.FC<SgcProcessWorkflowProps> = ({ pasoActu
         <div>
           <div className="flex items-center gap-2">
             <span className="bg-indigo-500/20 text-indigo-300 font-mono text-xs px-2.5 py-1 rounded-md border border-indigo-500/30">
-              SGC PS-DF-DGDC 0021
+              PS-DF-DGDC 0021
             </span>
             <span className="bg-emerald-500/20 text-emerald-300 text-xs px-2.5 py-1 rounded-md font-semibold border border-emerald-500/30">
               Versión 00 (Vigencia 02/04/2025)
@@ -175,7 +175,7 @@ export const SgcProcessWorkflow: React.FC<SgcProcessWorkflowProps> = ({ pasoActu
             Procedimiento Oficial de Licitación de Servicios Externos UCT
           </h2>
           <p className="text-xs text-slate-300 mt-1 max-w-3xl">
-            Diagrama de flujo del Sistema de Gestión de Calidad (SGC) de la Subdirección de Infraestructura - Dirección de Gestión y Desarrollo de Campus.
+            Diagrama de flujo del proceso de licitaciones de la Subdirección de Infraestructura - Dirección de Gestión y Desarrollo de Campus.
           </p>
         </div>
       </div>
@@ -185,7 +185,7 @@ export const SgcProcessWorkflow: React.FC<SgcProcessWorkflowProps> = ({ pasoActu
         {/* Step Selector List */}
         <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
           <h3 className="text-sm font-bold text-slate-800 border-b pb-2 flex items-center justify-between">
-            <span>Flujo del Proceso SGC (15 Pasos)</span>
+            <span>Flujo del Proceso (15 Pasos)</span>
             <span className="text-xs text-slate-400 font-normal">Haga clic en un paso para ver detalles</span>
           </h3>
 
@@ -252,7 +252,7 @@ export const SgcProcessWorkflow: React.FC<SgcProcessWorkflowProps> = ({ pasoActu
             <div className="space-y-2">
               <h4 className="text-xs font-bold text-slate-400 flex items-center gap-1.5">
                 <FileText className="w-3.5 h-3.5 text-indigo-400" />
-                Documentos Salida / Anexos SGC:
+                Documentos Salida / Anexos:
               </h4>
               <div className="flex flex-wrap gap-1.5">
                 {selectedStep.documentos.map(doc => (
@@ -285,7 +285,7 @@ export const SgcProcessWorkflow: React.FC<SgcProcessWorkflowProps> = ({ pasoActu
 
           <div className="border-t border-slate-800 pt-4 flex justify-between items-center text-xs text-slate-400">
             <span>Subdirección de Infraestructura</span>
-            <span>SGC PS-DF-DGDC 0021</span>
+            <span>PS-DF-DGDC 0021</span>
           </div>
         </div>
       </div>

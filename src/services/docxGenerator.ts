@@ -228,7 +228,7 @@ export async function generarDocumentoCuadroComparativoActa(
                 size: 20,
               }),
               new TextRun({
-                text: 'CUADRO COMPARATIVO Y ACTA DE ADJUDICACIÓN (SGC PS-FOR-DGDC0003)\n',
+                text: 'CUADRO COMPARATIVO Y ACTA DE ADJUDICACIÓN (PS-FOR-DGDC0003)\n',
                 bold: true,
                 size: 24,
                 color: '1A365D',
@@ -369,7 +369,7 @@ export async function generarDocumentoCuadroComparativoActa(
 
           new Paragraph({ text: '' }),
           new Paragraph({
-            children: [new TextRun({ text: 'CONSIDERACIONES DE EVALUACIÓN SGC:', bold: true, size: 18 })],
+            children: [new TextRun({ text: 'CONSIDERACIONES DE EVALUACIÓN:', bold: true, size: 18 })],
           }),
           new Paragraph({
             children: [
@@ -388,7 +388,7 @@ export async function generarDocumentoCuadroComparativoActa(
   });
 
   const blob = await Packer.toBlob(doc);
-  const fileName = `SGC_Cuadro_Comparativo_y_Acta_${licitacion.codigoCP}_${licitacion.codigoProyecto}.docx`;
+  const fileName = `Cuadro_Comparativo_y_Acta_${licitacion.codigoCP}_${licitacion.codigoProyecto}.docx`;
   saveAs(blob, fileName);
 }
 

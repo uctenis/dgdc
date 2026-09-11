@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, LogIn, UserPlus, AlertCircle, ChevronDown, Loader2 } from 'lucide-react';
+import { Building2, LogIn, UserPlus, AlertCircle, ChevronDown, Loader2, Mail, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getProveedores } from '../services/firestoreService';
 import type { Proveedor } from '../types';
@@ -8,7 +8,14 @@ import type { Proveedor } from '../types';
 type Mode = 'login' | 'register';
 
 export function LoginPage() {
-  const { loginProveedorWithGoogle, error, clearError } = useAuth();
+  const {
+    loginProveedorWithGoogle,
+    enviarEnlaceIngresoProveedor,
+    esEnlaceDeIngreso,
+    completarLoginConEnlace,
+    error,
+    clearError,
+  } = useAuth();
   const navigate = useNavigate();
 
   const [mode, setMode] = useState<Mode>('login');
@@ -19,6 +26,28 @@ export function LoginPage() {
   const [selectedProveedorId, setSelectedProveedorId] = useState('');
   const [loadingProvs, setLoadingProvs] = useState(false);
   const [provError, setProvError] = useState('');
+
+  // Ingreso sin Google: enlace de un solo uso enviado al correo registrado
+  const isLinkReturn = esEnlaceDeIngreso();
+  const [showLinkForm, setShowLinkForm] = useState(false);
+  const [linkEmail, setLinkEmail] = useState('');
+  const [sendingLink, setSendingLink] = useState(false);
+  const [linkSent, setLinkSent] = useState(false);
+  const [confirmingLink, setConfirmingLink] = useState(isLinkReturn);
+  const [needsEmailForLink, setNeedsEmailForLink] = useState(false);
+  const [confirmEmailInput, setConfirmEmailInput] = useState('');
+
+  useEffect(() => {
+    if (!isLinkReturn) return;
+    completarLoginConEnlace()
+      .then(() => navigate('/portal', { replace: true }))
+      .catch(e => {
+        if ((e as Error)?.message === 'EMAIL_REQUERIDO') setNeedsEmailForLink(true);
+      })
+      .finally(() => setConfirmingLink(false));
+    // Solo debe correr una vez, al montar la página con el enlace en la URL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const switchMode = async (m: Mode) => {
     clearError();
@@ -66,6 +95,122 @@ export function LoginPage() {
       }
     }
   };
+
+  const handleSendLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearError();
+    setLinkSent(false);
+    setSendingLink(true);
+    try {
+      await enviarEnlaceIngresoProveedor(linkEmail);
+      setLinkSent(true);
+    } catch {
+      // error manejado en el contexto
+    } finally {
+      setSendingLink(false);
+    }
+  };
+
+  const handleConfirmEmailForLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearError();
+    setConfirmingLink(true);
+    try {
+      await completarLoginConEnlace(confirmEmailInput);
+      navigate('/portal', { replace: true });
+    } catch {
+      // error manejado en el contexto
+    } finally {
+      setConfirmingLink(false);
+    }
+  };
+
+  // Pantalla especial: el usuario llegó desde el enlace de correo (distinto flujo,
+  // no tiene sentido mostrarle el formulario normal de Google/registro).
+  if (isLinkReturn) {
+    return (
+      <div
+        className="min-h-screen flex flex-col items-center justify-center px-4"
+        style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 55%, #0369a1 100%)' }}
+      >
+        <div
+          className="w-full max-w-md rounded-3xl p-8 space-y-5 text-center"
+          style={{
+            background: 'rgba(255,255,255,0.07)',
+            backdropFilter: 'blur(20px)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            boxShadow: '0 24px 48px -8px rgba(0,0,0,0.5)',
+          }}
+        >
+          <div
+            className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto"
+            style={{ background: 'linear-gradient(135deg, #38bdf8 0%, #1d4ed8 100%)' }}
+          >
+            <Mail className="w-7 h-7 text-white" />
+          </div>
+
+          {needsEmailForLink ? (
+            <>
+              <h1 className="text-lg font-bold text-white">Confirme su correo</h1>
+              <p className="text-sky-300 text-xs">
+                Por seguridad, ingrese el correo al que le enviamos el enlace para completar su ingreso.
+              </p>
+              <form onSubmit={handleConfirmEmailForLink} className="space-y-3 text-left">
+                <input
+                  type="email"
+                  required
+                  value={confirmEmailInput}
+                  onChange={e => setConfirmEmailInput(e.target.value)}
+                  placeholder="correo@empresa.cl"
+                  className="w-full px-4 py-2.5 rounded-xl text-sm text-white outline-none placeholder:text-slate-500"
+                  style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)' }}
+                />
+                {error && (
+                  <div
+                    className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs"
+                    style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5' }}
+                  >
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span>{error}</span>
+                  </div>
+                )}
+                <button
+                  type="submit"
+                  disabled={confirmingLink}
+                  className="w-full py-3 rounded-xl font-bold text-sm text-white transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+                  style={{ background: 'linear-gradient(135deg,#38bdf8,#1d4ed8)' }}
+                >
+                  {confirmingLink ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
+                  Confirmar e Ingresar
+                </button>
+              </form>
+            </>
+          ) : (
+            <>
+              <h1 className="text-lg font-bold text-white">
+                {confirmingLink ? 'Confirmando su acceso...' : 'Procesando enlace'}
+              </h1>
+              {confirmingLink && <Loader2 className="w-6 h-6 animate-spin text-sky-400 mx-auto" />}
+              {error && (
+                <div
+                  className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs text-left"
+                  style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5' }}
+                >
+                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+              {error && (
+                <a href={`${import.meta.env.BASE_URL}portal/login`} className="text-sky-400 text-xs hover:underline">
+                  Volver al ingreso
+                </a>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -164,7 +309,7 @@ export function LoginPage() {
           </div>
 
           {/* Errors */}
-          {(error || provError) && (
+          {(error || provError) && !showLinkForm && (
             <div
               className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs"
               style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5' }}
@@ -200,6 +345,71 @@ export function LoginPage() {
             Su cuenta será vinculada a la empresa que seleccione. Solo podrá ver las licitaciones a las que haya sido invitado.
           </p>
         )}
+
+        {/* Ingreso alternativo sin cuenta Google */}
+        <div className="pt-4 border-t border-white/10">
+          {!showLinkForm ? (
+            <button
+              type="button"
+              onClick={() => { setShowLinkForm(true); clearError(); setLinkSent(false); }}
+              className="w-full text-center text-xs text-slate-400 hover:text-sky-300 transition flex items-center justify-center gap-1.5"
+            >
+              <Mail className="w-3.5 h-3.5" />
+              ¿No tiene cuenta Google? Ingresar con enlace por correo
+            </button>
+          ) : linkSent ? (
+            <div
+              className="flex items-start gap-2 px-3 py-3 rounded-xl text-xs"
+              style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.25)', color: '#6ee7b7' }}
+            >
+              <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>Enviamos un enlace de ingreso a <strong>{linkEmail}</strong>. Revise su bandeja (y spam) y haga clic para entrar — el enlace expira tras un tiempo, si no llega puede solicitar uno nuevo.</span>
+            </div>
+          ) : (
+            <form onSubmit={handleSendLink} className="space-y-2.5">
+              <label className="block text-xs font-semibold text-sky-300">
+                Correo registrado de su empresa
+              </label>
+              <input
+                type="email"
+                required
+                value={linkEmail}
+                onChange={e => setLinkEmail(e.target.value)}
+                placeholder="correo@empresa.cl"
+                className="w-full px-4 py-2.5 rounded-xl text-sm text-white outline-none placeholder:text-slate-500"
+                style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)' }}
+              />
+              {error && (
+                <div
+                  className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs"
+                  style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#fca5a5' }}
+                >
+                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setShowLinkForm(false); clearError(); }}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white transition"
+                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={sendingLink}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white transition flex items-center justify-center gap-1.5 disabled:opacity-60"
+                  style={{ background: 'linear-gradient(135deg,#38bdf8,#1d4ed8)' }}
+                >
+                  {sendingLink ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
+                  Enviar Enlace
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
       </div>
 
       {/* Footer */}

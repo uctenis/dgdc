@@ -1,28 +1,39 @@
 import { useRef, useState } from 'react';
-import { X, FileText, Printer, Download, Loader2, ShieldCheck, ScrollText, AlertTriangle, FileType2 } from 'lucide-react';
-import type { ProyectoMaestro } from '../types';
+import { X, FileText, Printer, Download, Loader2, ShieldCheck, ScrollText, AlertTriangle, FileType2, FolderInput, CheckCircle2, RefreshCw } from 'lucide-react';
+import type { ProyectoMaestro, LicitacionProyecto } from '../types';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
-import { updateProyectoMaestro } from '../services/firestoreService';
+import { updateProyectoMaestro, updateLicitacion } from '../services/firestoreService';
 import { generarPdfDesdeElemento } from '../services/pdfGenerator';
+import { uploadLicitacionDocument } from '../services/storageService';
 import { generarDocumentoSeccionesWord } from '../services/docxGenerator';
-import { getPlantillaBasesPorTipoObra, obtenerFamiliaPorTipoObra, FAMILIA_BASES_LABEL, aplicarDatosAPlantilla, resolverContenidoGarantias, resolverContenidoModalidad, sugerirPoliticaGarantias, type SeccionBases, type ModalidadContrato } from '../data/basesTemplateData';
+import { getPlantillaBasesPorTipoObra, obtenerFamiliaPorTipoObra, FAMILIA_BASES_LABEL, aplicarDatosAPlantilla, aplicarNormativaPorRubro, resolverContenidoGarantias, resolverContenidoModalidad, sugerirPoliticaGarantias, type SeccionBases, type ModalidadContrato } from '../data/basesTemplateData';
+import { obtenerClausulaNormativaPorRubro } from '../data/normativaPorRubro';
 import { useAuth } from '../context/AuthContext';
+import { obtenerCampusPorSigla } from '../data/campusData';
 
 interface BasesLicitacionModalProps {
   proyecto: ProyectoMaestro;
+  /** Si la licitación ya existe, permite adjuntar el documento final directamente al legajo de antecedentes (checklist pre-invitación). */
+  licitacion?: LicitacionProyecto;
   onClose: () => void;
 }
 
-export function BasesLicitacionModal({ proyecto, onClose }: BasesLicitacionModalProps) {
+export function BasesLicitacionModal({ proyecto, licitacion, onClose }: BasesLicitacionModalProps) {
   const { user, profile, isAdmin } = useAuth();
   const docRef = useRef<HTMLDivElement>(null);
   const [guardando, setGuardando] = useState(false);
   const [generandoPdf, setGenerandoPdf] = useState(false);
+  const [guardandoLegajo, setGuardandoLegajo] = useState(false);
+  const [legajoGuardado, setLegajoGuardado] = useState(false);
 
   const datosMerge: Record<string, string> = {
     nombreProyecto: proyecto.nombre || '',
     campus: proyecto.campusNombre || proyecto.campusSigla || '—',
     edificio: proyecto.edificioSigla ? ` · Edificio ${proyecto.edificioSigla}` : '',
+    direccionCampus: (() => {
+      const dir = obtenerCampusPorSigla(proyecto.campusSigla || '')?.direccion;
+      return dir ? `, ${dir}` : '';
+    })(),
     montoEstimado: formatoMonedaCLP(proyecto.valorAprox || 0),
     plazoDias: proyecto.plazoEjecucionDias ? `${proyecto.plazoEjecucionDias}` : '[definir]',
     tipoObra: proyecto.tipoObra || '[definir]',
@@ -31,19 +42,36 @@ export function BasesLicitacionModal({ proyecto, onClose }: BasesLicitacionModal
   const familiaBases = obtenerFamiliaPorTipoObra(proyecto.tipoObra);
   const politicaGarantias = proyecto.politicaGarantias || sugerirPoliticaGarantias(proyecto.valorAprox || 0);
   const modalidadInicial: ModalidadContrato = proyecto.modalidadContrato || 'Suma Alzada';
+  const clausulaRubro = obtenerClausulaNormativaPorRubro(proyecto.rubro);
+
+  const construirSeccionesDesdeCero = (modalidadActual: ModalidadContrato): SeccionBases[] =>
+    aplicarNormativaPorRubro(
+      getPlantillaBasesPorTipoObra(proyecto.tipoObra).map(s => {
+        if (s.id === 'garantias') return { ...s, contenido: aplicarDatosAPlantilla(resolverContenidoGarantias(politicaGarantias, s.contenido), datosMerge) };
+        if (s.id === 'modalidad') return { ...s, contenido: resolverContenidoModalidad(modalidadActual) };
+        return { ...s, contenido: aplicarDatosAPlantilla(s.contenido, datosMerge) };
+      }),
+      clausulaRubro,
+      proyecto.rubro
+    );
+
   const [secciones, setSecciones] = useState<SeccionBases[]>(
-    proyecto.bases?.secciones ||
-    getPlantillaBasesPorTipoObra(proyecto.tipoObra).map(s => {
-      if (s.id === 'garantias') return { ...s, contenido: aplicarDatosAPlantilla(resolverContenidoGarantias(politicaGarantias, s.contenido), datosMerge) };
-      if (s.id === 'modalidad') return { ...s, contenido: resolverContenidoModalidad(modalidadInicial) };
-      return { ...s, contenido: aplicarDatosAPlantilla(s.contenido, datosMerge) };
-    })
+    proyecto.bases?.secciones || construirSeccionesDesdeCero(modalidadInicial)
   );
   const [modalidad, setModalidad] = useState<ModalidadContrato>(modalidadInicial);
   const [estado, setEstado] = useState<NonNullable<ProyectoMaestro['bases']>['estado']>(proyecto.bases?.estado || 'Borrador');
 
   const puedeEditarContenido = estado === 'Borrador';
   const puedeGestionarEstado = isAdmin || profile?.role === 'admin';
+
+  // Bases ya generadas antes de que existiera el anexo normativo por rubro (o antes de
+  // cualquier ajuste posterior a la plantilla): permite regenerarlas desde cero sin
+  // perder la posibilidad de revisar el resultado antes de guardar.
+  const tieneAnexoNormativoRubro = secciones.some(s => s.id === 'normativa-rubro');
+  const regenerarDesdeePlantilla = () => {
+    if (!confirm('Esto reemplazará TODO el contenido actual (incluyendo cualquier edición manual) por una versión nueva generada desde la plantilla vigente, con la normativa del rubro incorporada. ¿Continuar?')) return;
+    setSecciones(construirSeccionesDesdeCero(modalidad));
+  };
 
   const actualizarSeccion = (id: string, contenido: string) => {
     setSecciones(prev => prev.map(s => (s.id === id ? { ...s, contenido } : s)));
@@ -91,6 +119,31 @@ export function BasesLicitacionModal({ proyecto, onClose }: BasesLicitacionModal
     }
   };
 
+  const guardarEnLegajo = async () => {
+    if (!docRef.current || !licitacion) return;
+    setGuardandoLegajo(true);
+    setLegajoGuardado(false);
+    try {
+      const file = await generarPdfDesdeElemento(docRef.current, `Bases_${proyecto.codigoProyecto || proyecto.id}.pdf`);
+      const archivoURL = await uploadLicitacionDocument(licitacion.id, 'antecedentes', file);
+      const nuevoDoc = {
+        id: 'doc-bases-' + Date.now(),
+        nombre: `Bases Administrativas y Técnicas — v${(proyecto.bases?.version || 0) + 1}`,
+        tipo: 'Bases Administrativas' as const,
+        archivoNombre: file.name,
+        archivoURL,
+        fechaCarga: new Date().toISOString().split('T')[0],
+        cargadoPor: user?.email || 'Subdirección Infraestructura',
+      };
+      await updateLicitacion(licitacion.id, {
+        antecedentesTecnicos: [...(licitacion.antecedentesTecnicos || []), nuevoDoc],
+      });
+      setLegajoGuardado(true);
+    } finally {
+      setGuardandoLegajo(false);
+    }
+  };
+
   const [generandoWord, setGenerandoWord] = useState(false);
   const exportarWord = async () => {
     setGenerandoWord(true);
@@ -122,6 +175,17 @@ export function BasesLicitacionModal({ proyecto, onClose }: BasesLicitacionModal
                 Bases pre-cargadas desde la plantilla tipo: <strong>{FAMILIA_BASES_LABEL[familiaBases]}</strong> · Garantías: <strong>{politicaGarantias}</strong>
                 {!proyecto.tipoObra && ' (el proyecto no tiene Tipo de Obra asignado — se usó la plantilla genérica; asígnelo en la Ficha o Cartera para una plantilla más precisa)'}
                 {!proyecto.politicaGarantias && ' (política de garantías sugerida automáticamente por el monto — puede ajustarla editando el proyecto)'}
+                {clausulaRubro
+                  ? <> · Normativa sectorial de <strong>{proyecto.rubro}</strong> incorporada automáticamente (sección 12 y requisitos de oferentes).</>
+                  : proyecto.rubro
+                    ? ` (el rubro "${proyecto.rubro}" aún no tiene un anexo normativo específico en el sistema; revise manualmente la normativa sectorial aplicable)`
+                    : ' (el proyecto no tiene Rubro asignado — asígnelo en la Ficha o Cartera para incorporar automáticamente la normativa sectorial específica)'}
+              </p>
+            )}
+            {proyecto.bases && !tieneAnexoNormativoRubro && clausulaRubro && (
+              <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mt-1.5 flex items-center gap-1.5 w-fit">
+                <AlertTriangle className="w-3 h-3 shrink-0" />
+                Estas bases se generaron antes de incorporar la normativa específica de <strong className="mx-1">{proyecto.rubro}</strong> — use "Regenerar desde Plantilla" abajo para incluirla.
               </p>
             )}
           </div>
@@ -226,6 +290,17 @@ export function BasesLicitacionModal({ proyecto, onClose }: BasesLicitacionModal
               {guardando ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScrollText className="w-4 h-4" />}
               Guardar borrador
             </button>
+            {proyecto.bases && (
+              <button
+                onClick={regenerarDesdeePlantilla}
+                disabled={!puedeEditarContenido}
+                title={!puedeEditarContenido ? 'Reabra las bases como Borrador para poder regenerarlas' : undefined}
+                className="px-4 py-2.5 bg-white hover:bg-slate-50 disabled:opacity-40 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold flex items-center gap-2"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Regenerar desde Plantilla
+              </button>
+            )}
             <button onClick={exportarPdf} disabled={generandoPdf} className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-2">
               {generandoPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
               Exportar PDF
@@ -237,6 +312,12 @@ export function BasesLicitacionModal({ proyecto, onClose }: BasesLicitacionModal
             <button onClick={() => window.print()} className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-2">
               <Printer className="w-4 h-4" /> Imprimir
             </button>
+            {licitacion && (
+              <button onClick={guardarEnLegajo} disabled={guardandoLegajo} className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-2">
+                {guardandoLegajo ? <Loader2 className="w-4 h-4 animate-spin" /> : legajoGuardado ? <CheckCircle2 className="w-4 h-4" /> : <FolderInput className="w-4 h-4" />}
+                {legajoGuardado ? 'Guardado en el Legajo' : 'Guardar en Legajo de la Licitación'}
+              </button>
+            )}
             {estado === 'Aprobada' && (
               <span className="flex items-center gap-1.5 text-emerald-700 text-xs font-bold px-2">
                 <ShieldCheck className="w-4 h-4" /> Bases aprobadas — listas para convocar

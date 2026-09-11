@@ -78,7 +78,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
           : undefined,
         plazoAdjudicadoDias: cotizacionGanadoraSel?.plazoDias,
       });
-      alert('¡Acta de Evaluación y Adjudicación SGC guardada exitosamente!');
+      alert('¡Acta de Evaluación y Adjudicación guardada exitosamente!');
       setModoEdicion(false);
     } finally {
       setIsSaving(false);
@@ -289,7 +289,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-extrabold uppercase bg-sky-100 text-sky-900 px-2.5 py-0.5 rounded flex items-center gap-1">
                 <FileCheck2 className="w-3.5 h-3.5 text-sky-700" />
-                Documento SGC PS-FOR-DGDC 0003 (Versión 03) • Formato 2 Páginas
+                Documento PS-FOR-DGDC 0003 (Versión 03) • Formato 2 Páginas
               </span>
               <span className="text-[10px] text-slate-500 font-bold">CP: {licitacion.codigoCP}</span>
               {requiereFirmaVicerrectora ? (
@@ -303,7 +303,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
               )}
             </div>
             <h3 className="text-base font-bold text-slate-800 mt-1">
-              Acta de Evaluación y Adjudicación Institucional SGC
+              Acta de Evaluación y Adjudicación Institucional
             </h3>
             <p className="text-xs text-slate-500">{licitacion.codigoProyecto} - {licitacion.nombreProyecto.toLocaleUpperCase('es-CL')}</p>
           </div>
@@ -347,12 +347,12 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
           </div>
         </div>
 
-        {/* CUERPO DEL DOCUMENTO SGC (IMPRIMIBLE EN 2 HOJAS) */}
+        {/* CUERPO DEL DOCUMENTO (IMPRIMIBLE EN 2 HOJAS) */}
         <div className="flex-1 overflow-y-auto space-y-6 pr-2 printable-sgc-acta">
 
           {/* ==================== HOJA 1 / 2 ==================== */}
           <div className="space-y-5 bg-white p-4 rounded-xl border border-slate-300">
-            {/* Encabezado Oficial SGC - HOJA 1 */}
+            {/* Encabezado Oficial - HOJA 1 */}
             <div className="border border-slate-900 rounded-xl overflow-hidden text-slate-900 bg-white">
               <div className="grid grid-cols-12 border-b border-slate-900 divide-x divide-slate-900">
                 <div className="col-span-3 p-3 flex flex-col justify-center items-center bg-slate-50">
@@ -367,7 +367,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
                   </h4>
                 </div>
                 <div className="col-span-3 p-2 text-[9px] space-y-0.5 bg-slate-50 font-mono text-slate-900">
-                  <div><strong>Código:</strong> SGC PS-FOR-DGDC 0003</div>
+                  <div><strong>Código:</strong> PS-FOR-DGDC 0003</div>
                   <div><strong>Versión:</strong> 03</div>
                   <div><strong>Fecha vigencia:</strong> 23-08-2024</div>
                   <div><strong>Página:</strong> 1 de 2</div>
@@ -407,7 +407,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
                 <h4 className="font-extrabold text-slate-900 text-xs uppercase">
                   1. Cuadro Comparativo de Ofertas
                 </h4>
-                <span className="text-[10px] text-slate-600 font-medium">Ponderaciones SGC: Económica 55% | Técnica 35% | Sustentabilidad 10%</span>
+                <span className="text-[10px] text-slate-600 font-medium">Ponderaciones: Económica 55% | Técnica 35% | Sustentabilidad 10%</span>
               </div>
 
               {evaluaciones.length === 0 ? (
@@ -516,7 +516,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
 
             {/* Pie de Página HOJA 1 */}
             <div className="border-t border-slate-900 pt-2 flex items-center justify-between text-[9px] text-slate-600 font-medium">
-              <span>SGC PS-FOR-DGDC 0003 • Dirección de Gestión de Desarrollo de Campus</span>
+              <span>PS-FOR-DGDC 0003 • Dirección de Gestión de Desarrollo de Campus</span>
               <span>Página 1 de 2</span>
             </div>
           </div>
@@ -524,7 +524,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
           {/* ==================== HOJA 2 / 2 ==================== */}
           <div className="space-y-5 bg-white p-4 rounded-xl border border-slate-300 page-break">
             
-            {/* Encabezado Oficial SGC - HOJA 2 */}
+            {/* Encabezado Oficial - HOJA 2 */}
             <div className="border border-slate-900 rounded-xl overflow-hidden text-slate-900 bg-white">
               <div className="grid grid-cols-12 border-b border-slate-900 divide-x divide-slate-900">
                 <div className="col-span-3 p-3 flex flex-col justify-center items-center bg-slate-50">
@@ -539,7 +539,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
                   </h4>
                 </div>
                 <div className="col-span-3 p-2 text-[9px] space-y-0.5 bg-slate-50 font-mono text-slate-900">
-                  <div><strong>Código:</strong> SGC PS-FOR-DGDC 0003</div>
+                  <div><strong>Código:</strong> PS-FOR-DGDC 0003</div>
                   <div><strong>Versión:</strong> 03</div>
                   <div><strong>Fecha vigencia:</strong> 23-08-2024</div>
                   <div><strong>Página:</strong> 2 de 2</div>
@@ -700,7 +700,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
             </div>
 
             <div className="flex items-center justify-between text-[9px] text-slate-500 font-medium pt-2">
-              <span>SGC PS-FOR-DGDC 0003 • Dirección de Gestión de Desarrollo de Campus</span>
+              <span>PS-FOR-DGDC 0003 • Dirección de Gestión de Desarrollo de Campus</span>
               <span>Página 2 de 2</span>
             </div>
           </div>
