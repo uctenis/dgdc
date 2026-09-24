@@ -33,29 +33,60 @@ function fetchConTimeout(url: string, opciones: RequestInit, timeoutMs = TIMEOUT
 }
 
 // Si el modelo configurado está saturado (503/429) o no responde a tiempo, se reintenta con estos
-// modelos alternativos antes de fallar — Google devuelve 503 "high demand" con frecuencia.
-const MODELOS_GEMINI_RESPALDO = ['gemini-3.5-flash', 'gemini-3.7-flash'];
+// modelos alternativos. En el nivel gratuito Google devuelve 503 "high demand" con frecuencia y de
+// forma intermitente (el mismo modelo falla y a los segundos responde), así que se hacen varias
+// rondas por todos los modelos con pausas crecientes antes de rendirse.
+const MODELOS_GEMINI_RESPALDO = ['gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
+const PAUSAS_ENTRE_RONDAS_MS = [3000, 8000, 15000];
+// Tiempo máximo total de reintentos: pasado esto se informa el error en vez de dejar esperando.
+const PRESUPUESTO_REINTENTOS_MS = 150000;
 
 // Los modelos Gemini 3.x "piensan" antes de responder y ese razonamiento consume maxOutputTokens:
 // con el límite justo, la respuesta llegaba cortada (finishReason MAX_TOKENS). Se suma este margen.
 const MARGEN_TOKENS_RAZONAMIENTO = 6000;
 
+const esperar = (ms: number) => new Promise(r => setTimeout(r, ms));
+
 async function llamarGemini(prompt: string, maxOutputTokens: number, timeoutMs?: number): Promise<string> {
   const principal = import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.6-flash';
-  const modelos = [principal, ...MODELOS_GEMINI_RESPALDO.filter(m => m !== principal)];
+  let modelos = [principal, ...MODELOS_GEMINI_RESPALDO.filter(m => m !== principal)];
+  const inicio = Date.now();
   let ultimoError: unknown;
-  for (const model of modelos) {
-    try {
-      return await llamarGeminiModelo(model, prompt, maxOutputTokens + MARGEN_TOKENS_RAZONAMIENTO, timeoutMs);
-    } catch (err) {
-      ultimoError = err;
-      const msg = err instanceof Error ? err.message : '';
-      const reintentable = msg.includes('AI_TIMEOUT') || /AI_REQUEST_FAILED: (503|429|500|404)/.test(msg);
-      if (!reintentable) throw err;
-      console.warn(`Gemini ${model} no disponible, probando con el siguiente modelo:`, msg.slice(0, 200));
+  for (let ronda = 0; ronda <= PAUSAS_ENTRE_RONDAS_MS.length; ronda++) {
+    if (ronda > 0) {
+      if (Date.now() - inicio > PRESUPUESTO_REINTENTOS_MS) break;
+      await esperar(PAUSAS_ENTRE_RONDAS_MS[ronda - 1]);
     }
+    for (const model of [...modelos]) {
+      if (Date.now() - inicio > PRESUPUESTO_REINTENTOS_MS) break;
+      try {
+        return await llamarGeminiModelo(model, prompt, maxOutputTokens + MARGEN_TOKENS_RAZONAMIENTO, timeoutMs);
+      } catch (err) {
+        ultimoError = err;
+        const msg = err instanceof Error ? err.message : '';
+        // Modelo inexistente para esta clave: se saca de la rotación.
+        if (/AI_REQUEST_FAILED: 404/.test(msg)) { modelos = modelos.filter(m => m !== model); continue; }
+        const reintentable = msg.includes('AI_TIMEOUT') || msg.includes('AI_EMPTY_RESPONSE') || /AI_REQUEST_FAILED: (503|429|500|502|504)/.test(msg);
+        if (!reintentable) throw err;
+        console.warn(`Gemini ${model} no disponible (ronda ${ronda + 1}), probando otro:`, msg.slice(0, 120));
+      }
+    }
+    if (!modelos.length) break;
   }
   throw ultimoError;
+}
+
+/** Mensaje claro para el usuario según el error de IA (mismo texto en todas las pantallas). */
+export function mensajeErrorIA(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err || '');
+  if (msg.includes('AI_API_KEY_NOT_CONFIGURED')) return 'La IA no está configurada en este ambiente (falta la clave de Gemini).';
+  if (/AI_REQUEST_FAILED: (503|500|502|504)/.test(msg) || msg.includes('AI_TIMEOUT'))
+    return 'Los servidores de IA de Google están saturados en este momento (el sistema reintentó varias veces con distintos modelos). Intente nuevamente en unos minutos.';
+  if (/AI_REQUEST_FAILED: 429/.test(msg)) return 'Se alcanzó el límite de uso gratuito de la IA por ahora. Espere unos minutos (o hasta mañana si es el límite diario) e intente nuevamente.';
+  if (/AI_REQUEST_FAILED: (400|401|403)/.test(msg)) return 'La clave de IA no es válida o no tiene permiso. Avise al administrador del sistema.';
+  if (msg.includes('AI_NETWORK_ERROR')) return 'No se pudo conectar con la IA. Revise su conexión a internet (o un firewall/proxy que bloquee la llamada).';
+  if (msg.includes('AI_INVALID_JSON')) return 'La IA respondió en un formato inesperado. Intente nuevamente.';
+  return 'No se pudo obtener la respuesta de la IA. Intente nuevamente.';
 }
 
 // Dos formas de acceder a Gemini con una API key: AI Studio (generativelanguage.googleapis.com) o

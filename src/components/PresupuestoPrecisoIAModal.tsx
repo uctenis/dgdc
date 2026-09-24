@@ -2,8 +2,7 @@ import { useEffect, useState } from 'react';
 import { X, Sparkles, Loader2, AlertTriangle, ArrowLeft, PlusCircle } from 'lucide-react';
 import {
   sugerirPreguntasTecnicasConIA, sugerirItemizadoPrecisoConIA,
-  type PreguntaTecnicaIA, type ItemItemizadoPrecisoSugeridoIA,
-} from '../services/aiService';
+  type PreguntaTecnicaIA, type ItemItemizadoPrecisoSugeridoIA, mensajeErrorIA } from '../services/aiService';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 
 interface Props {
@@ -14,13 +13,7 @@ interface Props {
 
 type Fase = 'cargando_preguntas' | 'formulario' | 'generando' | 'resultado';
 
-const mensajeError = (err: unknown): string => {
-  const msg = err instanceof Error ? err.message : '';
-  if (msg.includes('AI_API_KEY_NOT_CONFIGURED')) return 'La IA no está configurada en este ambiente (falta VITE_GEMINI_API_KEY o VITE_OPENAI_API_KEY).';
-  if (msg.includes('AI_TIMEOUT')) return 'La IA no respondió a tiempo (60s). Intente nuevamente — si persiste, puede ser un problema temporal del proveedor.';
-  if (msg.includes('AI_NETWORK_ERROR')) return 'No se pudo conectar con el proveedor de IA (revise su conexión a internet o un firewall/proxy que bloquee la llamada).';
-  return 'No se pudo completar la operación. Intente nuevamente.';
-};
+const mensajeError = mensajeErrorIA;
 
 export function PresupuestoPrecisoIAModal({ proyecto, onClose, onAgregarPartidas }: Props) {
   const [fase, setFase] = useState<Fase>('cargando_preguntas');

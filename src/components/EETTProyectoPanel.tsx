@@ -6,8 +6,7 @@ import {
   generarGeneralidadesEETTConIA,
   generarEspecificacionesPartidasConIA,
   isAIConfigured,
-  type ContextoProyectoEETT,
-} from '../services/aiService';
+  type ContextoProyectoEETT, mensajeErrorIA } from '../services/aiService';
 import { generarDocumentoSeccionesWord } from '../services/docxGenerator';
 import { agruparPorFase } from '../utils/itemizadoOrganizer';
 import { obtenerCampusPorSigla } from '../data/campusData';
@@ -164,12 +163,7 @@ export function EETTProyectoPanel({ proyecto }: Props) {
           if (sinRespuesta.length) errores.push(`Sin respuesta para: ${sinRespuesta.map(p => `${p.item} ${p.descripcion}`).join('; ')}.`);
         } catch (err) {
           console.error('Error generando EETT del lote:', err);
-          const msg = err instanceof Error ? err.message : '';
-          errores.push(
-            /AI_REQUEST_FAILED: (503|429)/.test(msg) || msg.includes('AI_TIMEOUT')
-              ? `${lote.fase}: la IA está saturada o no respondió a tiempo.`
-              : `${lote.fase}: no se pudo generar.`
-          );
+          errores.push(`${lote.fase}: ${mensajeErrorIA(err)}`);
         }
       }
     } finally {

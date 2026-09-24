@@ -4,7 +4,7 @@ import { FASES_ITEMIZADO } from '../types';
 import type { ItemItemizadoProyecto, ProyectoMaestro, ConfiguracionFirmas } from '../types';
 import { updateProyectoMaestro } from '../services/firestoreService';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
-import { sugerirItemizadoConIA, isAIConfigured, type ItemItemizadoPrecisoSugeridoIA } from '../services/aiService';
+import { sugerirItemizadoConIA, isAIConfigured, type ItemItemizadoPrecisoSugeridoIA, mensajeErrorIA } from '../services/aiService';
 import { formatearEnteroConMiles, desformatearEntero, formatearNumeroConMiles, desformatearNumero } from '../utils/rutUtils';
 import { agruparPorFase, renumerarPartidasCorrelativas, SIN_FASE } from '../utils/itemizadoOrganizer';
 import { generarItemizadoExcel } from '../services/itemizadoExporter';
@@ -233,16 +233,7 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
       setHayCambios(true);
     } catch (err) {
       console.error('Error sugiriendo itemizado con IA:', err);
-      const msg = err instanceof Error ? err.message : '';
-      setErrorIA(
-        msg.includes('AI_API_KEY_NOT_CONFIGURED')
-          ? 'La sugerencia por IA no está configurada en este ambiente (falta VITE_GEMINI_API_KEY o VITE_OPENAI_API_KEY).'
-          : msg.includes('AI_TIMEOUT')
-          ? 'La IA no respondió a tiempo (60s). Intente nuevamente — si persiste, puede ser un problema temporal del proveedor (pruebe más tarde, o configure la otra IA como respaldo — Gemini/OpenAI).'
-          : msg.includes('AI_NETWORK_ERROR')
-          ? 'No se pudo conectar con el proveedor de IA (revise su conexión a internet o un firewall/proxy que bloquee la llamada).'
-          : 'No se pudo obtener la sugerencia de la IA. Intente nuevamente.'
-      );
+      setErrorIA(mensajeErrorIA(err));
     } finally {
       setSugiriendo(false);
     }
@@ -383,6 +374,13 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
           </div>
         )}
       </div>
+
+      {sugiriendo && (
+        <div className="flex items-start gap-2 bg-violet-50 border border-violet-200 rounded-lg p-2.5 text-[11px] text-violet-900">
+          <Loader2 className="w-3.5 h-3.5 shrink-0 mt-0.5 animate-spin" />
+          <span>La IA está proponiendo partidas. Si los servidores de Google están saturados, el sistema reintenta solo con otros modelos: puede tardar hasta 2–3 minutos.</span>
+        </div>
+      )}
 
       {errorIA && (
         <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-[11px] text-amber-900">

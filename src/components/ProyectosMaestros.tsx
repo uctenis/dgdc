@@ -15,7 +15,7 @@ import {
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
 import { corregirOrtografiaEspanol, corregirTextoAvanzado, normalizarNombreProyecto, ATRIBUTOS_ORTOGRAFIA_ES } from '../utils/spellCorrector';
-import { mejorarDescripcionProyectoConIA, isAIConfigured } from '../services/aiService';
+import { mejorarDescripcionProyectoConIA, isAIConfigured, mensajeErrorIA } from '../services/aiService';
 import { getCampusList, obtenerEdificiosDeCampus, obtenerCampusPorSigla } from '../data/campusData';
 import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
 import { getCentrosCostoList } from '../data/centrosCostoData';
@@ -135,13 +135,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
       setDescripcionPropuestaIA(propuesta);
     } catch (err) {
       console.error('Error mejorando la descripción con IA:', err);
-      const msg = err instanceof Error ? err.message : '';
-      setErrorDescripcionIA(
-        msg.includes('AI_TIMEOUT') ? 'La IA no respondió a tiempo. Intente nuevamente.'
-          : msg.includes('AI_NETWORK_ERROR') ? 'No se pudo conectar con la IA (revise su conexión).'
-          : /AI_REQUEST_FAILED: (503|429)/.test(msg) ? 'El servicio de IA está saturado en este momento. Intente de nuevo en un minuto.'
-          : `No se pudo mejorar la descripción. Intente nuevamente. (${msg.slice(0, 120)})`
-      );
+      setErrorDescripcionIA(mensajeErrorIA(err));
     } finally {
       setMejorandoDescripcion(false);
     }

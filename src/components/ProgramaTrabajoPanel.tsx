@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { CalendarRange, Sparkles, Loader2, AlertTriangle } from 'lucide-react';
 import type { ProyectoMaestro } from '../types';
 import { updateProyectoMaestro } from '../services/firestoreService';
-import { sugerirProgramaTrabajoConIA, isAIConfigured } from '../services/aiService';
+import { sugerirProgramaTrabajoConIA, isAIConfigured, mensajeErrorIA } from '../services/aiService';
 import { agruparPorFase, SIN_FASE } from '../utils/itemizadoOrganizer';
 import { calcularFechaTerminoEfectiva } from '../utils/avanceFinanciero';
 
@@ -139,14 +139,7 @@ export function ProgramaTrabajoPanel({ proyecto: proyectoBase, fechaInicioRespal
       setHayCambios(true);
     } catch (err) {
       console.error('Error generando el programa de trabajo con IA:', err);
-      const msg = err instanceof Error ? err.message : '';
-      setError(
-        msg.includes('AI_API_KEY_NOT_CONFIGURED')
-          ? 'La sugerencia por IA no está configurada en este ambiente (falta VITE_GEMINI_API_KEY o VITE_OPENAI_API_KEY).'
-          : msg.includes('AI_TIMEOUT')
-          ? 'La IA no respondió a tiempo. Intente nuevamente.'
-          : 'No se pudo generar el programa de trabajo. Intente nuevamente.'
-      );
+      setError(mensajeErrorIA(err));
     } finally {
       setGenerando(false);
     }
