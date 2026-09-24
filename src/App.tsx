@@ -21,6 +21,7 @@ import { EVENTO_CONFIG_ACTUALIZADA } from './services/configCompartida';
 import { reloadResponsables } from './data/responsablesData';
 import { EETTDemo } from './pages/EETTDemo';
 import { CaratulaDemo } from './pages/CaratulaDemo';
+import { ProveedoresDemo } from './pages/ProveedoresDemo';
 import { InternalLoginPage } from './pages/InternalLoginPage';
 import { PortalBloqueoProveedor } from './pages/PortalBloqueoProveedor';
 import { PortalInvitacionPage } from './pages/PortalInvitacionPage';
@@ -446,6 +447,7 @@ export function App() {
           {import.meta.env.DEV && <Route path="/demo/bandeja-op" element={<BandejaOPDemo />} />}
           {import.meta.env.DEV && <Route path="/demo/eett" element={<EETTDemo />} />}
           {import.meta.env.DEV && <Route path="/demo/caratula" element={<CaratulaDemo />} />}
+          {import.meta.env.DEV && <Route path="/demo/proveedores" element={<ProveedoresDemo />} />}
           {/* Único punto de entrada: el enlace de la invitación. Exige sesión y verifica la invitación. */}
           <Route path="/portal/licitacion/:id" element={<PortalInvitacionPage />} />
           {/* Cualquier otra ruta del portal: sin dashboard ni listados, solo la pantalla neutra */}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { DatosContratistaForm } from './DatosContratistaForm';
 import { datosContratistaVacios } from '../utils/datosContratista';
 import type { DatosContratista } from '../types';
@@ -11,6 +11,7 @@ import { parseProveedorDesdeCotizacion } from '../utils/providerDocumentParser';
 
 import { getRubrosList } from '../data/rubrosData';
 import { ReclasificarRubrosModal } from './ReclasificarRubrosModal';
+import { datosEsencialesFaltantes } from '../utils/proveedorCompleto';
 
 /** Separa un campo de contacto (email o teléfono) que puede traer varios valores juntos (", " / ";" / "/" / salto de línea). */
 function splitContactos(valor?: string): string[] {
@@ -38,6 +39,7 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filtroRubro, setFiltroRubro] = useState('Todos');
+  const [soloIncompletos, setSoloIncompletos] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedHistorialProv, setSelectedHistorialProv] = useState<Proveedor | null>(null);
@@ -84,6 +86,16 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
     setGuardandoProveedor(false);
     setShowModal(true);
   };
+
+  // La ventana se cierra con Esc, con la X o haciendo clic fuera (salvo mientras guarda).
+  const cerrarModal = () => { if (!guardandoProveedor) setShowModal(false); };
+  useEffect(() => {
+    if (!showModal) return;
+    const alPresionar = (e: KeyboardEvent) => { if (e.key === 'Escape') cerrarModal(); };
+    window.addEventListener('keydown', alPresionar);
+    return () => window.removeEventListener('keydown', alPresionar);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showModal, guardandoProveedor]);
 
   const handleOpenEditModal = (prov: Proveedor) => {
     setEditingId(prov.id);
@@ -197,7 +209,7 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
       p.razonSocial.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.rut.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.nombreContacto.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesRubro = filtroRubro === 'Todos' || p.rubro === filtroRubro;
+    const matchesRubro = (filtroRubro === 'Todos' || p.rubro === filtroRubro) && (!soloIncompletos || datosEsencialesFaltantes(p).length > 0);
     return matchesSearch && matchesRubro;
   });
 
@@ -261,7 +273,7 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
           />
         </div>
 
-        <div>
+        <div className="space-y-1.5">
           <select
             value={filtroRubro}
             onChange={e => setFiltroRubro(e.target.value)}
@@ -274,6 +286,10 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
               </option>
             ))}
           </select>
+          <label className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-800 cursor-pointer">
+            <input type="checkbox" checked={soloIncompletos} onChange={e => setSoloIncompletos(e.target.checked)} />
+            Solo con datos faltantes ({proveedores.filter(p => datosEsencialesFaltantes(p).length > 0).length})
+          </label>
         </div>
       </div>
 
@@ -310,6 +326,18 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
                   </button>
                 </div>
               </div>
+
+              {datosEsencialesFaltantes(prov).length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenEditModal(prov)}
+                  title="Completar datos"
+                  className="mt-1.5 w-full text-left flex items-start gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-900 hover:bg-amber-100"
+                >
+                  <AlertCircle className="w-3 h-3 shrink-0 mt-px" />
+                  <span>Falta: {datosEsencialesFaltantes(prov).join(', ')}</span>
+                </button>
+              )}
 
               {/* Rubro tag */}
               <div className="mt-1.5">
@@ -414,13 +442,41 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
 
       {/* Modal Add / Edit */}
       {showModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl max-h-[92vh] overflow-y-auto w-full p-6 shadow-2xl space-y-4">
-            <h3 className="text-lg font-bold text-slate-800 border-b pb-3">
-              {editingId ? 'Editar Proveedor' : 'Registrar Nuevo Proveedor'}
-            </h3>
+        <div
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onMouseDown={e => { if (e.target === e.currentTarget) cerrarModal(); }}
+        >
+          <div className="bg-white rounded-2xl max-w-2xl max-h-[92vh] w-full shadow-2xl flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-6 py-4 border-b shrink-0">
+              <h3 className="text-lg font-bold text-slate-800">
+                {editingId ? 'Editar Proveedor' : 'Registrar Nuevo Proveedor'}
+              </h3>
+              <button
+                type="button"
+                onClick={cerrarModal}
+                disabled={guardandoProveedor}
+                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
+                title="Cerrar sin guardar (Esc)"
+                aria-label="Cerrar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+            <form onSubmit={handleSubmit} className="flex flex-col min-h-0 flex-1 text-xs">
+            <div className="overflow-y-auto px-6 py-4 space-y-4">
+              {editingId && (() => {
+                const faltan = datosEsencialesFaltantes({
+                  ...(proveedores.find(pr => pr.id === editingId) as Proveedor),
+                  rut, razonSocial, email: emails.join(', '), rubro, datosContrato,
+                });
+                return faltan.length > 0 ? (
+                  <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 font-medium text-amber-900">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>Faltan datos esenciales: <strong>{faltan.join(', ')}</strong>. La cuenta bancaria se completa en "Datos para el contrato".</span>
+                  </div>
+                ) : null;
+              })()}
               {!editingId && (
                 <div className="rounded-xl border border-dashed border-sky-300 bg-sky-50/70 p-4">
                   <label className={`flex cursor-pointer items-center gap-3 rounded-lg transition ${leyendoCotizacion ? 'pointer-events-none opacity-70' : 'hover:bg-sky-100/70'}`}>
@@ -660,10 +716,12 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
                 />
               </div>
 
-              <div className="flex items-center justify-end space-x-3 pt-3 border-t">
+            </div>
+              <div className="flex items-center justify-end gap-3 px-6 py-3 border-t bg-slate-50 shrink-0">
+                {lecturaError && <span className="mr-auto text-[11px] font-semibold text-red-700">{lecturaError}</span>}
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
+                  onClick={cerrarModal}
                   disabled={guardandoProveedor}
                   className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium"
                 >
