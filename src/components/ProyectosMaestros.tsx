@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   BookOpen, Plus, Trash2, Search,
   X, DollarSign, Calendar, MapPin, Building, User,
-  FileText, Paperclip, FolderPlus, ScrollText, Hammer, ShieldCheck, Clock
+  FileText, Paperclip, FolderPlus, ScrollText, Hammer, ShieldCheck, Clock, Sparkles, Loader2
 } from 'lucide-react';
 import {
   subscribeToProyectos,
@@ -15,6 +15,7 @@ import {
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
 import { corregirOrtografiaEspanol, corregirTextoAvanzado, normalizarNombreProyecto, ATRIBUTOS_ORTOGRAFIA_ES } from '../utils/spellCorrector';
+import { mejorarDescripcionProyectoConIA, isAIConfigured } from '../services/aiService';
 import { getCampusList, obtenerEdificiosDeCampus, obtenerCampusPorSigla } from '../data/campusData';
 import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
 import { getCentrosCostoList } from '../data/centrosCostoData';
@@ -78,6 +79,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   const [proyectos, setProyectos] = useState<ProyectoMaestro[]>([]);
   const [licitaciones, setLicitaciones] = useState<LicitacionProyecto[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [repararAbierto, setRepararAbierto] = useState(false);
   const [basesProyecto, setBasesProyecto] = useState<ProyectoMaestro | null>(null);
   const [contratoProyecto, setContratoProyecto] = useState<ProyectoMaestro | null>(null);
@@ -98,21 +100,78 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   // Estado del formulario
   const [form, setForm] = useState(EMPTY_FORM);
 
+  // Mejora de la descripción con IA: se muestra como propuesta y el usuario decide si la usa.
+  const [mejorandoDescripcion, setMejorandoDescripcion] = useState(false);
+  const [descripcionPropuestaIA, setDescripcionPropuestaIA] = useState<string | null>(null);
+  const [errorDescripcionIA, setErrorDescripcionIA] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!showModal) {
+      setDescripcionPropuestaIA(null);
+      setErrorDescripcionIA(null);
+    }
+  }, [showModal]);
+
+  const mejorarDescripcion = async () => {
+    setErrorDescripcionIA(null);
+    setMejorandoDescripcion(true);
+    try {
+      const campus = form.campusSigla ? obtenerCampusPorSigla(form.campusSigla) : undefined;
+      const propuesta = await mejorarDescripcionProyectoConIA({
+        descripcion: form.descripcion,
+        nombre: form.nombre,
+        tipoObra: form.tipoObra,
+        rubro: form.rubro,
+        uso: form.uso,
+        ubicacion: campus
+          ? [
+              form.edificioSigla ? `edificio ${form.edificioSigla}` : '',
+              `${campus.nombre} (sigla ${campus.sigla})`,
+              campus.direccion || '',
+              `${campus.ciudad}, ${campus.ciudad === 'Santiago' ? 'Región Metropolitana' : 'Región de La Araucanía'}, Chile`,
+            ].filter(Boolean).join(', ')
+          : undefined,
+      });
+      setDescripcionPropuestaIA(propuesta);
+    } catch (err) {
+      console.error('Error mejorando la descripción con IA:', err);
+      const msg = err instanceof Error ? err.message : '';
+      setErrorDescripcionIA(
+        msg.includes('AI_TIMEOUT') ? 'La IA no respondió a tiempo. Intente nuevamente.'
+          : msg.includes('AI_NETWORK_ERROR') ? 'No se pudo conectar con la IA (revise su conexión).'
+          : /AI_REQUEST_FAILED: (503|429)/.test(msg) ? 'El servicio de IA está saturado en este momento. Intente de nuevo en un minuto.'
+          : `No se pudo mejorar la descripción. Intente nuevamente. (${msg.slice(0, 120)})`
+      );
+    } finally {
+      setMejorandoDescripcion(false);
+    }
+  };
+
   // Estado temporal de nuevo antecedente (Plano / Documento)
   const [nuevoDocNombre, setNuevoDocNombre] = useState('');
   const [nuevoDocTipo, setNuevoDocTipo] = useState<'Plano' | 'Documento' | 'Bases' | 'EETT' | 'Anexo'>('Plano');
   const [nuevoDocArchivoNombre, setNuevoDocArchivoNombre] = useState('');
 
   useEffect(() => {
-    const unsub = subscribeToProyectos(data => {
-      setProyectos(data);
-      setLoading(false);
-    });
+    const unsub = subscribeToProyectos(
+      data => {
+        setProyectos(data);
+        setLoading(false);
+      },
+      err => {
+        console.error('Error cargando proyectos:', err);
+        setErrorCarga('No se pudo cargar la Cartera de Proyectos. Puede ser un problema de conexión o de permisos — recargue la página; si persiste, avise al administrador del sistema.');
+        setLoading(false);
+      }
+    );
     return unsub;
   }, []);
 
   useEffect(() => {
-    const unsub = subscribeToLicitaciones(data => setLicitaciones(data));
+    const unsub = subscribeToLicitaciones(
+      data => setLicitaciones(data),
+      err => console.error('Error cargando licitaciones en Cartera de Proyectos:', err)
+    );
     return unsub;
   }, []);
 
@@ -275,6 +334,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
       setShowModal(false);
     } catch (err) {
       console.error('Error guardando proyecto:', err);
+      alert('No se pudo guardar el proyecto: ' + (err instanceof Error ? err.message : 'error desconocido') + '. Sus datos NO se perdieron de esta ventana — intente guardar de nuevo; si el error persiste, avise al administrador del sistema.');
     } finally {
       setSaving(false);
     }
@@ -366,6 +426,18 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
 
   return (
     <div className="space-y-2.5">
+      {errorCarga && (
+        <div className="bg-red-50 border border-red-300 text-red-900 rounded-2xl px-4 py-3 flex items-start justify-between gap-3">
+          <p className="text-xs font-semibold">⚠️ {errorCarga}</p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="shrink-0 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold"
+          >
+            Recargar página
+          </button>
+        </div>
+      )}
       {/* Header compacto: fila 1 = título + prioridades + acciones · fila 2 = totales financieros */}
       <div className="bg-white px-4 py-2 rounded-2xl shadow-sm border border-slate-200">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -833,7 +905,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                         </div>
                       </div>
                     </td>
-                    <td className="px-2 py-1.5 text-center sticky right-0 z-10 bg-white border-l border-slate-200" onClick={e => e.stopPropagation()}>
+                    <td className="px-2 py-1.5 text-center sticky right-0 z-10 bg-white border-l border-slate-200" onClick={modoSelector ? undefined : e => e.stopPropagation()}>
                       {!modoSelector && (
                         <div className="flex items-center justify-center gap-1">
                           <button
@@ -1015,7 +1087,23 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                   </div>
 
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Descripción del Requerimiento Institucional</label>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <label className="block font-semibold text-slate-700">Descripción del Requerimiento Institucional</label>
+                      <button
+                        type="button"
+                        onClick={mejorarDescripcion}
+                        disabled={mejorandoDescripcion || (!form.nombre.trim() && form.descripcion.trim().length < 10) || !isAIConfigured()}
+                        title={
+                          !isAIConfigured() ? 'Configure VITE_GEMINI_API_KEY o VITE_OPENAI_API_KEY para habilitar esta función'
+                            : !form.nombre.trim() && form.descripcion.trim().length < 10 ? 'Escriba primero el nombre del proyecto o una descripción breve'
+                            : 'La IA usa el título, el campus/edificio y lo que usted escribió para precisar el alcance con fundamento técnico, sin inventar cifras. Usted decide si usa la propuesta.'
+                        }
+                        className="flex items-center gap-1.5 bg-violet-50 hover:bg-violet-100 disabled:opacity-50 disabled:cursor-not-allowed border border-violet-200 text-violet-800 font-bold px-2.5 py-1 rounded-lg text-[11px] shrink-0"
+                      >
+                        {mejorandoDescripcion ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                        {mejorandoDescripcion ? 'Redactando…' : form.descripcion.trim() ? 'Mejorar con IA' : 'Redactar con IA'}
+                      </button>
+                    </div>
                     <textarea
                       rows={3}
                       {...ATRIBUTOS_ORTOGRAFIA_ES}
@@ -1025,6 +1113,44 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                       onBlur={e => setForm(f => ({ ...f, descripcion: corregirTextoAvanzado(e.target.value) }))}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
                     />
+                    {errorDescripcionIA && (
+                      <p className="mt-1 text-[11px] text-amber-700">{errorDescripcionIA}</p>
+                    )}
+                    {descripcionPropuestaIA && (
+                      <div className="mt-2 rounded-lg border border-violet-200 bg-violet-50/60 p-3 space-y-2">
+                        <p className="text-[11px] font-bold text-violet-800 flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5" /> Propuesta de la IA — revísela antes de usarla
+                        </p>
+                        <p className="text-xs text-slate-700 whitespace-pre-line">{descripcionPropuestaIA}</p>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setDescripcionPropuestaIA(null)}
+                            className="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-lg text-[11px] font-bold"
+                          >
+                            Descartar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={mejorarDescripcion}
+                            disabled={mejorandoDescripcion}
+                            className="px-3 py-1.5 bg-white hover:bg-violet-50 disabled:opacity-50 border border-violet-200 text-violet-800 rounded-lg text-[11px] font-bold"
+                          >
+                            Otra versión
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setForm(f => ({ ...f, descripcion: descripcionPropuestaIA }));
+                              setDescripcionPropuestaIA(null);
+                            }}
+                            className="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-[11px] font-bold"
+                          >
+                            Usar esta descripción
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Ubicación: Campus & Edificio */}

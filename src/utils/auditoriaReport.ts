@@ -1,5 +1,6 @@
 import type { LicitacionProyecto, ProyectoMaestro } from '../types';
 import { licitacionCerradaParaOfertas } from '../services/firestoreService';
+import { esProcesoSimplificado } from '../data/contratoTemplateData';
 
 export type EstadoCheck = 'ok' | 'falta' | 'na';
 
@@ -32,21 +33,24 @@ function obraFinalizadaOEnRecepcion(l: LicitacionProyecto): boolean {
 export function auditarLicitacion(l: LicitacionProyecto, cantidadOfertas: number, proyectoVinculado?: ProyectoMaestro): AuditoriaLicitacion {
   const adjudicada = esAdjudicada(l);
   const enRecepcionOFinalizada = obraFinalizadaOEnRecepcion(l);
+  // Proceso simplificado (Comparación de Precios, bajo el umbral de Licitación formal): no exige
+  // Bases aprobadas ni un mínimo de invitados, así que esos checks no aplican ('na').
+  const simplificado = esProcesoSimplificado(l.montoEstimado);
 
   const checks: ChecklistItem[] = [
     {
       id: 'bases',
       etiqueta: 'Bases aprobadas',
-      estado: proyectoVinculado?.bases
+      estado: simplificado ? 'na' : proyectoVinculado?.bases
         ? (proyectoVinculado.bases.estado === 'Aprobada' ? 'ok' : 'falta')
         : 'falta',
-      detalle: proyectoVinculado?.bases ? `Estado: ${proyectoVinculado.bases.estado}` : 'Sin bases generadas en el proyecto vinculado',
+      detalle: simplificado ? 'No aplica: proceso simplificado (Comparación de Precios)' : proyectoVinculado?.bases ? `Estado: ${proyectoVinculado.bases.estado}` : 'Sin bases generadas en el proyecto vinculado',
     },
     {
       id: 'invitados',
       etiqueta: '≥ 3 proveedores invitados',
-      estado: (l.proveedoresInvitadosIds?.length || 0) >= 3 ? 'ok' : 'falta',
-      detalle: `${l.proveedoresInvitadosIds?.length || 0} invitado(s)`,
+      estado: simplificado ? 'na' : (l.proveedoresInvitadosIds?.length || 0) >= 3 ? 'ok' : 'falta',
+      detalle: simplificado ? 'No aplica: proceso simplificado (Comparación de Precios)' : `${l.proveedoresInvitadosIds?.length || 0} invitado(s)`,
     },
     {
       id: 'ofertas',

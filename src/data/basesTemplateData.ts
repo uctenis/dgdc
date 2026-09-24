@@ -70,7 +70,7 @@ export function sugerirPoliticaGarantias(valorAprox: number): PoliticaGarantias 
 
 const TEXTO_GARANTIAS_SIN = 'Dado el monto estimado de este proyecto ({{montoEstimado}}), inferior al umbral de exigencia de garantías formales, no corresponde exigir boletas de garantía bancarias ni retención especial. Esto no exime al proveedor de su responsabilidad contractual y legal por la correcta ejecución de lo contratado.';
 
-const TEXTO_GARANTIAS_RETENCION = 'Dado el monto estimado de este proyecto ({{montoEstimado}}), en vez de boletas de garantía bancarias se aplicará una retención de 5% a 10% sobre cada Estado de Pago (o sobre el pago único, si aplica), liberada contra Recepción Conforme. Evalúe con Coordinación de Calidad si además corresponde exigir una boleta de Seriedad de la Oferta.';
+const TEXTO_GARANTIAS_RETENCION = 'Dado el monto estimado de este proyecto ({{montoEstimado}}), en vez de boletas de garantía bancarias se aplicará una retención de {{retencionPct}}% sobre cada Estado de Pago (o sobre el pago único, si aplica), que responderá de la correcta ejecución de lo contratado y se devolverá al suscribirse el acta de recepción. Evalúe con Coordinación de Calidad si además corresponde exigir una boleta de Seriedad de la Oferta.';
 
 /** Reemplaza el texto de garantías de la plantilla por el que corresponde según la política elegida para el proyecto. */
 export function resolverContenidoGarantias(politica: PoliticaGarantias | undefined, textoBoletasCompletas: string): string {
@@ -123,17 +123,17 @@ const PLANTILLA_OBRA_CIVIL: SeccionBases[] = [
   {
     id: 'garantias',
     titulo: '5. Garantías',
-    contenido: 'a) Seriedad de la Oferta: boleta de garantía o vale vista por 1% a 3% del presupuesto referencial, vigencia desde la apertura hasta la adjudicación + 30 días. b) Fiel Cumplimiento del Contrato: 5% a 10% del monto contratado, vigencia igual al plazo de ejecución + 90 días. c) Correcta Ejecución / Vicios Ocultos: retención adicional o boleta por 5%-10%, con vigencia de 12 a 18 meses desde la Recepción Definitiva (conforme a la responsabilidad del constructor por vicios de construcción del Art. 2003 N°3 del Código Civil, y hasta 10 años si compromete elementos estructurales según Art. 18 de la Ley General de Urbanismo y Construcciones). Ajustar montos y plazos exactos con Coordinación de Calidad según la envergadura del proyecto.',
+    contenido: 'a) Seriedad de la Oferta: boleta de garantía o vale vista por 1% a 3% del presupuesto referencial, vigencia desde la apertura hasta la adjudicación + 30 días. b) Retención: {{retencionPct}}% del monto de cada factura, que responderá de la correcta ejecución de la obra y del cumplimiento de las obligaciones del contratista; se devuelve al suscribirse el acta de recepción. c) Fiel Cumplimiento del Contrato: Boleta de Garantía o Póliza de seguro de ejecución inmediata por el {{fielCumplimientoPct}}% del contrato, con vigencia de {{vigenciaFielCumplimientoDias}} días después de la aprobación de las obras (Recepción Provisoria); si el proyecto se extiende, la garantía se actualiza. d) Post venta: garantía de {{postVentaDias}} días a contar del acta de recepción, caucionada con Boleta de Garantía de Correcta Ejecución o Póliza de seguro de ejecución inmediata por el {{boletaPostVentaPct}}%, sin perjuicio de la responsabilidad del constructor por vicios de construcción (Art. 2003 N°3 del Código Civil) y de los plazos del Art. 18 de la Ley General de Urbanismo y Construcciones. e) El contratista debe contratar Seguro de Responsabilidad Civil y Seguro de Todo Riesgo de Construcción. Estos valores son los mismos del contrato tipo de la Universidad.',
   },
   {
     id: 'multas',
     titulo: '6. Multas y Sanciones',
-    contenido: 'Multa por atraso: 1‰ (uno por mil) a 2‰ del monto contratado por cada día corrido de atraso no justificado, con tope máximo de 10% a 15% del contrato. Superado el tope, o acumulados más de [definir] días de atraso, la Universidad podrá poner término anticipado al contrato y hacer efectiva la garantía de Fiel Cumplimiento. Aplican también multas por incumplimiento de normativa de seguridad (DS N°594) o por no contar con personal acreditado en obra.',
+    contenido: 'Multa por atraso: {{multaDiariaPct}}% del importe global del contrato por cada día de retraso en el incumplimiento de los hitos del Programa de Obra. La sumatoria de las multas no podrá exceder el {{topeMultasPct}}% del precio total del contrato; superado ese porcentaje, o si el atraso supera los {{diasResolucionPorAtraso}} días corridos respecto del plazo contractual, la Universidad podrá resolver el contrato de pleno derecho mediante notificación escrita, reteniendo la facturación pendiente y las garantías. No se aplican sanciones por causas imputables a la Universidad o de fuerza mayor. Aplican también multas por incumplimiento de normativa de seguridad (DS N°594) o por no contar con personal acreditado en obra.',
   },
   {
     id: 'forma-pago',
     titulo: '7. Forma de Pago',
-    contenido: 'Pago mediante Estados de Pago mensuales según avance físico certificado por el Inspector Técnico de Obra (ITO), con retención de 5% a 10% liberada contra Recepción Conforme. Pago dentro de 30 días corridos desde la recepción de la factura asociada al estado de pago aprobado (conforme a la Ley N°21.131 de pago a 30 días). Toda factura debe emitirse una vez visado el estado de pago por el ITO.',
+    contenido: 'Pago mediante Estados de Pago mensuales según avance físico certificado por el Inspector Técnico de Obra (ITO): la medición a origen se realiza con {{diasHabilesMedicion}} días hábiles de anticipación al término del mes; la Universidad dispone de {{diasRevisionEstadoPago}} días para revisar el Estado de Pago y, aceptado, el contratista emite la factura dentro de los {{diasFacturacion}} primeros días del mes siguiente. Se aplica una retención de {{retencionPct}}% sobre cada factura (ver Garantías). El contratista podrá solicitar un anticipo de hasta {{anticipoPct}}% del monto del contrato. Pago dentro de 30 días corridos desde la recepción de la factura asociada al estado de pago aprobado (conforme a la Ley N°21.131 de pago a 30 días). Toda factura debe emitirse una vez visado el estado de pago por el ITO.',
   },
   {
     id: 'requisitos-oferentes',
@@ -182,17 +182,17 @@ const PLANTILLA_OBRA_MENOR: SeccionBases[] = [
   {
     id: 'garantias',
     titulo: '5. Garantías',
-    contenido: 'Para obras menores, evalúe con Coordinación de Calidad según el monto: bajo el umbral de Acta obligatoria ($800.001) suele bastar con retención de 5%-10% sobre los estados de pago, sin boleta de garantía. Sobre ese umbral, exigir Fiel Cumplimiento (5%-10% del contrato, vigencia plazo de ejecución + 90 días) y una retención o boleta de Correcta Ejecución (5%-10%, vigencia 6 a 12 meses desde la recepción, dado el menor riesgo constructivo respecto de obra nueva).',
+    contenido: 'Para obras menores, evalúe con Coordinación de Calidad según el monto: bajo el umbral de Acta obligatoria ($800.001) suele bastar con una retención de {{retencionPct}}% sobre cada factura, sin boleta de garantía. Sobre ese umbral, exigir Fiel Cumplimiento ({{fielCumplimientoPct}}% del contrato, con vigencia de {{vigenciaFielCumplimientoDias}} días después de la aprobación de las obras) y la retención de {{retencionPct}}% con un período de post venta de {{postVentaDias}} días (o el menor que se defina con Coordinación de Calidad, dado el menor riesgo constructivo respecto de obra nueva). Valores iguales a los del contrato tipo de la Universidad.',
   },
   {
     id: 'multas',
     titulo: '6. Multas y Sanciones',
-    contenido: 'Multa por atraso: 1‰ a 2‰ del monto contratado por día corrido de atraso no justificado, tope máximo 10% del contrato. Incluir además causal de multa por daños a instalaciones existentes o incumplimiento de horarios de trabajo coordinados con la operación del recinto (docencia, uso de espacios comunes).',
+    contenido: 'Multa por atraso: {{multaDiariaPct}}% del importe global del contrato por cada día de retraso no justificado, con tope máximo de {{topeMultasPct}}% del contrato; si el atraso supera los {{diasResolucionPorAtraso}} días corridos respecto del plazo contractual, la Universidad podrá resolver el contrato. Incluir además causal de multa por daños a instalaciones existentes o incumplimiento de horarios de trabajo coordinados con la operación del recinto (docencia, uso de espacios comunes).',
   },
   {
     id: 'forma-pago',
     titulo: '7. Forma de Pago',
-    contenido: 'Pago mediante Estados de Pago según avance físico certificado por el ITO, dentro de 30 días corridos desde la factura (Ley N°21.131). Para trabajos de corta duración (bajo 30 días de plazo) o bajo el umbral de Acta obligatoria, evalúe pago único contra Recepción Conforme en vez de estados de pago mensuales.',
+    contenido: 'Pago mediante Estados de Pago según avance físico certificado por el ITO, con retención de {{retencionPct}}% sobre cada factura, dentro de 30 días corridos desde la factura (Ley N°21.131). Para trabajos de corta duración (bajo 30 días de plazo) o bajo el umbral de Acta obligatoria, evalúe pago único contra Recepción Conforme en vez de estados de pago mensuales.',
   },
   {
     id: 'requisitos-oferentes',

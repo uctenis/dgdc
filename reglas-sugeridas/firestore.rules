@@ -1,0 +1,128 @@
+rules_version = '2';
+
+// REGLAS SUGERIDAS — no están desplegadas. Léase LEEME.md antes de aplicarlas.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function autenticado() { return request.auth != null; }
+
+    // Personal institucional: cuenta Google verificada del dominio uct.cl.
+    function esInterno() {
+      return autenticado()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.matches('.*@uct[.]cl');
+    }
+
+    function perfilExiste() {
+      return exists(/databases/$(database)/documents/usuarios/$(request.auth.uid));
+    }
+    function perfil() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data;
+    }
+    function esProveedor() {
+      return autenticado() && !esInterno() && perfilExiste() && perfil().role == 'proveedor';
+    }
+    function miProveedorId() { return perfil().proveedorId; }
+
+    // El portal cierra a la hora: `limiteOfertasMs` lo calcula la app al guardar la licitación (fecha + hora, hora de Chile).
+    // Se compara con el reloj del SERVIDOR, no con el del navegador.
+    function dentroDePlazo(licId) {
+      return request.time.toMillis() <= get(/databases/$(database)/documents/licitaciones/$(licId)).data.get('limiteOfertasMs', 9999999999999);
+    }
+
+    // El proveedor solo ve una licitación si figura entre sus invitados.
+    function invitadoALicitacion(licId) {
+      return esProveedor()
+        && exists(/databases/$(database)/documents/licitaciones/$(licId)/invitados/$(miProveedorId()));
+    }
+
+    // ── Perfiles ───────────────────────────────────────────────────────────
+    match /usuarios/{uid} {
+      allow read: if esInterno() || (autenticado() && request.auth.uid == uid);
+
+      // Un proveedor solo puede crear SU perfil, y solo vinculado a la empresa de un enlace de invitación
+      // real cuyo correo coincide con el de su cuenta. No puede darse otro rol ni otra empresa.
+      allow create: if esInterno()
+        || (autenticado() && request.auth.uid == uid
+            && request.resource.data.role == 'proveedor'
+            && request.resource.data.tokenInvitacion is string
+            && exists(/databases/$(database)/documents/invitaciones/$(request.resource.data.tokenInvitacion))
+            && get(/databases/$(database)/documents/invitaciones/$(request.resource.data.tokenInvitacion)).data.proveedorId
+                 == request.resource.data.proveedorId
+            && get(/databases/$(database)/documents/invitaciones/$(request.resource.data.tokenInvitacion)).data.proveedorEmail.lower()
+                 == request.auth.token.email.lower());
+
+      allow update: if esInterno()
+        || (autenticado() && request.auth.uid == uid
+            && request.resource.data.role == resource.data.role
+            && request.resource.data.get('proveedorId', null) == resource.data.get('proveedorId', null)
+            && request.resource.data.get('tokenInvitacion', null) == resource.data.get('tokenInvitacion', null));
+
+      allow delete: if esInterno();
+    }
+
+    // ── Enlaces personales de invitación ───────────────────────────────────
+    // Solo se pueden leer conociendo el código; nadie puede listarlos.
+    match /invitaciones/{token} {
+      allow get: if autenticado();
+      allow list: if false;
+      allow write: if esInterno();
+    }
+
+    // ── Licitaciones ───────────────────────────────────────────────────────
+    match /licitaciones/{licId} {
+      allow read: if esInterno() || invitadoALicitacion(licId);
+      allow create, delete: if esInterno();
+
+      // El proveedor adjudicado solo puede solicitar la recepción conforme; nada más.
+      allow update: if esInterno()
+        || (invitadoALicitacion(licId)
+            && resource.data.get('proveedorGanadorId', '') == miProveedorId()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['recepcionConforme', 'estadoLifecycle', '_updatedAt']));
+
+      // Un proveedor solo ve SU invitación; no la lista de invitados ni sus códigos.
+      match /invitados/{provId} {
+        allow read: if esInterno() || (esProveedor() && provId == miProveedorId());
+        allow create, delete: if esInterno();
+        allow update: if esInterno()
+          || (esProveedor() && provId == miProveedorId()
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estadoPropuesta', 'fechaPresentacion']));
+      }
+
+      // Cada proveedor solo lee y escribe SU propuesta, y no puede modificarla una vez enviada
+      // (salvo dejar constancia de la confirmación por correo).
+      match /propuestas/{provId} {
+        allow read: if esInterno() || (esProveedor() && provId == miProveedorId());
+        allow create: if esInterno()
+          || (invitadoALicitacion(licId) && provId == miProveedorId()
+              && request.resource.data.proveedorUid == request.auth.uid
+              && dentroDePlazo(licId));
+        allow update: if esInterno()
+          || (invitadoALicitacion(licId) && provId == miProveedorId()
+              && request.resource.data.proveedorUid == request.auth.uid
+              && ((resource.data.estado != 'Enviada' && dentroDePlazo(licId))
+                  || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['confirmacionCorreo'])));
+        allow delete: if esInterno();
+      }
+
+      // Todo lo demás de la licitación (cotizaciones, estados de pago, envíos, etc.): solo personal interno.
+      match /{resto=**} {
+        allow read, write: if esInterno();
+      }
+    }
+
+    // ── Proveedores: un proveedor solo lee la ficha de su propia empresa ───
+    match /proveedores/{id} {
+      allow read: if esInterno() || (esProveedor() && id == miProveedorId());
+      allow write: if esInterno();
+      match /{resto=**} {
+        allow read, write: if esInterno();
+      }
+    }
+
+    // ── Todo lo demás: solo personal interno ───────────────────────────────
+    match /{document=**} {
+      allow read, write: if esInterno();
+    }
+  }
+}

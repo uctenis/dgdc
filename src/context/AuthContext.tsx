@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -11,7 +11,7 @@ import {
   type User,
 } from 'firebase/auth';
 import { auth } from '../lib/firebase';
-import { createUserProfile, getUserProfile, getProveedorPorId, getProveedorPorEmail } from '../services/firestoreService';
+import { createUserProfile, getUserProfile, verificarInvitacionLicitacion } from '../services/firestoreService';
 import type { UserProfile } from '../types';
 import { getInternalAccess, SYSTEM_ADMIN_EMAIL } from '../services/internalAccessService';
 
@@ -24,11 +24,14 @@ interface AuthContextType {
   isProveedor: boolean;
   loginInternalWithGoogle: () => Promise<void>;
   loginDevBypass?: () => void;
+  /** SOLO servidor local (import.meta.env.DEV): ver el portal como un proveedor, sin invitación real. */
+  loginPortalDevBypass?: (datos: { proveedorId: string; email: string; nombre: string }) => void;
   loginAdmin: (email: string, password: string) => Promise<void>;
-  loginProveedorWithGoogle: (proveedorId?: string) => Promise<void>;
-  enviarEnlaceIngresoProveedor: (email: string) => Promise<void>;
+  /** Ingreso de proveedores: siempre asociado a una licitación (enlace de invitación). */
+  loginProveedorPorInvitacion: (licitacionId: string, token: string) => Promise<void>;
+  enviarEnlaceIngresoInvitacion: (email: string, licitacionId: string, token: string) => Promise<void>;
   esEnlaceDeIngreso: () => boolean;
-  completarLoginConEnlace: (emailOverride?: string) => Promise<void>;
+  completarLoginConEnlace: (licitacionId: string, token: string, emailOverride?: string) => Promise<void>;
   logout: () => Promise<void>;
   error: string | null;
   clearError: () => void;
@@ -46,6 +49,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [devBypass, setDevBypass] = useState(false);
+  const [devProveedor, setDevProveedor] = useState<{ proveedorId: string; email: string; nombre: string } | null>(null);
+  // Mientras un proveedor completa su ingreso con Google (aún sin perfil), no debe aplicarse el rechazo del sistema interno.
+  const proveedorLoginEnCurso = useRef(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async firebaseUser => {
@@ -58,12 +64,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         const access = getInternalAccess(firebaseUser.email);
         const usesGoogle = firebaseUser.providerData.some(provider => provider.providerId === 'google.com');
-        if (usesGoogle && !access) {
-          setError('Este correo Google no está autorizado para ingresar al sistema interno.');
-          await signOut(auth);
-          setUser(null);
-          setProfile(null);
-          return;
+        if (usesGoogle && !access && !proveedorLoginEnCurso.current) {
+          // Un proveedor con perfil ya vinculado sí puede tener sesión Google (portal de proveedores).
+          const perfilPrevio = await getUserProfile(firebaseUser.uid).catch(() => null);
+          if (perfilPrevio?.role !== 'proveedor') {
+            setError('Este correo Google no está autorizado para ingresar al sistema interno.');
+            await signOut(auth);
+            setUser(null);
+            setProfile(null);
+            return;
+          }
         }
 
         setUser(firebaseUser);
@@ -101,13 +111,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return unsubscribe;
   }, []);
 
-  const effectiveUser = devBypass ? ({ email: 'dsilva@uct.cl', uid: 'dev-123', displayName: 'Admin Local' } as User) : user;
-  const effectiveProfile = devBypass ? ({ role: 'admin', email: 'dsilva@uct.cl', displayName: 'Admin Local', uid: 'dev-123', fechaRegistro: new Date().toISOString(), verificado: true, puedeFirmarActas: true } as UserProfile) : profile;
+  const effectiveUser = devBypass
+    ? ({ email: 'dsilva@uct.cl', uid: 'dev-123', displayName: 'Admin Local' } as User)
+    : devProveedor
+    ? ({ email: devProveedor.email, uid: 'dev-proveedor', displayName: devProveedor.nombre } as User)
+    : user;
+  const effectiveProfile = !devBypass && devProveedor
+    ? ({ role: 'proveedor', email: devProveedor.email, displayName: devProveedor.nombre, uid: 'dev-proveedor', proveedorId: devProveedor.proveedorId, fechaRegistro: new Date().toISOString(), verificado: true } as UserProfile)
+    : devBypass ? ({ role: 'admin', email: 'dsilva@uct.cl', displayName: 'Admin Local', uid: 'dev-123', fechaRegistro: new Date().toISOString(), verificado: true, puedeFirmarActas: true } as UserProfile) : profile;
 
   const internalAccess = getInternalAccess(effectiveUser?.email);
   const isInternalUser = Boolean(effectiveUser && internalAccess);
   const isAdmin = Boolean(effectiveUser && effectiveUser.email?.toLowerCase() === SYSTEM_ADMIN_EMAIL);
   const isProveedor = !!effectiveUser && effectiveProfile?.role === 'proveedor';
+
+  const loginPortalDevBypass = (datos: { proveedorId: string; email: string; nombre: string }) => {
+    if (!import.meta.env.DEV) return;
+    setDevProveedor(datos);
+    setError(null);
+  };
 
   const loginDevBypass = () => {
     setDevBypass(true);
@@ -146,65 +168,64 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const loginProveedorWithGoogle = async (proveedorId?: string) => {
+  // Ingreso de proveedores con Google, SIEMPRE dentro de una licitación: solo entra quien esté
+  // invitado a ella (por su cuenta ya vinculada o por el correo con el que se le invitó). No hay
+  // registro libre ni lista de empresas.
+  const loginProveedorPorInvitacion = async (licitacionId: string, token: string) => {
     setError(null);
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
+    proveedorLoginEnCurso.current = true;
     try {
       const credential = await signInWithPopup(auth, provider);
-      const user = credential.user;
-      
-      const storedProfile = await getUserProfile(user.uid);
-      if (storedProfile) {
-        if (storedProfile.role !== 'proveedor') {
-          await signOut(auth);
-          setError('Esta cuenta de Google no corresponde a un perfil de proveedor.');
-          throw new Error('INVALID_ROLE');
-        }
-        // Success: user logged in.
-      } else {
-        // No profile exists -> requires registration
-        if (!proveedorId) {
-          await signOut(auth);
-          setError('Cuenta no registrada. Por favor, seleccione su empresa para crear una cuenta nueva.');
-          throw new Error('NO_PROFILE');
-        }
+      const cuenta = credential.user;
 
-        // Verificación: la cuenta Google con la que se registra debe coincidir con el
-        // correo ya registrado de esa empresa en la ficha de Proveedor — evita que
-        // cualquiera se "registre" como una empresa invitada solo eligiéndola de la lista.
-        const proveedor = await getProveedorPorId(proveedorId);
-        const emailProveedor = (proveedor?.email || '').trim().toLowerCase();
-        const emailCuenta = (user.email || '').trim().toLowerCase();
-        if (!proveedor || !emailProveedor || emailProveedor !== emailCuenta) {
-          await signOut(auth);
-          setError(
-            proveedor
-              ? `El correo de esta cuenta Google no coincide con el correo registrado para ${proveedor.razonSocial} (${proveedor.email || 'sin correo registrado'}). Contacte a la Subdirección de Infraestructura si su correo cambió.`
-              : 'No se encontró la empresa seleccionada.'
-          );
-          throw new Error('EMAIL_MISMATCH');
-        }
-
-        await createUserProfile(user.uid, {
-          email: user.email || '',
-          role: 'proveedor',
-          displayName: user.displayName || user.email?.split('@')[0] || 'Proveedor',
-          proveedorId,
-          fechaRegistro: new Date().toISOString(),
-          verificado: true,
-        });
+      const storedProfile = await getUserProfile(cuenta.uid);
+      if (storedProfile && storedProfile.role !== 'proveedor') {
+        await signOut(auth);
+        setError('Esta cuenta de Google no corresponde a un perfil de proveedor.');
+        throw new Error('INVALID_ROLE');
       }
+
+      const invitacion = await verificarInvitacionLicitacion(licitacionId, {
+        proveedorId: storedProfile?.proveedorId,
+        email: cuenta.email,
+        token,
+      });
+      if (!invitacion) {
+        await signOut(auth);
+        setError(`La cuenta ${cuenta.email || ''} no figura entre las empresas invitadas a esta licitación. Ingrese con el correo al que llegó la invitación.`);
+        throw new Error('NO_INVITADO');
+      }
+
+      if (storedProfile) {
+        setUser(cuenta);
+        setProfile(storedProfile);
+        return;
+      }
+      const perfil: UserProfile = {
+        uid: cuenta.uid,
+        email: cuenta.email || '',
+        role: 'proveedor',
+        displayName: invitacion.proveedorNombre || cuenta.displayName || cuenta.email?.split('@')[0] || 'Proveedor',
+        proveedorId: invitacion.proveedorId,
+        tokenInvitacion: token,
+        fechaRegistro: new Date().toISOString(),
+        verificado: true,
+      };
+      await createUserProfile(cuenta.uid, perfil);
+      setUser(cuenta);
+      setProfile(perfil);
     } catch (e: unknown) {
       const msg = (e as { message?: string, code?: string });
-      if (msg.message !== 'INVALID_ROLE' && msg.message !== 'NO_PROFILE' && msg.message !== 'EMAIL_MISMATCH') {
-        if (msg.code === 'auth/popup-closed-by-user') {
-          setError('El inicio de sesión fue cancelado.');
-        } else {
-          setError(`Error de Google (${msg.code || 'Desconocido'}): Asegúrese de que Google Auth esté habilitado en Firebase.`);
-        }
+      if (msg.message !== 'INVALID_ROLE' && msg.message !== 'NO_INVITADO') {
+        setError(msg.code === 'auth/popup-closed-by-user'
+          ? 'El inicio de sesión fue cancelado.'
+          : `Error de Google (${msg.code || 'Desconocido'}): no se pudo completar el ingreso.`);
       }
       throw e;
+    } finally {
+      proveedorLoginEnCurso.current = false;
     }
   };
 
@@ -213,17 +234,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // propio, etc.). Firebase envía el enlace a la casilla exacta ya registrada en
   // la ficha del Proveedor; al hacer clic queda autenticado sin necesidad de elegir
   // su empresa de una lista, porque el correo ya prueba a quién pertenece.
-  const enviarEnlaceProveedor = async (email: string) => {
+  const enviarEnlaceIngresoInvitacion = async (email: string, licitacionId: string, token: string) => {
     setError(null);
     const emailNormalizado = email.trim().toLowerCase();
-    const proveedor = await getProveedorPorEmail(emailNormalizado);
-    if (!proveedor) {
-      setError('No encontramos una empresa registrada con ese correo. Verifique que esté escrito igual a como aparece en su ficha, o contacte a la Subdirección de Infraestructura.');
-      throw new Error('PROVEEDOR_NO_ENCONTRADO');
+    // Solo se envía el enlace si ese correo figura entre los invitados de la licitación. Si la
+    // lectura previa no es posible sin sesión, se envía igual: el acceso se valida de nuevo al entrar.
+    try {
+      const invitacion = await verificarInvitacionLicitacion(licitacionId, { email: emailNormalizado, token });
+      if (!invitacion) {
+        setError('Ese correo no figura entre las empresas invitadas a esta licitación. Use el correo al que llegó la invitación.');
+        throw new Error('NO_INVITADO');
+      }
+    } catch (checkError) {
+      if ((checkError as Error).message === 'NO_INVITADO') throw checkError;
     }
     try {
       await sendSignInLinkToEmail(auth, emailNormalizado, {
-        url: `${window.location.origin}${import.meta.env.BASE_URL}portal/login`,
+        url: `${window.location.origin}${import.meta.env.BASE_URL}portal/licitacion/${licitacionId}?t=${encodeURIComponent(token)}`,
         handleCodeInApp: true,
       });
       window.localStorage.setItem(EMAIL_ENLACE_STORAGE_KEY, emailNormalizado);
@@ -235,53 +262,65 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const esEnlaceDeIngreso = () => isSignInWithEmailLink(auth, window.location.href);
 
-  const completarLoginConEnlace = async (emailOverride?: string) => {
+  const completarLoginConEnlace = async (licitacionId: string, token: string, emailOverride?: string) => {
     setError(null);
     const email = (emailOverride || window.localStorage.getItem(EMAIL_ENLACE_STORAGE_KEY) || '').trim().toLowerCase();
     if (!email) {
       setError('Ingrese el correo al que le enviamos el enlace para confirmar su identidad.');
       throw new Error('EMAIL_REQUERIDO');
     }
+    proveedorLoginEnCurso.current = true;
     try {
       const credential = await signInWithEmailLink(auth, email, window.location.href);
       window.localStorage.removeItem(EMAIL_ENLACE_STORAGE_KEY);
       const user = credential.user;
 
       const storedProfile = await getUserProfile(user.uid);
+      if (storedProfile && storedProfile.role !== 'proveedor') {
+        await signOut(auth);
+        setError('Esta cuenta no corresponde a un perfil de proveedor.');
+        throw new Error('INVALID_ROLE');
+      }
+
+      // La cuenta se vincula SOLO a la empresa de la invitación (enlace personal + correo invitado).
+      const invitacion = await verificarInvitacionLicitacion(licitacionId, { proveedorId: storedProfile?.proveedorId, email, token });
+      if (!invitacion) {
+        await signOut(auth);
+        setError('Este correo no figura entre las empresas invitadas a esta licitación.');
+        throw new Error('NO_INVITADO');
+      }
+
       if (storedProfile) {
-        if (storedProfile.role !== 'proveedor') {
-          await signOut(auth);
-          setError('Esta cuenta no corresponde a un perfil de proveedor.');
-          throw new Error('INVALID_ROLE');
-        }
+        setUser(user);
+        setProfile(storedProfile);
         return;
       }
-
-      const proveedor = await getProveedorPorEmail(email);
-      if (!proveedor) {
-        await signOut(auth);
-        setError('No encontramos una empresa registrada con ese correo. Contacte a la Subdirección de Infraestructura.');
-        throw new Error('PROVEEDOR_NO_ENCONTRADO');
-      }
-
-      await createUserProfile(user.uid, {
+      const nuevoPerfil: UserProfile = {
+        uid: user.uid,
         email: user.email || email,
         role: 'proveedor',
-        displayName: proveedor.razonSocial,
-        proveedorId: proveedor.id,
+        displayName: invitacion.proveedorNombre,
+        proveedorId: invitacion.proveedorId,
+        tokenInvitacion: token,
         fechaRegistro: new Date().toISOString(),
         verificado: true,
-      });
+      };
+      await createUserProfile(user.uid, nuevoPerfil);
+      setUser(user);
+      setProfile(nuevoPerfil);
     } catch (e: unknown) {
       const msg = (e as { message?: string, code?: string });
-      if (msg.message !== 'INVALID_ROLE' && msg.message !== 'PROVEEDOR_NO_ENCONTRADO' && msg.message !== 'EMAIL_REQUERIDO') {
+      if (msg.message !== 'INVALID_ROLE' && msg.message !== 'NO_INVITADO' && msg.message !== 'EMAIL_REQUERIDO') {
         setError('El enlace no es válido o ya expiró. Solicite uno nuevo.');
       }
       throw e;
+    } finally {
+      proveedorLoginEnCurso.current = false;
     }
   };
 
   const logout = async () => {
+    setDevProveedor(null);
     await signOut(auth);
   };
 
@@ -292,15 +331,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         user: effectiveUser,
         profile: effectiveProfile,
-        loading: devBypass ? false : loading,
+        loading: devBypass || devProveedor ? false : loading,
         isAdmin,
         isInternalUser,
         isProveedor,
         loginInternalWithGoogle,
         loginDevBypass,
+        loginPortalDevBypass: import.meta.env.DEV ? loginPortalDevBypass : undefined,
         loginAdmin,
-        loginProveedorWithGoogle,
-        enviarEnlaceIngresoProveedor: enviarEnlaceProveedor,
+        loginProveedorPorInvitacion,
+        enviarEnlaceIngresoInvitacion,
         esEnlaceDeIngreso,
         completarLoginConEnlace,
         logout,

@@ -12,13 +12,14 @@ import { AvanceFinancieroPage } from './components/AvanceFinancieroPage';
 import { SgcProcessWorkflow } from './components/SgcProcessWorkflow';
 import { ReportesPage } from './components/ReportesPage';
 import { FichaProyectoPage } from './components/FichaProyectoPage';
-import { LicitacionWorkspacePage } from './components/LicitacionWorkspacePage';
+import { LicitacionWorkspacePage, type TabId } from './components/LicitacionWorkspacePage';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { LoginPage } from './pages/LoginPage';
 import { InternalLoginPage } from './pages/InternalLoginPage';
-import { PortalDashboard } from './pages/PortalDashboard';
-import { LicitacionDetalle } from './pages/LicitacionDetalle';
+import { PortalBloqueoProveedor } from './pages/PortalBloqueoProveedor';
+import { PortalInvitacionPage } from './pages/PortalInvitacionPage';
+import { PortalAccesoRestringido } from './pages/PortalAccesoRestringido';
+import { PortalDemo } from './pages/PortalDemo';
 
 import type { Proveedor, LicitacionProyecto, Cotizacion, ConfiguracionFirmas, ProyectoMaestro } from './types';
 import { storageService } from './services/storageService';
@@ -37,6 +38,7 @@ import {
   adjudicarLicitacion as fsAdjudicarLicitacion,
 } from './services/firestoreService';
 import { evaluarCotizaciones } from './services/evaluationEngine';
+import { esProcesoSimplificado } from './data/contratoTemplateData';
 import { isProjectResponsible } from './services/internalAccessService';
 
 function AdminApp() {
@@ -52,11 +54,17 @@ function AdminApp() {
   const [licitacionSeleccionadaId, setLicitacionSeleccionadaId] = useState<string | null>(null);
   const [proyectoParaFicha, setProyectoParaFicha] = useState<LicitacionProyecto | ProyectoMaestro | null>(null);
   const [licitacionWorkspaceId, setLicitacionWorkspaceId] = useState<string | null>(null);
+  const [licitacionWorkspaceTab, setLicitacionWorkspaceTab] = useState<TabId>('resumen');
+  /** Si la lectura de datos desde Firestore falla (permisos, conexión), queda registrado aquí
+   * para avisar en pantalla — sin esto, la lista simplemente aparece vacía o desactualizada
+   * sin que nadie note que algo falló. */
+  const [errorCargaDatos, setErrorCargaDatos] = useState<string | null>(null);
 
   const handleOpenFicha = (p: LicitacionProyecto | ProyectoMaestro) => {
     if ('nombreProyecto' in p) {
       setLicitacionSeleccionadaId(p.id);
       setLicitacionWorkspaceId(p.id);
+      setLicitacionWorkspaceTab('resumen');
       setActiveTab('ficha-licitacion');
       return;
     }
@@ -66,20 +74,36 @@ function AdminApp() {
 
   // Firestore Subscriptions for Licitaciones and Proveedores
   useEffect(() => {
-    const unsubProvs = subscribeToProveedores(provs => {
-      setProveedores(provs);
-      setFirestoreLoading(false);
-    });
-
-    const unsubLics = subscribeToLicitaciones(lics => {
-      setLicitaciones(lics);
-      if (lics.length > 0) {
-        setLicitacionSeleccionadaId(currentId => currentId ?? lics[0].id);
+    const unsubProvs = subscribeToProveedores(
+      provs => {
+        setProveedores(provs);
+        setFirestoreLoading(false);
+      },
+      err => {
+        console.error('Error cargando proveedores:', err);
+        setErrorCargaDatos('No se pudo cargar la lista de proveedores. Puede ser un problema de conexión o de permisos — recargue la página; si persiste, avise al administrador del sistema.');
+        setFirestoreLoading(false);
       }
-    });
+    );
+
+    const unsubLics = subscribeToLicitaciones(
+      lics => {
+        setLicitaciones(lics);
+        if (lics.length > 0) {
+          setLicitacionSeleccionadaId(currentId => currentId ?? lics[0].id);
+        }
+      },
+      err => {
+        console.error('Error cargando licitaciones:', err);
+        setErrorCargaDatos('No se pudo cargar la lista de licitaciones. Puede ser un problema de conexión o de permisos — recargue la página; si persiste, avise al administrador del sistema.');
+      }
+    );
 
     // Cargar cotizaciones
-    getAllCotizaciones().then(cots => setCotizaciones(cots));
+    getAllCotizaciones().then(cots => setCotizaciones(cots)).catch(err => {
+      console.error('Error cargando cotizaciones:', err);
+      setErrorCargaDatos('No se pudieron cargar las cotizaciones. Puede ser un problema de conexión o de permisos — recargue la página; si persiste, avise al administrador del sistema.');
+    });
 
     return () => {
       unsubProvs();
@@ -109,6 +133,7 @@ function AdminApp() {
     const id = await fsAddLicitacion(newLicitacion);
     setLicitacionSeleccionadaId(id);
     setLicitacionWorkspaceId(id);
+    setLicitacionWorkspaceTab('resumen');
     setActiveTab('ficha-licitacion');
   };
 
@@ -175,8 +200,9 @@ function AdminApp() {
       throw new Error('El proveedor seleccionado no tiene una oferta registrada en esta licitación.');
     }
 
+    const simplificado = esProcesoSimplificado(licitacionAAdjudicar.montoEstimado, configFirmas.parametrosSgc?.umbralAprobacionVrae);
     const invitadosCount = licitacionAAdjudicar.proveedoresInvitadosIds?.length ?? 0;
-    if (invitadosCount < 3 && !licitacionAAdjudicar.esUnicoProveedor) {
+    if (invitadosCount < 3 && !licitacionAAdjudicar.esUnicoProveedor && !simplificado) {
       throw new Error(`Esta licitación solo tiene ${invitadosCount} proveedor(es) invitado(s). Se requiere un mínimo de 3, salvo que esté marcada como "Único Proveedor" en la Ficha del Proyecto.`);
     }
 
@@ -222,6 +248,18 @@ function AdminApp() {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {errorCargaDatos && (
+          <div className="mb-6 bg-red-50 border border-red-300 text-red-900 rounded-2xl px-5 py-4 flex items-start justify-between gap-3">
+            <p className="text-xs font-semibold">⚠️ {errorCargaDatos}</p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="shrink-0 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold"
+            >
+              Recargar página
+            </button>
+          </div>
+        )}
         {activeTab === 'licitaciones' && (
           <ProjectManager
             licitaciones={licitaciones}
@@ -235,6 +273,12 @@ function AdminApp() {
               setActiveTab('ficha-licitacion');
             }}
             onOpenFicha={lic => handleOpenFicha(lic)}
+            onOpenLicitacionTab={(id, tab) => {
+              setLicitacionSeleccionadaId(id);
+              setLicitacionWorkspaceId(id);
+              setLicitacionWorkspaceTab(tab);
+              setActiveTab('ficha-licitacion');
+            }}
             onAddLicitacion={handleAddLicitacion}
             onUpdateLicitacion={handleUpdateLicitacion}
             onDeleteLicitacion={handleDeleteLicitacion}
@@ -263,6 +307,7 @@ function AdminApp() {
           return licitacion ? (
             <LicitacionWorkspacePage
               licitacion={licitacion}
+              initialTab={licitacionWorkspaceTab}
               proveedores={proveedores}
               cotizaciones={cotizaciones}
               configFirmas={configFirmas}
@@ -293,6 +338,7 @@ function AdminApp() {
             cotizaciones={cotizaciones}
             onAddCotizacion={handleAddCotizacion}
             onDeleteCotizacion={handleDeleteCotizacion}
+            configFirmas={configFirmas}
           />
         )}
 
@@ -347,10 +393,11 @@ function AdminApp() {
   );
 }
 
-function ProtectedProveedorRoute({ children }: { children: React.ReactNode }) {
-  const { user, isProveedor, loading } = useAuth();
-  if (loading) return null;
-  if (!user || !isProveedor) return <Navigate to="/portal/login" replace />;
+/** Una cuenta de proveedor no puede ver NADA del sitio general: ni el sistema ni su pantalla de ingreso. */
+function BloqueaProveedor({ children }: { children: React.ReactNode }) {
+  const { user, isProveedor, isInternalUser, loading } = useAuth();
+  if (loading) return <div className="min-h-screen bg-slate-950" />;
+  if (user && isProveedor && !isInternalUser) return <PortalBloqueoProveedor />;
   return <>{children}</>;
 }
 
@@ -367,27 +414,16 @@ export function App() {
       <BrowserRouter basename={import.meta.env.BASE_URL}>
         <Routes>
           {/* Rutas internas */}
-          <Route path="/login" element={<InternalLoginPage />} />
-          <Route path="/" element={<ProtectedInternalRoute><AdminApp /></ProtectedInternalRoute>} />
+          <Route path="/login" element={<BloqueaProveedor><InternalLoginPage /></BloqueaProveedor>} />
+          <Route path="/" element={<BloqueaProveedor><ProtectedInternalRoute><AdminApp /></ProtectedInternalRoute></BloqueaProveedor>} />
 
           {/* Provider routes */}
-          <Route path="/portal/login" element={<LoginPage />} />
-          <Route
-            path="/portal"
-            element={
-              <ProtectedProveedorRoute>
-                <PortalDashboard />
-              </ProtectedProveedorRoute>
-            }
-          />
-          <Route
-            path="/portal/licitacion/:id"
-            element={
-              <ProtectedProveedorRoute>
-                <LicitacionDetalle />
-              </ProtectedProveedorRoute>
-            }
-          />
+          <Route path="/portal/login" element={<PortalAccesoRestringido />} />
+          {import.meta.env.DEV && <Route path="/portal/demo" element={<PortalDemo />} />}
+          {/* Único punto de entrada: el enlace de la invitación. Exige sesión y verifica la invitación. */}
+          <Route path="/portal/licitacion/:id" element={<PortalInvitacionPage />} />
+          {/* Cualquier otra ruta del portal: sin dashboard ni listados, solo la pantalla neutra */}
+          <Route path="/portal/*" element={<PortalAccesoRestringido />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

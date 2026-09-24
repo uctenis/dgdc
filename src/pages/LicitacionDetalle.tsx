@@ -3,28 +3,44 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Upload, CheckCircle2, AlertTriangle, AlertCircle,
   FileText, Save, Send, Clock, DollarSign, Calendar,
-  X, FileSpreadsheet, Loader2, Download
+  X, FileSpreadsheet, Loader2, Download, LogOut
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
-  subscribeToLicitaciones,
+  subscribeToLicitacion,
   getPropuesta,
   savePropuesta,
   updateInvitadoEstado,
-  getProveedores,
+  getProveedorPorId,
   updateLicitacion,
   licitacionCerradaParaOfertas,
+  registrarConfirmacionPropuesta,
 } from '../services/firestoreService';
-import { uploadFileToProjectFolder } from '../services/driveService';
+import { enviarConfirmacionPropuesta } from '../services/confirmacionPropuestaService';
+import { uploadLicitacionDocument } from '../services/storageService';
+import { generarFormatoPresupuestoExcel } from '../services/formatoPresupuestoExporter';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
-import type { LicitacionProyecto, Propuesta } from '../types';
+import type { LicitacionProyecto, Propuesta, Proveedor, DatosContratista } from '../types';
 import { parseCotizacionExcel } from '../utils/excelParser';
+import { plazoOfertasVencido, textoLimiteOfertas, tiempoRestanteOfertas } from '../utils/plazoOfertas';
+import { DatosContratistaForm } from '../components/DatosContratistaForm';
+import { datosContratistaVacios, datosContratistaCompletos } from '../utils/datosContratista';
 import { parseCotizacionPdf } from '../utils/pdfParser';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
 
-export function LicitacionDetalle() {
+interface LicitacionDetalleProps {
+  /** Vista de administrador: se ve como este proveedor, sin sesión de proveedor. */
+  proveedorIdVista?: string;
+  /** true = solo lectura (no permite cargar, guardar ni enviar propuestas). */
+  soloLectura?: boolean;
+  /** SOLO servidor local: muestra la pantalla con esta licitación de ejemplo, sin leer ni escribir en Firebase. */
+  demoLicitacion?: LicitacionProyecto;
+  demoProveedor?: Proveedor;
+}
+
+export function LicitacionDetalle({ proveedorIdVista, soloLectura = false, demoLicitacion, demoProveedor }: LicitacionDetalleProps = {}) {
   const { id: licitacionId } = useParams<{ id: string }>();
-  const { profile } = useAuth();
+  const { profile, user, logout } = useAuth();
   const navigate = useNavigate();
 
   const [licitacion, setLicitacion] = useState<LicitacionProyecto | null>(null);
@@ -35,54 +51,91 @@ export function LicitacionDetalle() {
     declaraSustentabilidad: false,
   });
   const [loading, setLoading] = useState(true);
+  const [errorCarga, setErrorCarga] = useState('');
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [uploadPct, setUploadPct] = useState<number | null>(null);
   const [savedMsg, setSavedMsg] = useState('');
   const [parsedFeedback, setParsedFeedback] = useState<string[] | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const fileTecRef = useRef<HTMLInputElement>(null);
+  const [uploadTecPct, setUploadTecPct] = useState<number | null>(null);
+  const [descargandoFormato, setDescargandoFormato] = useState(false);
+  const [proveedorDatos, setProveedorDatos] = useState<Proveedor | null>(demoProveedor ?? null);
+  const [confirmacionMsg, setConfirmacionMsg] = useState('');
+  const [datosContrato, setDatosContrato] = useState<DatosContratista>(datosContratistaVacios());
+  const datosContratoIniciados = useRef(false);
 
-  const proveedorId = profile?.proveedorId ?? '';
+  // Precarga los datos de representación legal: lo ya enviado en la propuesta, o lo de la ficha de la empresa.
+  useEffect(() => {
+    if (datosContratoIniciados.current) return;
+    const guardados = propuesta.datosContrato || proveedorDatos?.datosContrato;
+    if (guardados) {
+      setDatosContrato(guardados);
+      datosContratoIniciados.current = true;
+    }
+  }, [propuesta.datosContrato, proveedorDatos]);
+
+  const proveedorId = proveedorIdVista ?? profile?.proveedorId ?? '';
 
   // Computed
   const iva = Math.round((propuesta.montoNeto ?? 0) * 0.19);
   const total = (propuesta.montoNeto ?? 0) + iva;
 
-  const vencida = licitacion
-    ? new Date() > new Date(licitacion.fechaEvaluacion)
-    : false;
+  // El portal cierra a la hora indicada: se reevalúa cada 15 s para bloquearlo justo al cierre.
+  const [ahora, setAhora] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setAhora(Date.now()), 15000);
+    return () => clearInterval(t);
+  }, []);
+  const vencida = licitacion ? plazoOfertasVencido(licitacion, new Date(ahora)) : false;
   const yaEnviada = propuesta.estado === 'Enviada';
   const procesoCerrado = licitacion ? licitacionCerradaParaOfertas(licitacion) : false;
-  const canEdit = !vencida && !yaEnviada && licitacion?.estado === 'En Evaluacion';
+  const canEdit = !soloLectura && !vencida && !yaEnviada && licitacion?.estado === 'En Evaluacion';
 
   const [proveedorRut, setProveedorRut] = useState('');
 
   useEffect(() => {
+    if (demoLicitacion) {
+      setLicitacion(demoLicitacion);
+      setLoading(false);
+      return;
+    }
     if (!licitacionId || !proveedorId) return;
 
     // Cargar licitación
-    const unsub = subscribeToLicitaciones(lics => {
-      const found = lics.find(l => l.id === licitacionId);
-      setLicitacion(found ?? null);
-    });
+    const avisarErrorLectura = (err: unknown) => {
+      console.error('Error cargando la licitación en el portal:', err);
+      const code = (err as { code?: string })?.code;
+      setErrorCarga(
+        code === 'permission-denied'
+          ? 'No hay permiso para leer los datos: falta una sesión válida de Firebase. Si está probando en local, inicie sesión primero en el sistema interno en este mismo navegador y vuelva a abrir el enlace.'
+          : 'No se pudo cargar la licitación. Intente nuevamente.'
+      );
+    };
+
+    // Solo ESTA licitación (nunca la colección completa): el proveedor no debe descargar datos de otras.
+    const unsub = subscribeToLicitacion(licitacionId, found => setLicitacion(found), avisarErrorLectura);
 
     // Cargar RUT del proveedor
-    getProveedores().then(provs => {
-      const p = provs.find(pr => pr.id === proveedorId);
-      if (p) setProveedorRut(p.rut);
-    });
+    // Solo la ficha de SU empresa (no el catálogo de proveedores).
+    getProveedorPorId(proveedorId).then(p => {
+      if (p) { setProveedorRut(p.rut); setProveedorDatos(p); }
+    }).catch(() => { /* el RUT es opcional en pantalla */ });
 
     // Cargar propuesta existente
-    getPropuesta(licitacionId, proveedorId).then(p => {
-      if (p) setPropuesta(p);
-      setLoading(false);
-    });
+    getPropuesta(licitacionId, proveedorId)
+      .then(p => { if (p) setPropuesta(p); })
+      .catch(avisarErrorLectura)
+      .finally(() => setLoading(false));
 
     return unsub;
   }, [licitacionId, proveedorId]);
 
   const handleFileUpload = async (file: File) => {
-    if (!licitacionId || !proveedorId) return;
+    if (demoLicitacion) { alert('Vista de demostración: no se sube ningún archivo.'); return; }
+    if (soloLectura || !licitacionId || !proveedorId) return;
+    if (licitacion && plazoOfertasVencido(licitacion)) { alert(`El portal se cerró el ${textoLimiteOfertas(licitacion)}. Ya no es posible subir archivos.`); return; }
     if (procesoCerrado) {
       alert('Proceso cerrado: la licitación ya fue adjudicada y no acepta nuevas ofertas.');
       return;
@@ -93,14 +146,9 @@ export function LicitacionDetalle() {
     setUploadPct(0);
 
     try {
-      // 1. Subida del archivo a Storage
-      setUploadPct(20);
-      const archivoDrive = await uploadFileToProjectFolder(
-        file,
-        licitacionId,
-        licitacion?.nombreProyecto || 'Licitacion'
-      );
-      const url = archivoDrive.storage === 'drive' ? archivoDrive.url : undefined;
+      // 1. Subida del archivo a Firebase Storage
+      setUploadPct(5);
+      const url = await uploadLicitacionDocument(licitacionId, 'ofertas', file, pct => setUploadPct(Math.round(pct * 0.6)), proveedorId);
       setUploadPct(60);
       
       // 2. Lectura e inteligencia de datos (Excel / PDF)
@@ -114,23 +162,13 @@ export function LicitacionDetalle() {
       const feedbackList: string[] = [];
       if (parsedData?.rutProveedor) {
         setProveedorRut(parsedData.rutProveedor);
-        // Validar si coincide con catálogo de 155 proveedores
-        const allProvs = await getProveedores();
-        const matchedProv = allProvs.find(p => p.rut === parsedData.rutProveedor || p.rut.replace(/[^0-9kK]/g, '') === parsedData.rutProveedor?.replace(/[^0-9kK]/g, ''));
-        if (matchedProv) {
-          feedbackList.push(`✓ Proveedor identificado por RUT: ${matchedProv.razonSocial} (${matchedProv.rut})`);
-        } else {
-          feedbackList.push(`✓ RUT extraído del documento: ${parsedData.rutProveedor}`);
-        }
+        feedbackList.push(`✓ RUT extraído del documento: ${parsedData.rutProveedor}`);
       }
 
       if (parsedData?.detallesLeidos && parsedData.detallesLeidos.length > 0) {
         feedbackList.push(...parsedData.detallesLeidos);
       } else if (feedbackList.length === 0) {
         feedbackList.push(`Archivo ${isExcel ? 'Excel' : 'PDF'} cargado exitosamente.`);
-      }
-      if (archivoDrive.storage !== 'drive') {
-        feedbackList.push('⚠ El archivo fue leído, pero no quedó respaldado en Drive. Autorice Drive antes de enviar.');
       }
 
       setParsedFeedback(feedbackList);
@@ -153,18 +191,91 @@ export function LicitacionDetalle() {
     }
   };
 
+  const handleTecnicoUpload = async (file: File) => {
+    if (demoLicitacion) { alert('Vista de demostración: no se sube ningún archivo.'); return; }
+    if (soloLectura || !licitacionId || !proveedorId) return;
+    if (licitacion && plazoOfertasVencido(licitacion)) { alert(`El portal se cerró el ${textoLimiteOfertas(licitacion)}. Ya no es posible subir archivos.`); return; }
+    if (procesoCerrado) {
+      alert('Proceso cerrado: la licitación ya fue adjudicada y no acepta nuevas ofertas.');
+      return;
+    }
+    setUploadTecPct(5);
+    try {
+      const url = await uploadLicitacionDocument(licitacionId, 'ofertas', file, pct => setUploadTecPct(pct), proveedorId);
+      setPropuesta(prev => ({ ...prev, archivoTecnicoNombre: file.name, archivoTecnicoURL: url }));
+    } catch (err) {
+      console.error('Error subiendo la oferta técnica:', err);
+      alert('No se pudo subir el archivo de la oferta técnica. Intente nuevamente.');
+    } finally {
+      setUploadTecPct(null);
+    }
+  };
+
+  const descargarFormato = async () => {
+    if (!licitacion) return;
+    setDescargandoFormato(true);
+    try {
+      // El formato sale con los datos de la empresa invitada ya completados.
+      await generarFormatoPresupuestoExcel(licitacion, {
+        razonSocial: proveedorDatos?.razonSocial || profile?.displayName || '',
+        rut: proveedorDatos?.rut || proveedorRut,
+        nombreContacto: proveedorDatos?.nombreContacto,
+        email: proveedorDatos?.email || profile?.email,
+        telefono: proveedorDatos?.telefono,
+        direccion: proveedorDatos?.direccion,
+        ciudad: proveedorDatos?.ciudad,
+      });
+    } catch (err) {
+      console.error('Error generando el formato de presupuesto:', err);
+      alert('No se pudo generar el formato de presupuesto. Intente nuevamente.');
+    } finally {
+      setDescargandoFormato(false);
+    }
+  };
+
+  // Confirmación por correo al proveedor de que su oferta fue recibida (simulada en modo prueba).
+  const confirmarPorCorreo = async (enviada: Partial<Propuesta>) => {
+    if (!user || !licitacion || !licitacionId) return;
+    const email = proveedorDatos?.email || profile?.email || user.email || '';
+    const nombre = proveedorDatos?.razonSocial || profile?.displayName || '';
+    try {
+      const conf = await enviarConfirmacionPropuesta(user, licitacion, enviada, nombre, email);
+      setConfirmacionMsg(conf.modo === 'real'
+        ? `Le enviamos un correo de confirmación a ${conf.email}.`
+        : `[MODO PRUEBA] No se envió ningún correo real. Se habría enviado una confirmación a ${conf.email}.`);
+      setPropuesta(prev => ({ ...prev, confirmacionCorreo: conf }));
+      if (conf.modo === 'prueba') {
+        await registrarConfirmacionPropuesta(licitacionId, proveedorId, conf).catch(err => console.warn('No se pudo registrar la confirmación:', err));
+      }
+    } catch (err) {
+      console.error('Error enviando la confirmación por correo:', err);
+      setConfirmacionMsg('Su oferta fue recibida, pero no pudimos enviar el correo de confirmación. Conserve este comprobante en pantalla.');
+    }
+  };
+
   const handleSave = async (estado: 'Borrador' | 'Enviada') => {
+    if (demoLicitacion) { alert('Vista de demostración: no se guarda ni se envía nada.'); return; }
+    if (soloLectura) return;
+    if (licitacion && plazoOfertasVencido(licitacion)) { alert(`El portal se cerró el ${textoLimiteOfertas(licitacion)}. Ya no es posible guardar ni enviar su propuesta.`); return; }
     if (!licitacionId || !proveedorId || !profile) return;
     if (procesoCerrado) {
       alert('Proceso cerrado: no es posible guardar ni enviar propuestas después de la adjudicación.');
       return;
     }
     if (estado === 'Enviada' && (!propuesta.archivoNombre || !propuesta.archivoURL)) {
-      alert('Para enviar la propuesta debe adjuntar el archivo y completar su respaldo en Google Drive.');
+      alert('Para enviar la propuesta debe adjuntar su oferta económica (el formato de presupuesto completado).');
+      return;
+    }
+    if (estado === 'Enviada' && (!propuesta.archivoTecnicoNombre || !propuesta.archivoTecnicoURL)) {
+      alert('Para enviar la propuesta debe adjuntar también su oferta técnica.');
+      return;
+    }
+    if (estado === 'Enviada' && !datosContratistaCompletos(datosContrato)) {
+      alert('Complete los datos para el contrato: representante(s) legal(es) con su cédula de identidad, domicilio legal y personería.');
       return;
     }
     if (estado === 'Enviada' && (!propuesta.itemizado || propuesta.itemizado.length === 0)) {
-      alert('No se detectó el itemizado de la cotización. Use la plantilla oficial o un PDF con columnas de item, descripción, unidad, cantidad, precio unitario y total.');
+      alert('No se detectó el itemizado en su oferta económica. Use el formato de presupuesto descargable y complete la Cantidad y el Precio Unitario de cada partida.');
       return;
     }
     const setter = estado === 'Enviada' ? setSending : setSaving;
@@ -190,7 +301,10 @@ export function LicitacionDetalle() {
       archivoNombre: propuesta.archivoNombre,
       archivoURL: propuesta.archivoURL,
       archivoTipo: propuesta.archivoTipo,
+      ...(propuesta.archivoTecnicoNombre ? { archivoTecnicoNombre: propuesta.archivoTecnicoNombre } : {}),
+      ...(propuesta.archivoTecnicoURL ? { archivoTecnicoURL: propuesta.archivoTecnicoURL } : {}),
       observaciones: propuesta.observaciones,
+      datosContrato,
       fechaEnvio: new Date().toISOString(),
       estado,
     };
@@ -201,6 +315,7 @@ export function LicitacionDetalle() {
         await updateInvitadoEstado(licitacionId, proveedorId, 'Presentada');
       }
       setPropuesta(prev => ({ ...prev, ...data }));
+      if (estado === 'Enviada') void confirmarPorCorreo({ ...propuesta, ...data });
       setSavedMsg(estado === 'Enviada' ? '¡Propuesta enviada exitosamente!' : 'Borrador guardado.');
       setTimeout(() => setSavedMsg(''), 3000);
     } catch (error) {
@@ -226,7 +341,10 @@ export function LicitacionDetalle() {
   if (!licitacion) {
     return (
       <div className="min-h-screen flex items-center justify-center text-white" style={{ background: 'linear-gradient(160deg,#0f172a,#1e3a8a)' }}>
-        Licitación no encontrada.
+        <div className="max-w-md text-center space-y-2 px-4">
+          <p className="font-bold">{errorCarga ? 'No se pudo abrir la licitación' : 'Licitación no encontrada.'}</p>
+          {errorCarga && <p className="text-sm text-slate-300 leading-relaxed">{errorCarga}</p>}
+        </div>
       </div>
     );
   }
@@ -238,27 +356,39 @@ export function LicitacionDetalle() {
         className="sticky top-0 z-50 px-6 py-4 flex items-center gap-4"
         style={{ background: 'rgba(15,23,42,0.85)', backdropFilter: 'blur(16px)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}
       >
-        <button onClick={() => navigate('/portal')} className="text-slate-400 hover:text-white transition">
-          <ArrowLeft className="w-5 h-5" />
-        </button>
+        {soloLectura && (
+          <button onClick={() => navigate('/')} className="text-slate-400 hover:text-white transition" title="Volver al sistema">
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+        )}
         <div>
           <p className="text-[10px] text-sky-400 font-semibold uppercase tracking-wider">Presentar Propuesta</p>
           <p className="text-sm font-bold text-white leading-tight line-clamp-1">{licitacion.nombreProyecto.toLocaleUpperCase('es-CL')}</p>
         </div>
+        <div className="flex-1" />
         {procesoCerrado && (
-          <span className="ml-auto flex items-center gap-1.5 text-amber-300 text-xs font-bold">
+          <span className="flex items-center gap-1.5 text-amber-300 text-xs font-bold">
             <AlertTriangle className="w-4 h-4" /> Proceso Cerrado
           </span>
         )}
         {!procesoCerrado && yaEnviada && (
-          <span className="ml-auto flex items-center gap-1.5 text-emerald-400 text-xs font-bold">
+          <span className="flex items-center gap-1.5 text-emerald-400 text-xs font-bold">
             <CheckCircle2 className="w-4 h-4" /> Propuesta Enviada
           </span>
         )}
         {!procesoCerrado && vencida && !yaEnviada && (
-          <span className="ml-auto flex items-center gap-1.5 text-red-400 text-xs font-bold">
+          <span className="flex items-center gap-1.5 text-red-400 text-xs font-bold">
             <AlertTriangle className="w-4 h-4" /> Plazo Vencido
           </span>
+        )}
+        {!soloLectura && !demoLicitacion && (
+          <button
+            onClick={async () => { await logout(); navigate('/portal/login', { replace: true }); }}
+            className="flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-white transition"
+            title="Cerrar sesión"
+          >
+            <LogOut className="w-4 h-4" /> Salir
+          </button>
         )}
       </header>
 
@@ -269,25 +399,18 @@ export function LicitacionDetalle() {
           style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)' }}
         >
           <div className="flex flex-wrap gap-1.5">
-            <span className="text-[10px] font-bold bg-slate-800 text-slate-300 px-2 py-0.5 rounded">CP: {licitacion.codigoCP}</span>
-            <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded">OP: {licitacion.codigoOP}</span>
-            <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded">OT: {licitacion.codigoOT}</span>
+            <span className="text-[10px] font-bold bg-slate-800 text-slate-300 px-2 py-0.5 rounded">{licitacion.codigoProyecto}</span>
           </div>
           <p className="text-xs text-slate-300 leading-relaxed">{licitacion.descripcion}</p>
           <div className="flex items-center gap-4 pt-1">
             <span className="flex items-center gap-1.5 text-xs text-slate-400">
-              <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="text-emerald-300 font-semibold">{formatoMonedaCLP(licitacion.montoEstimado)}</span>
-              <span className="text-slate-500">estimado</span>
-            </span>
-            <span className="flex items-center gap-1.5 text-xs text-slate-400">
               <Calendar className="w-3.5 h-3.5 text-sky-400" />
-              Límite: <span className="text-sky-300 font-semibold">{new Date(licitacion.fechaEvaluacion).toLocaleDateString('es-CL')}</span>
+              Cierre: <span className="text-sky-300 font-semibold">{textoLimiteOfertas(licitacion)}</span>
             </span>
             {!vencida && (
               <span className="flex items-center gap-1.5 text-xs text-amber-300 font-semibold">
                 <Clock className="w-3.5 h-3.5" />
-                {Math.ceil((new Date(licitacion.fechaEvaluacion).getTime() - Date.now()) / 86400000)} días restantes
+                {tiempoRestanteOfertas(licitacion, new Date(ahora))} restantes
               </span>
             )}
           </div>
@@ -327,7 +450,7 @@ export function LicitacionDetalle() {
           </h3>
           {licitacion.antecedentesTecnicos && licitacion.antecedentesTecnicos.length > 0 ? (
             <div className="space-y-1.5">
-              {licitacion.antecedentesTecnicos.map(doc => (
+              {licitacion.antecedentesTecnicos.filter(doc => doc.tipo !== 'Presupuesto' && doc.archivoURL && doc.archivoURL !== '#').map(doc => (
                 <a
                   key={doc.id}
                   href={doc.archivoURL}
@@ -348,6 +471,53 @@ export function LicitacionDetalle() {
           )}
         </div>
 
+        {/* Comprobante: oferta enviada */}
+        {yaEnviada && (
+          <div
+            className="rounded-2xl p-5 space-y-1.5"
+            style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.35)' }}
+          >
+            <h3 className="text-sm font-bold text-emerald-300 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4" /> Su oferta fue enviada correctamente
+            </h3>
+            {propuesta.fechaEnvio && (
+              <p className="text-xs text-emerald-100">Enviada el {new Date(propuesta.fechaEnvio).toLocaleString('es-CL')}. Ya está a la vista de la Subdirección de Infraestructura.</p>
+            )}
+            {(confirmacionMsg || propuesta.confirmacionCorreo) && (
+              <p className="text-xs text-emerald-200/90">
+                {confirmacionMsg || (propuesta.confirmacionCorreo?.modo === 'real'
+                  ? `Confirmación enviada por correo a ${propuesta.confirmacionCorreo.email}.`
+                  : `[MODO PRUEBA] Confirmación simulada para ${propuesta.confirmacionCorreo?.email}: no se envió ningún correo real.`)}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Formato de presupuesto — partidas del proyecto sin cantidades ni precios, para completar */}
+        <div
+          className="rounded-2xl p-5 space-y-3"
+          style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)' }}
+        >
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+            Formato de presupuesto
+          </h3>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Descargue el formato en Excel: trae las partidas del proyecto ({licitacion.formatoPresupuesto?.length || 0} partidas) y los datos de su empresa ya completados.
+            Complete la <strong className="text-slate-300">Cantidad</strong> y el <strong className="text-slate-300">Precio Unitario</strong> de cada partida y súbalo más abajo como su oferta económica.
+          </p>
+          <button
+            type="button"
+            onClick={descargarFormato}
+            disabled={descargandoFormato}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-white transition disabled:opacity-60"
+            style={{ background: 'linear-gradient(135deg,#10b981,#059669)' }}
+          >
+            {descargandoFormato ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            Descargar formato de presupuesto (.xlsx)
+          </button>
+        </div>
+
         {/* Status overlay */}
         {!canEdit && (
           <div
@@ -363,7 +533,7 @@ export function LicitacionDetalle() {
               ? 'La licitación fue adjudicada y el proceso de recepción de ofertas está cerrado. Su propuesta queda disponible únicamente como antecedente.'
               : yaEnviada
                 ? 'Su propuesta fue enviada exitosamente. No puede realizar más cambios.'
-                : 'El plazo para presentar propuestas ha vencido.'}
+                : `El portal de recepción de ofertas se cerró el ${textoLimiteOfertas(licitacion)}. Ya no es posible enviar ni modificar propuestas.`}
           </div>
         )}
 
@@ -373,7 +543,7 @@ export function LicitacionDetalle() {
           style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)' }}
         >
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
-            <DollarSign className="w-4 h-4 text-emerald-400" /> Datos Económicos
+            <DollarSign className="w-4 h-4 text-emerald-400" /> Oferta Económica — Datos
           </h3>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -421,103 +591,17 @@ export function LicitacionDetalle() {
           )}
         </div>
 
-        {/* Criterios técnicos */}
-        <div
-          className="rounded-2xl p-6 space-y-4"
-          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)' }}
-        >
-          <h3 className="text-sm font-bold text-white flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-sky-400" /> Criterios Técnicos y de Sustentabilidad
-          </h3>
-          <p className="text-[11px] text-slate-500">
-            Estos factores son considerados en la evaluación (35% técnico + 10% sustentabilidad).
-            Sea preciso — el administrador puede solicitarle documentación de respaldo.
-          </p>
-
-          {[
-            { key: 'ajustaRequerimientos', label: 'a) Los procedimientos y materiales propuestos se ajustan a los requerimientos de la UCT', weight: '35%' },
-            { key: 'cuentaExperiencia', label: 'b) Cuenta con experiencia acreditada (cartas de referencia, contratos previos similares)', weight: '35%' },
-            { key: 'cumplePlazoRequerido', label: 'c) El servicio se puede ejecutar dentro del plazo requerido por la institución', weight: '35%' },
-          ].map(item => (
-            <label
-              key={item.key}
-              className="flex items-start gap-3 cursor-pointer group"
-              style={{ opacity: canEdit ? 1 : 0.6 }}
-            >
-              <input
-                type="checkbox"
-                disabled={!canEdit}
-                checked={propuesta[item.key as keyof Propuesta] as boolean ?? false}
-                onChange={e => setPropuesta(p => ({ ...p, [item.key]: e.target.checked }))}
-                className="mt-0.5 w-4 h-4 rounded accent-sky-500"
-              />
-              <span className="text-xs text-slate-300 group-hover:text-white transition leading-relaxed">
-                {item.label}
-              </span>
-            </label>
-          ))}
-
-          <div className="pt-2 border-t border-white/10">
-            <label className="flex items-start gap-3 cursor-pointer group" style={{ opacity: canEdit ? 1 : 0.6 }}>
-              <input
-                type="checkbox"
-                disabled={!canEdit}
-                checked={propuesta.declaraSustentabilidad ?? false}
-                onChange={e => setPropuesta(p => ({ ...p, declaraSustentabilidad: e.target.checked }))}
-                className="mt-0.5 w-4 h-4 rounded accent-emerald-500"
-              />
-              <span className="text-xs text-slate-300 group-hover:text-white transition leading-relaxed">
-                d) Declara cumplimiento sustentable: cuenta con certificación ambiental o firma carta compromiso sustentable (10%)
-              </span>
-            </label>
-            {propuesta.declaraSustentabilidad && (
-              <div className="mt-3 ml-7">
-                <label className="block text-xs font-semibold text-emerald-300 mb-1.5">Tipo de evidencia:</label>
-                <select
-                  disabled={!canEdit}
-                  value={propuesta.tipoEvidenciaSustentable ?? ''}
-                  onChange={e => setPropuesta(p => ({ ...p, tipoEvidenciaSustentable: e.target.value }))}
-                  className="px-3 py-2 rounded-lg text-xs text-white outline-none disabled:opacity-50"
-                  style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)' }}
-                >
-                  <option value="">— Seleccione —</option>
-                  <option value="Certificado Ambiental">Certificado Ambiental (ISO 14001, SIGA u otro)</option>
-                  <option value="Carta Compromiso">Carta Compromiso Sustentable Firmada</option>
-                  <option value="Certificado de Gestión de Residuos">Certificado de Gestión de Residuos</option>
-                </select>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Observaciones */}
-        <div
-          className="rounded-2xl p-6 space-y-3"
-          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)' }}
-        >
-          <label className="block text-sm font-bold text-white">Observaciones adicionales</label>
-          <textarea
-            rows={3}
-            disabled={!canEdit}
-            value={propuesta.observaciones ?? ''}
-            onChange={e => setPropuesta(p => ({ ...p, observaciones: e.target.value }))}
-            placeholder="Condiciones de pago, garantías, consideraciones especiales..."
-            className="w-full px-4 py-2.5 rounded-xl text-sm text-white outline-none resize-none placeholder:text-slate-600 disabled:opacity-50"
-            style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)' }}
-          />
-        </div>
-
         {/* Upload archivo */}
         <div
           className="rounded-2xl p-6 space-y-4"
           style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)' }}
         >
           <h3 className="text-sm font-bold text-white flex items-center gap-2">
-            <FileText className="w-4 h-4 text-amber-400" /> Archivo de Propuesta
+            <FileText className="w-4 h-4 text-amber-400" /> Oferta Económica — Archivo
           </h3>
           <p className="text-xs text-slate-500">
-            Adjunte su propuesta en formato <strong className="text-slate-400">Excel (.xlsx)</strong> o <strong className="text-slate-400">PDF</strong>.
-            Se recomienda usar la plantilla oficial disponible en la barra de herramientas.
+            Suba el <strong className="text-slate-400">formato de presupuesto completado</strong> (Excel .xlsx; también se acepta PDF).
+            Descárguelo arriba, en "Formato de presupuesto": el sistema lee los precios y calcula el monto solo.
           </p>
 
           {canEdit && (
@@ -611,6 +695,170 @@ export function LicitacionDetalle() {
               )}
             </div>
           )}
+        </div>
+
+        {/* Criterios técnicos */}
+        <div
+          className="rounded-2xl p-6 space-y-4"
+          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)' }}
+        >
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-sky-400" /> Criterios Técnicos y de Sustentabilidad
+          </h3>
+          <p className="text-[11px] text-slate-500">
+            Estos factores son considerados en la evaluación (35% técnico + 10% sustentabilidad).
+            Sea preciso — el administrador puede solicitarle documentación de respaldo.
+          </p>
+
+          {[
+            { key: 'ajustaRequerimientos', label: 'a) Los procedimientos y materiales propuestos se ajustan a los requerimientos de la UCT', weight: '35%' },
+            { key: 'cuentaExperiencia', label: 'b) Cuenta con experiencia acreditada (cartas de referencia, contratos previos similares)', weight: '35%' },
+            { key: 'cumplePlazoRequerido', label: 'c) El servicio se puede ejecutar dentro del plazo requerido por la institución', weight: '35%' },
+          ].map(item => (
+            <label
+              key={item.key}
+              className="flex items-start gap-3 cursor-pointer group"
+              style={{ opacity: canEdit ? 1 : 0.6 }}
+            >
+              <input
+                type="checkbox"
+                disabled={!canEdit}
+                checked={propuesta[item.key as keyof Propuesta] as boolean ?? false}
+                onChange={e => setPropuesta(p => ({ ...p, [item.key]: e.target.checked }))}
+                className="mt-0.5 w-4 h-4 rounded accent-sky-500"
+              />
+              <span className="text-xs text-slate-300 group-hover:text-white transition leading-relaxed">
+                {item.label}
+              </span>
+            </label>
+          ))}
+
+          <div className="pt-2 border-t border-white/10">
+            <label className="flex items-start gap-3 cursor-pointer group" style={{ opacity: canEdit ? 1 : 0.6 }}>
+              <input
+                type="checkbox"
+                disabled={!canEdit}
+                checked={propuesta.declaraSustentabilidad ?? false}
+                onChange={e => setPropuesta(p => ({ ...p, declaraSustentabilidad: e.target.checked }))}
+                className="mt-0.5 w-4 h-4 rounded accent-emerald-500"
+              />
+              <span className="text-xs text-slate-300 group-hover:text-white transition leading-relaxed">
+                d) Declara cumplimiento sustentable: cuenta con certificación ambiental o firma carta compromiso sustentable (10%)
+              </span>
+            </label>
+            {propuesta.declaraSustentabilidad && (
+              <div className="mt-3 ml-7">
+                <label className="block text-xs font-semibold text-emerald-300 mb-1.5">Tipo de evidencia:</label>
+                <select
+                  disabled={!canEdit}
+                  value={propuesta.tipoEvidenciaSustentable ?? ''}
+                  onChange={e => setPropuesta(p => ({ ...p, tipoEvidenciaSustentable: e.target.value }))}
+                  className="px-3 py-2 rounded-lg text-xs text-white outline-none disabled:opacity-50"
+                  style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)' }}
+                >
+                  <option value="">— Seleccione —</option>
+                  <option value="Certificado Ambiental">Certificado Ambiental (ISO 14001, SIGA u otro)</option>
+                  <option value="Carta Compromiso">Carta Compromiso Sustentable Firmada</option>
+                  <option value="Certificado de Gestión de Residuos">Certificado de Gestión de Residuos</option>
+                </select>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Observaciones */}
+        <div
+          className="rounded-2xl p-6 space-y-3"
+          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)' }}
+        >
+          <label className="block text-sm font-bold text-white">Observaciones adicionales</label>
+          <textarea
+            rows={3}
+            disabled={!canEdit}
+            value={propuesta.observaciones ?? ''}
+            onChange={e => setPropuesta(p => ({ ...p, observaciones: e.target.value }))}
+            placeholder="Condiciones de pago, garantías, consideraciones especiales..."
+            className="w-full px-4 py-2.5 rounded-xl text-sm text-white outline-none resize-none placeholder:text-slate-600 disabled:opacity-50"
+            style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)' }}
+          />
+        </div>
+
+        {/* Oferta técnica */}
+        <div
+          className="rounded-2xl p-6 space-y-4"
+          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)' }}
+        >
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <FileText className="w-4 h-4 text-violet-400" /> Oferta Técnica — Archivo
+          </h3>
+          <p className="text-xs text-slate-500">
+            Suba su propuesta técnica: metodología de trabajo, materiales, equipo, carta Gantt y experiencia acreditada.
+            Formatos: <strong className="text-slate-400">PDF, Word o Excel</strong>.
+          </p>
+
+          {canEdit && (
+            <>
+              <input
+                ref={fileTecRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.xlsx,.xls,.zip"
+                className="hidden"
+                onChange={e => e.target.files?.[0] && handleTecnicoUpload(e.target.files[0])}
+              />
+              <button
+                type="button"
+                onClick={() => fileTecRef.current?.click()}
+                className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all"
+                style={{ background: 'rgba(167,139,250,0.1)', border: '2px dashed rgba(167,139,250,0.35)', color: '#c4b5fd' }}
+              >
+                <Upload className="w-4 h-4" />
+                {propuesta.archivoTecnicoNombre ? 'Cambiar archivo' : 'Seleccionar archivo'}
+              </button>
+            </>
+          )}
+
+          {uploadTecPct !== null && (
+            <div className="space-y-1">
+              <div className="flex justify-between text-xs text-slate-400"><span>Subiendo archivo...</span><span>{uploadTecPct}%</span></div>
+              <div className="h-2 rounded-full bg-slate-700 overflow-hidden">
+                <div className="h-full bg-violet-500 transition-all duration-300 rounded-full" style={{ width: `${uploadTecPct}%` }} />
+              </div>
+            </div>
+          )}
+
+          {propuesta.archivoTecnicoNombre && (
+            <div
+              className="flex items-center gap-3 px-4 py-3 rounded-xl"
+              style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)' }}
+            >
+              <FileText className="w-5 h-5 text-emerald-400 shrink-0" />
+              <a href={propuesta.archivoTecnicoURL} target="_blank" rel="noreferrer" className="text-xs text-emerald-300 hover:underline flex-1 truncate">
+                {propuesta.archivoTecnicoNombre}
+              </a>
+              {canEdit && (
+                <button
+                  onClick={() => setPropuesta(p => ({ ...p, archivoTecnicoNombre: undefined, archivoTecnicoURL: undefined }))}
+                  className="text-slate-500 hover:text-red-400 transition"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Datos para el contrato (representación legal) */}
+        <div
+          className="rounded-2xl p-6 space-y-4"
+          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)' }}
+        >
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <FileText className="w-4 h-4 text-indigo-300" /> Datos para el contrato — Representación legal
+          </h3>
+          <p className="text-xs text-slate-500">
+            Se usarán únicamente para redactar el contrato si su empresa resulta adjudicada: quién lo firma, su domicilio legal y la personería que acredita a los representantes.
+          </p>
+          <DatosContratistaForm value={datosContrato} onChange={setDatosContrato} tema="oscuro" disabled={!canEdit} />
         </div>
 
         {/* Success message */}

@@ -1,11 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { collection, query, where, getDocs, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import {
   ArrowLeft, FileText, CheckCircle2, Upload,
-  Trash2, Building, User, DollarSign,
-  MapPin, ShieldCheck, CheckSquare, Square, Printer, FolderCheck, Edit3, Cloud, AlertCircle, CalendarDays,
+  Trash2, Building, DollarSign,
+  ShieldCheck, CheckSquare, Square, Printer, FolderCheck, Edit3, Cloud, AlertCircle, CalendarDays,
   ScrollText,
+  FileCheck2,
 } from 'lucide-react';
 import type { AumentoObra, Cotizacion, LicitacionProyecto, ProyectoMaestro, Proveedor, ConfiguracionFirmas } from '../types';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
@@ -16,6 +18,7 @@ import { uploadProyectoDocumento } from '../services/storageService';
 import { getCampusList, obtenerEdificiosDeCampus } from '../data/campusData';
 import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
+import { agruparPorFase } from '../utils/itemizadoOrganizer';
 import { AumentosObraPanel } from './AumentosObraPanel';
 import { ItemizadoProyectoPanel } from './ItemizadoProyectoPanel';
 import { ProgramaTrabajoPanel } from './ProgramaTrabajoPanel';
@@ -23,6 +26,7 @@ import { BitacoraProyectoPanel } from './BitacoraProyectoPanel';
 import { CargaOrdenCompraModal } from './CargaOrdenCompraModal';
 import { PremiumDatePicker } from './PremiumDatePicker';
 import { BasesLicitacionModal } from './BasesLicitacionModal';
+import { EETTProyectoPanel } from './EETTProyectoPanel';
 import { ContratoAdjudicacionModal } from './ContratoAdjudicacionModal';
 import { requiereContratoFormal, UMBRAL_CONTRATO_FORMAL } from '../data/contratoTemplateData';
 
@@ -44,6 +48,8 @@ interface ChecklistItem {
   label: string;
   descripcion: string;
   completado: boolean;
+  /** true = marcado a mano, sin documento que lo respalde. */
+  manual?: boolean;
 }
 
 interface FichaProyectoPageProps {
@@ -78,6 +84,12 @@ const normalizarTipoDocumento = (tipo: string): DocumentoProyecto['tipo'] => {
   }
 };
 
+// Todo ProyectoMaestro de la Cartera tiene `correlativo` (la lista se ordena por él). No se usa
+// `montoEstimado` para distinguir: un proyecto puede tenerlo como campo suelto y terminaba
+// escribiéndose en la colección de licitaciones (documento inexistente → error al guardar).
+const esLicitacion = (p: LicitacionProyecto | ProyectoMaestro): p is LicitacionProyecto =>
+  !('correlativo' in p);
+
 export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
   proyecto,
   onBack,
@@ -102,7 +114,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
         // Se usa proyectoMaestroId (vínculo explícito) primero, y codigoProyecto como respaldo.
         // NO se usa codigoCP como respaldo: no es único (muchos proyectos comparten el valor
         // por defecto "409-1722"), lo que enlazaba proyectos nuevos con licitaciones ajenas.
-        if (!('montoEstimado' in proyecto)) {
+        if (!(esLicitacion(proyecto))) {
           const licsRef = collection(db, 'licitaciones');
           let snap = await getDocs(query(licsRef, where('proyectoMaestroId', '==', proyecto.id)));
           if (snap.empty && codigoProyectoTarget) {
@@ -117,7 +129,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
         // Si la ficha recibió una LicitacionProyecto, buscar su ProyectoMaestro asociado.
         // Mismo criterio: proyectoMaestroId (vínculo directo por id de documento) primero,
         // codigoProyecto como respaldo, sin fallback por codigoCP.
-        if ('montoEstimado' in proyecto) {
+        if (esLicitacion(proyecto)) {
           if (proyecto.proyectoMaestroId) {
             const directSnap = await getDoc(doc(db, 'proyectos', proyecto.proyectoMaestroId));
             if (directSnap.exists() && isMounted) {
@@ -142,11 +154,31 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
     return () => { isMounted = false; };
   }, [proyecto]);
 
-  const licitacionEfectiva = 'montoEstimado' in proyecto ? proyecto : (licitacionVinculada || undefined);
+  // Id de la Licitación vinculada, apenas se conoce (la búsqueda cruzada de arriba la resuelve
+  // a partir de un ProyectoMaestro).
+  const idLicitacionVinculada = licitacionVinculada?.id;
+
+  // Suscripción en vivo al documento de la Licitación: sin esto, cambios de fechas de obra,
+  // monto adjudicado o proveedor guardados desde el Workspace de Licitación (en otra pestaña u
+  // otra sesión) no se reflejan aquí hasta recargar — la ficha quedaba mostrando datos viejos.
+  const [licitacionVinculadaLive, setLicitacionVinculadaLive] = useState<LicitacionProyecto | null>(null);
+  useEffect(() => {
+    if (!idLicitacionVinculada) {
+      setLicitacionVinculadaLive(null);
+      return;
+    }
+    return onSnapshot(doc(db, 'licitaciones', idLicitacionVinculada), snap => {
+      if (snap.exists()) setLicitacionVinculadaLive({ id: snap.id, ...(snap.data() as Omit<LicitacionProyecto, 'id'>) });
+    });
+  }, [idLicitacionVinculada]);
+
+  const licitacionEfectiva = esLicitacion(proyecto)
+    ? proyecto
+    : (licitacionVinculadaLive || licitacionVinculada || undefined);
 
   // Id del ProyectoMaestro real, apenas se conoce (directo si `proyecto` ya es uno, o una vez que
   // la búsqueda cruzada de arriba resuelve el vinculado a partir de una LicitacionProyecto).
-  const idProyectoMaestro = 'valorAprox' in proyecto ? proyecto.id : proyectoMaestroVinculado?.id;
+  const idProyectoMaestro = !esLicitacion(proyecto) ? proyecto.id : proyectoMaestroVinculado?.id;
 
   // Suscripción en vivo al documento del ProyectoMaestro: sin esto, guardar cambios desde paneles
   // hijos (ej. Itemizado) escribe bien en Firestore pero esta página sigue mostrando los datos
@@ -162,7 +194,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
     });
   }, [idProyectoMaestro]);
 
-  const proyectoMaestroEfectivo = proyectoMaestroLive || ('valorAprox' in proyecto ? proyecto : (proyectoMaestroVinculado || undefined));
+  const proyectoMaestroEfectivo = proyectoMaestroLive || (!esLicitacion(proyecto) ? proyecto : (proyectoMaestroVinculado || undefined));
 
   // Normalización de datos unificados entre LicitacionProyecto y ProyectoMaestro
   const id = proyecto.id;
@@ -185,7 +217,8 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
   );
   const nombreProyectoUpper = nombreProyecto;
 
-  const montoEstimado = licitacionEfectiva?.montoEstimado ?? proyectoMaestroEfectivo?.valorAprox ?? 0;
+  // El proyecto maestro (suscrito en vivo) es la fuente del presupuesto estimado; la licitación es respaldo.
+  const montoEstimado = proyectoMaestroEfectivo?.valorAprox || licitacionEfectiva?.montoEstimado || 0;
   const montoAdjudicado = licitacionEfectiva?.montoAdjudicadoTotal ?? proyectoMaestroEfectivo?.montoAdjudicado;
 
   const estaAdjudicado = Boolean(
@@ -266,13 +299,28 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
   // Los hitos propios del proceso de licitación (visita a terreno, consultas, ofertas, cuadro
   // comparativo, OC/cierre) tienen su propia trazabilidad en LicitacionWorkspacePage → Resumen,
   // para no duplicar el mismo checklist en dos lugares con datos distintos.
-  const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([
+  const [checklistBase, setChecklistItems] = useState<ChecklistItem[]>([
     { id: 'ch-01', label: '1. Bases Administrativas / Términos de Referencia', descripcion: 'Reglas del proceso y criterios de evaluación', completado: false },
     { id: 'ch-02', label: '2. Especificaciones Técnicas (EETT)', descripcion: 'Detalle de materiales, cubicaciones y requerimientos de obra', completado: false },
     { id: 'ch-03', label: '3. Planos de Arquitectura y Especialidades (DWG / PDF)', descripcion: 'Planos acotados, instalaciones eléctricas y sanitarias', completado: false },
     { id: 'ch-04', label: '4. Presupuesto Detallado e Itemizado (XLSX)', descripcion: 'Cubicaciones y desglose de costos por partida', completado: false },
     { id: 'ch-05', label: '5. Programa de Trabajo y Carta Gantt', descripcion: 'Cronograma de ejecución y plazos por etapa', completado: false },
   ]);
+
+  // Marcas manuales (ej. proyectos sin planos): se combinan con la validación automática por documentos.
+  const [checklistManual, setChecklistManual] = useState<Record<string, boolean>>(
+    () => ('checklistManual' in proyecto && proyecto.checklistManual) || {}
+  );
+  useEffect(() => {
+    const remoto = proyectoMaestroEfectivo?.checklistManual ?? licitacionEfectiva?.checklistManual;
+    if (remoto) setChecklistManual(remoto);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proyectoMaestroEfectivo?.id, licitacionEfectiva?.id]);
+  const checklistItems: ChecklistItem[] = checklistBase.map(item => ({
+    ...item,
+    completado: item.completado || checklistManual[item.id] === true,
+    manual: !item.completado && checklistManual[item.id] === true,
+  }));
 
   /**
    * Valida automáticamente el checklist basado en documentos cargados
@@ -284,9 +332,10 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
 
         // Mapear qué documentos satisfacen cada checklist item
         if (item.id === 'ch-01') {
-          completado = docs.some(d => d.tipo === 'Bases');
+          // Las Bases generadas en el sistema cuentan igual que un documento de Bases adjunto.
+          completado = docs.some(d => d.tipo === 'Bases') || Boolean(proyectoMaestroEfectivo?.bases);
         } else if (item.id === 'ch-02') {
-          completado = docs.some(d => d.tipo === 'EETT');
+          completado = docs.some(d => d.tipo === 'EETT') || Boolean(proyectoMaestroEfectivo?.eett?.partidas?.length);
         } else if (item.id === 'ch-03') {
           completado = docs.some(d => d.tipo === 'Planos DWG' || d.tipo === 'Planos PDF');
         } else if (item.id === 'ch-04') {
@@ -398,6 +447,17 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
   const [aiProcessing, setAiProcessing] = useState(false);
   const [hasChanges, setHasChanges] = useState(false); // Track cambios
   const [showOCModal, setShowOCModal] = useState(false);
+  const [tabActiva, setTabActiva] = useState<'caratula' | 'presupuesto' | 'eett' | 'cronograma' | 'bitacora' | 'aumentos'>('caratula');
+  const tabsFicha = [
+    { id: 'caratula' as const, label: 'Expediente', icon: FileText },
+    ...(proyectoMaestroEfectivo ? [
+      { id: 'presupuesto' as const, label: 'Presupuesto Estimativo', icon: DollarSign },
+      { id: 'eett' as const, label: 'EETT', icon: FileCheck2 },
+      { id: 'cronograma' as const, label: 'Cronograma', icon: CalendarDays },
+    ] : []),
+    ...(licitacionEfectiva && estaAdjudicado ? [{ id: 'aumentos' as const, label: 'Aumentos de Obra', icon: Building }] : []),
+    { id: 'bitacora' as const, label: 'Bitácora', icon: ScrollText },
+  ];
 
   const [mainData, setMainData] = useState({
     nombreProyecto: nombreProyectoUpper,
@@ -417,41 +477,86 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
     plazoAdjudicadoDias: plazoAdjudicadoDias || 0,
   });
 
+  // Mantiene el input del resumen alineado con el monto vigente (p. ej. tras "Usar como Presupuesto Estimado").
+  useEffect(() => {
+    setMainData(prev => (prev.montoEstimado === montoEstimado ? prev : { ...prev, montoEstimado }));
+  }, [montoEstimado]);
+
   const saveInlineUpdate = async (updates: Partial<typeof mainData>) => {
     try {
       const payload: any = { ...updates };
+      // ProyectoMaestro guarda el presupuesto en `valorAprox`; se mantiene también el par vinculado.
+      if (updates.montoEstimado !== undefined) {
+        if (idProyectoMaestro) await updateProyectoMaestro(idProyectoMaestro, { valorAprox: updates.montoEstimado });
+        if (licitacionEfectiva && licitacionEfectiva.id !== id) await updateLicitacion(licitacionEfectiva.id, { montoEstimado: updates.montoEstimado });
+        if (!(esLicitacion(proyecto))) delete payload.montoEstimado;
+      }
       if (updates.codigoOC !== undefined) {
         payload.ordenCompraNumero = updates.codigoOC;
         payload.codigoOC = updates.codigoOC;
       }
-      if ('montoEstimado' in proyecto) {
+      if (esLicitacion(proyecto)) {
         await updateLicitacion(id, payload);
         await syncOCToProyectoMaestro({ ...proyecto, id }, payload);
       } else {
+        // En la Cartera el nombre se guarda en `nombre`, no en `nombreProyecto`.
+        if (payload.nombreProyecto !== undefined) {
+          payload.nombre = payload.nombreProyecto;
+          delete payload.nombreProyecto;
+        }
         await updateProyectoMaestro(id, payload);
       }
       setHasChanges(true);
     } catch (e) {
       console.error(e);
-      alert('Error guardando cambios.');
+      alert(`Error guardando cambios: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
 
+  // "Usar como Presupuesto Estimado": propaga el monto del itemizado al proyecto maestro, a la
+  // licitación vinculada (la ficha prioriza su montoEstimado) y al estado local de la cabecera.
+  const handleUsarComoPresupuesto = async (monto: number) => {
+    if (idProyectoMaestro) await updateProyectoMaestro(idProyectoMaestro, { valorAprox: monto });
+    if (licitacionEfectiva) await updateLicitacion(licitacionEfectiva.id, { montoEstimado: monto });
+    setLicitacionVinculada(prev => (prev ? { ...prev, montoEstimado: monto } : prev));
+    setMainData(prev => ({ ...prev, montoEstimado: monto }));
+    setHasChanges(true);
+    onUpdateSuccess?.();
+  };
+
+  // Exporta la portada ejecutiva: marca el body para que el CSS de impresión muestre solo la portada.
+  const exportarPortadaPDF = () => {
+    const limpiar = () => {
+      document.body.classList.remove('imprimiendo-portada');
+      window.removeEventListener('afterprint', limpiar);
+    };
+    document.body.classList.add('imprimiendo-portada');
+    window.addEventListener('afterprint', limpiar);
+    window.print();
+  };
+
   const completadosCount = checklistItems.filter(i => i.completado).length;
   const porcentajeAvance = Math.round((completadosCount / checklistItems.length) * 100);
 
-  const handleToggleChecklist = (idCheck: string) => {
-    // Solo permitir cambios manuales en items ch-06 a ch-10 (no son automáticos)
-    const autoItems = ['ch-01', 'ch-02', 'ch-03', 'ch-04', 'ch-05'];
-    if (autoItems.includes(idCheck)) {
-      return; // No permitir cambios en items automáticos
+  const handleToggleChecklist = async (idCheck: string) => {
+    const base = checklistBase.find(i => i.id === idCheck);
+    if (!base) return;
+    // Si ya está verificado por un documento real, no se toca: la marca manual solo aplica sin respaldo.
+    if (base.completado) return;
+    const marcando = checklistManual[idCheck] !== true;
+    if (marcando && !confirm(`¿Confirma marcar "${base.label.replace(/^\d+\.\s*/, '')}" como cumplido SIN documento adjunto (por ejemplo, porque este proyecto no cuenta con ello)? Quedará registrado como marcado manualmente.`)) return;
+    const siguiente = { ...checklistManual, [idCheck]: marcando };
+    setChecklistManual(siguiente);
+    try {
+      // Se replica en el proyecto y en su licitación: las pantallas de invitación/ofertas leen la de la licitación.
+      if (idProyectoMaestro) await updateProyectoMaestro(idProyectoMaestro, { checklistManual: siguiente });
+      if (licitacionEfectiva) await updateLicitacion(licitacionEfectiva.id, { checklistManual: siguiente });
+    } catch (err) {
+      console.error('Error guardando la marca manual del checklist:', err);
+      setChecklistManual(checklistManual);
+      alert('No se pudo guardar la marca. Intente nuevamente.');
     }
-
-    setChecklistItems(items =>
-      items.map(item => (item.id === idCheck ? { ...item, completado: !item.completado } : item))
-    );
-    setHasChanges(true);
   };
 
   const handleAgregarDocumento = async (e: React.FormEvent) => {
@@ -550,7 +655,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
       };
 
       // Guardar documentos
-      if ('montoEstimado' in proyecto) {
+      if (esLicitacion(proyecto)) {
         datosActualizar.antecedentesTecnicos = documentos.map(d => ({
           id: d.id,
           nombre: d.nombre,
@@ -595,7 +700,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
     setIsSaving(true);
     try {
       const corrected = corregirOrtografiaEspanol(newDesc || '');
-      if ('montoEstimado' in proyecto) {
+      if (esLicitacion(proyecto)) {
         await updateLicitacion(id, { descripcion: corrected });
       } else {
         await updateProyectoMaestro(id, { descripcion: corrected });
@@ -640,7 +745,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
   // Validar checklist cuando cambian los documentos o el itemizado (ch-04: Presupuesto Detallado)
   useEffect(() => {
     validateChecklistFromDocuments(documentos);
-  }, [documentos, proyectoMaestroEfectivo?.itemizado]);
+  }, [documentos, proyectoMaestroEfectivo?.itemizado, proyectoMaestroEfectivo?.bases, proyectoMaestroEfectivo?.eett]);
 
   const handleDeleteProyectoFromFicha = async () => {
     const nombreProy = nombreProyecto || 'este proyecto';
@@ -649,7 +754,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
     }
 
     try {
-      if ('montoEstimado' in proyecto) {
+      if (esLicitacion(proyecto)) {
         await deleteLicitacion(proyecto.id);
         if (proyectoMaestroVinculado) {
           await deleteProyectoMaestro(proyectoMaestroVinculado.id);
@@ -687,11 +792,11 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
         <div className="flex-1"></div>
         
         <button
-          onClick={() => window.print()}
+          onClick={exportarPortadaPDF}
           className="px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-sm transition flex items-center gap-2 font-bold border border-slate-200 shadow-sm"
         >
           <Printer className="w-4 h-4" />
-          <span>Imprimir</span>
+          <span>Exportar Carátula PDF</span>
         </button>
         <button
           onClick={handleGuardarCambios}
@@ -712,7 +817,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
             title={proyectoMaestroEfectivo.bases ? `Bases: ${proyectoMaestroEfectivo.bases.estado}` : 'Generar Bases Administrativas y Técnicas'}
           >
             <ScrollText className="w-4 h-4" />
-            <span>Bases</span>
+            <span>{proyectoMaestroEfectivo.bases ? `Bases (${proyectoMaestroEfectivo.bases.estado})` : 'Generar Bases'}</span>
           </button>
         )}
         {proyectoMaestroEfectivo && (proyectoMaestroEfectivo.montoAdjudicado || 0) > 0 && (
@@ -745,7 +850,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
       </div>
 
       {/* SECCIÓN DE ENCABEZADO PROMINENTE DEL PROYECTO (COMPACTA) */}
-      <div className="bg-gradient-to-br from-slate-800 via-slate-700 to-slate-800 rounded-2xl shadow-sm overflow-hidden caratula-print border border-slate-600">
+      <div className="bg-gradient-to-br from-slate-800 via-slate-700 to-slate-800 rounded-2xl shadow-sm overflow-hidden border border-slate-600">
         <div className="p-4 sm:p-5 space-y-3.5">
           {/* Fila de Códigos */}
           <div className="flex flex-wrap gap-1.5">
@@ -959,10 +1064,12 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
                   <span className="font-extrabold text-slate-400 text-[10px]">PLAZO</span>
                   <div className="flex items-center gap-1">
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="numeric"
                       value={mainData.plazoAdjudicadoDias || ''}
+                      onFocus={e => e.target.select()}
                       onChange={e => {
-                        const nuevoPlazo = parseInt(e.target.value) || 0;
+                        const nuevoPlazo = parseInt(e.target.value.replace(/\D/g, '').slice(0, 4)) || 0;
                         const nuevosDatos = { ...mainData, plazoAdjudicadoDias: nuevoPlazo };
                         if (mainData.fechaInicioObra && nuevoPlazo > 0) {
                           const date = new Date(mainData.fechaInicioObra);
@@ -975,7 +1082,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
                         plazoAdjudicadoDias: mainData.plazoAdjudicadoDias,
                         fechaTerminoProgramada: mainData.fechaTerminoProgramada
                       })}
-                      className="bg-transparent font-extrabold text-indigo-400 outline-none w-10 text-right text-[11px]"
+                      className="bg-transparent font-extrabold text-indigo-400 outline-none w-14 text-right text-[11px]"
                       placeholder="0"
                       min="0"
                     />
@@ -1013,7 +1120,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
           </div>
 
           {/* ─── INDICADORES DE GESTIÓN: RIESGO + SUPERFICIE ─── */}
-          {'montoEstimado' in proyecto && (
+          {esLicitacion(proyecto) && (
             <div className="grid grid-cols-2 gap-2.5">
               {/* Nivel de Riesgo */}
               <div className="bg-slate-700/50 p-2.5 rounded-xl border border-slate-600/80 space-y-1.5">
@@ -1125,121 +1232,140 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
           </div>
         </div>
 
+      {/* Pestañas de la ficha. Los paneles se mantienen montados (solo ocultos) para no perder
+          ediciones sin guardar ni re-suscribirse a Firestore al cambiar de pestaña. */}
+      <div className="flex flex-wrap gap-1 border-b border-slate-200 print:hidden" role="tablist">
+        {tabsFicha.map(t => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={tabActiva === t.id}
+            onClick={() => setTabActiva(t.id)}
+            className={`px-4 py-2.5 text-sm font-bold rounded-t-xl border border-b-0 transition flex items-center gap-2 -mb-px ${
+              tabActiva === t.id
+                ? 'bg-white text-slate-900 border-slate-200'
+                : 'bg-transparent text-slate-500 border-transparent hover:text-slate-800 hover:bg-slate-100'
+            }`}
+          >
+            <t.icon className="w-4 h-4" />
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </div>
+
       {proyectoMaestroEfectivo && (
-        <ItemizadoProyectoPanel proyecto={proyectoMaestroEfectivo} configFirmas={configFirmas} />
+        <div hidden={tabActiva !== 'presupuesto'}>
+          <ItemizadoProyectoPanel proyecto={proyectoMaestroEfectivo} configFirmas={configFirmas} onUsarComoPresupuesto={handleUsarComoPresupuesto} />
+        </div>
       )}
 
       {proyectoMaestroEfectivo && (
-        <ProgramaTrabajoPanel proyecto={proyectoMaestroEfectivo} />
+        <div hidden={tabActiva !== 'eett'}>
+          <EETTProyectoPanel proyecto={proyectoMaestroEfectivo} />
+        </div>
       )}
 
-      {/* Grid Principal: Carátula Oficial (Izquierda) + CheckList y Documentos (Derecha) */}
+      {proyectoMaestroEfectivo && (
+        <div hidden={tabActiva !== 'cronograma'}>
+          <ProgramaTrabajoPanel
+            proyecto={proyectoMaestroEfectivo}
+            fechaInicioRespaldo={mainData.fechaInicioObra || undefined}
+            duracionRespaldoDias={mainData.plazoAdjudicadoDias || undefined}
+          />
+        </div>
+      )}
+
       {licitacionEfectiva && estaAdjudicado && (
-        <AumentosObraPanel
-          licitacion={licitacionEfectiva}
-          oferta={cotizacionAdjudicada}
-          onChange={setAumentosObra}
-        />
+        <div hidden={tabActiva !== 'aumentos'}>
+          <AumentosObraPanel
+            licitacion={licitacionEfectiva}
+            oferta={cotizacionAdjudicada}
+            onChange={setAumentosObra}
+          />
+        </div>
       )}
 
-      <BitacoraProyectoPanel
-        proyectoId={id}
-        coleccionProyecto={licitacionEfectiva ? 'licitaciones' : 'proyectos'}
-        responsableNombre={responsableNombre}
-        responsableEmail={responsableEmail}
-      />
+      <div hidden={tabActiva !== 'bitacora'}>
+        <BitacoraProyectoPanel
+          proyectoId={id}
+          coleccionProyecto={licitacionEfectiva ? 'licitaciones' : 'proyectos'}
+          responsableNombre={responsableNombre}
+          responsableEmail={responsableEmail}
+        />
+      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className={`${tabActiva === 'caratula' ? 'grid' : 'hidden'} grid-cols-1 lg:grid-cols-12 gap-6`}>
 
-        {/* COLUMNA IZQUIERDA: CARÁTULA OFICIAL DEL PROYECTO */}
+        {/* COLUMNA IZQUIERDA: CHECKLIST (a la vista) + ORDEN DE COMPRA */}
         <div className="lg:col-span-5 space-y-6">
-          
-          <div className="bg-white rounded-2xl border-2 border-slate-900 shadow-md overflow-hidden caratula-print">
-            {/* Encabezado Carátula */}
-            <div className="bg-slate-900 text-white p-4 text-center border-b-2 border-slate-900 space-y-1">
-              <span className="text-[10px] font-mono tracking-widest text-sky-300 uppercase block">
-                UNIVERSIDAD CATÓLICA DE TEMUCO • SUBDIRECCIÓN DE INFRAESTRUCTURA
+          {/* MÓDULO 1: CHECK LIST DE LO QUE CONTIENE EL PROYECTO */}
+          <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div>
+                <h4 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+                  <CheckSquare className="w-4 h-4 text-emerald-600" />
+                  <span>Checklist de Contenidos del Proyecto (Expediente)</span>
+                </h4>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Se validan solos al adjuntar el documento. Si el proyecto no cuenta con alguno (ej. planos), márquelo a mano: quedará registrado con una advertencia.
+                </p>
+              </div>
+              <span className="text-[11px] font-extrabold bg-emerald-100 text-emerald-900 px-3 py-1 rounded-full">
+                {completadosCount} / {checklistItems.length}
               </span>
-              <h3 className="text-base font-black uppercase tracking-wide">
-                CARÁTULA OFICIAL DE EXPEDIENTE
-              </h3>
-              <p className="text-[11px] text-slate-300 font-medium">PS-FOR-DGDC 0003 • Sistema de Control de Obras</p>
             </div>
 
-            {/* Datos Resumen del Proyecto */}
-            <div className="p-5 space-y-4 text-xs bg-slate-50/50">
-              
-              <div className="space-y-2">
-                <span className="text-[10px] font-extrabold uppercase text-slate-400 block">Resumen Información Técnica del Proyecto:</span>
-                
-                <div className="bg-white rounded-lg p-4 border border-slate-200">
-                  <p className="text-slate-500 text-[10px] mb-2 font-bold">NOMBRE OFICIAL:</p>
-                  <p className="text-slate-900 text-sm font-extrabold uppercase leading-snug">{nombreProyectoUpper}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 border-t border-b border-slate-200 py-3 font-mono">
-                <div>
-                  <span className="text-[10px] font-bold text-slate-500 block">Centro de Costo (CC/CP):</span>
-                  <span className="font-extrabold text-slate-900 text-xs">{codigoCP}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] font-bold text-slate-500 block">Código Proyecto:</span>
-                  <span className="font-extrabold text-indigo-700 text-xs">{codigoProyecto || id}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] font-bold text-purple-700 block">Orden Compra (OC):</span>
-                  <span className="font-extrabold text-purple-900 text-xs">{mainData.codigoOC || ordenCompraNumero || 'Pendiente'}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] font-bold text-slate-500 block">Orden Trabajo (OT):</span>
-                  <span className="font-bold text-slate-800 text-xs">{codigoOT || 'Pendiente'}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] font-bold text-slate-500 block">Orden Pedido (OP):</span>
-                  <span className="font-bold text-slate-800 text-xs">{codigoOP || 'Pendiente'}</span>
-                </div>
-              </div>
-
-              <div className="space-y-2 text-slate-700 text-xs">
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-sky-600 shrink-0" />
-                  <span><strong>Ubicación:</strong> Campus {campusSigla} {edificioSigla ? `• Edificio ${edificioSigla}` : ''}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <User className="w-4 h-4 text-indigo-600 shrink-0" />
-                  <span><strong>Responsable UCT:</strong> {responsableNombre}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <DollarSign className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>
-                    <strong>{montoAumentosAprobados > 0 ? 'Contrato vigente:' : tieneMontoAdjudicado ? 'Monto oficial adjudicado:' : 'Monto estimado:'}</strong>{' '}
-                    <strong className="text-emerald-800 font-extrabold">{formatoMonedaCLP(montoVigente)}</strong>
-                  </span>
-                </div>
-                {tieneMontoAdjudicado && (
-                  <div className="flex items-center gap-2 text-slate-500">
-                    <DollarSign className="w-4 h-4 shrink-0" />
-                    <span><strong>Monto estimado inicial:</strong> {formatoMonedaCLP(montoEstimado)}</span>
-                  </div>
-                )}
-                {estaAdjudicado && (
-                  <div className="flex items-start gap-2 rounded-lg bg-emerald-50 border border-emerald-200 p-3">
-                    <Building className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
-                    <span>
-                      <strong>Proveedor adjudicado:</strong>{' '}
-                      <strong className="text-emerald-900">{proveedorAdjudicadoNombre || 'Pendiente de identificar'}</strong>
-                      {proveedorAdjudicadoRut && <span className="block text-[10px] text-slate-600 mt-0.5">RUT: {proveedorAdjudicadoRut}</span>}
-                      {plazoVigenteDias > 0 && <span className="block text-[10px] text-slate-600">Plazo vigente: {plazoVigenteDias} días corridos{diasAumentoAprobados > 0 ? ` (${plazoAdjudicadoDias || 0} originales + ${diasAumentoAprobados} de aumento)` : ''}</span>}
+            <div className="grid grid-cols-1 gap-2.5">
+              {checklistItems.map(item => (
+                <div
+                  key={item.id}
+                  onClick={() => handleToggleChecklist(item.id)}
+                  className={`p-3 rounded-xl border transition cursor-pointer flex items-start gap-3 ${
+                    item.manual
+                      ? 'bg-amber-50 border-amber-300 text-amber-950'
+                      : item.completado
+                      ? 'bg-emerald-50/60 border-emerald-300 text-emerald-950'
+                      : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  <button type="button" className="mt-0.5 shrink-0">
+                    {item.completado ? (
+                      <CheckCircle2 className={`w-5 h-5 ${item.manual ? 'text-amber-600' : 'text-emerald-600'}`} />
+                    ) : (
+                      <Square className="w-5 h-5 text-slate-400" />
+                    )}
+                  </button>
+                  <div className="flex-1">
+                    <span className={`font-extrabold text-xs block ${item.completado ? 'text-emerald-950 line-through opacity-80' : 'text-slate-900'}`}>
+                      {item.label}
                     </span>
+                    <span className="text-[11px] text-slate-500 font-medium block">
+                      {item.descripcion}
+                    </span>
+                    {item.manual && (
+                      <span className="inline-block mt-1 text-[10px] font-bold uppercase text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded">
+                        ⚠ Marcado sin documento adjunto
+                      </span>
+                    )}
+                    {item.id === 'ch-01' && proyectoMaestroEfectivo && (
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); setBasesAbierto(true); }}
+                        className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border bg-white hover:bg-indigo-50 text-indigo-700 border-indigo-200 shadow-sm"
+                      >
+                        <ScrollText className="w-3.5 h-3.5" />
+                        {proyectoMaestroEfectivo.bases
+                          ? `Ver / editar Bases · ${proyectoMaestroEfectivo.bases.estado}${proyectoMaestroEfectivo.bases.desactualizada ? ' (desactualizadas)' : ''}`
+                          : 'Generar Bases predeterminadas'}
+                      </button>
+                    )}
                   </div>
-                )}
-                {fechaInicioObra && (
-                  <div className="flex items-center gap-2">
-                    <CalendarDays className="w-4 h-4 text-sky-600 shrink-0" />
-                    <span><strong>Programa contractual vigente:</strong> {new Intl.DateTimeFormat('es-CL').format(new Date(`${fechaInicioObra}T12:00:00`))} – {fechaTerminoVigente ? new Intl.DateTimeFormat('es-CL').format(new Date(`${fechaTerminoVigente}T12:00:00`)) : 'Término pendiente'}</span>
-                  </div>
-                )}
+                </div>
+              ))}
+            </div>
+          </div>
+
                 {/* Bloque Destacado de Orden de Compra (OC) */}
                 <div className="p-3.5 bg-purple-50/90 rounded-xl border border-purple-200 space-y-2">
                   <div className="flex items-center justify-between gap-2">
@@ -1273,67 +1399,11 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
                   ) : null}
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <Building className="w-4 h-4 text-purple-600 shrink-0" />
-                  <span><strong>Uso Solicitante:</strong> {uso}</span>
-                </div>
-              </div>
-
-            </div>
-          </div>
 
         </div>
 
         {/* COLUMNA DERECHA: CHECKLIST DE CONTENIDOS DEL PROYECTO + GESTIÓN DE DOCUMENTOS */}
         <div className="lg:col-span-7 space-y-6">
-
-          {/* MÓDULO 1: CHECK LIST DE LO QUE CONTIENE EL PROYECTO */}
-          <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div>
-                <h4 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
-                  <CheckSquare className="w-4 h-4 text-emerald-600" />
-                  <span>Checklist de Contenidos del Proyecto (Expediente)</span>
-                </h4>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Marque los componentes e hito documentales verificados en la carátula oficial.
-                </p>
-              </div>
-              <span className="text-[11px] font-extrabold bg-emerald-100 text-emerald-900 px-3 py-1 rounded-full">
-                {completadosCount} / {checklistItems.length}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 gap-2.5">
-              {checklistItems.map(item => (
-                <div
-                  key={item.id}
-                  onClick={() => handleToggleChecklist(item.id)}
-                  className={`p-3 rounded-xl border transition cursor-pointer flex items-start gap-3 ${
-                    item.completado
-                      ? 'bg-emerald-50/60 border-emerald-300 text-emerald-950'
-                      : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  <button type="button" className="mt-0.5 shrink-0">
-                    {item.completado ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                    ) : (
-                      <Square className="w-5 h-5 text-slate-400" />
-                    )}
-                  </button>
-                  <div className="flex-1">
-                    <span className={`font-extrabold text-xs block ${item.completado ? 'text-emerald-950 line-through opacity-80' : 'text-slate-900'}`}>
-                      {item.label}
-                    </span>
-                    <span className="text-[11px] text-slate-500 font-medium block">
-                      {item.descripcion}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
 
           {/* Modal / Inline Editor para descripción */}
           {isEditingDesc && (
@@ -1570,6 +1640,121 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
         </div>
 
       </div>
+
+      {/* Portada ejecutiva del proyecto (1 hoja carta): vive fuera de #root y solo se imprime al exportar */}
+      {createPortal(
+        (() => {
+          const fmtFecha = (iso?: string) => (iso ? new Intl.DateTimeFormat('es-CL').format(new Date(iso.length <= 10 ? `${iso}T12:00:00` : iso)) : '—');
+          const fasesPortada = agruparPorFase(proyectoMaestroEfectivo?.itemizado || [])
+            .map(g => ({ fase: g.fase, monto: g.items.reduce((s, it) => s + (it.precioTotal || 0), 0) }))
+            .filter(g => g.monto > 0)
+            .sort((a, b) => b.monto - a.monto);
+          const totalFases = fasesPortada.reduce((s, f) => s + f.monto, 0);
+          const superficie = esLicitacion(proyecto) ? (proyecto as LicitacionProyecto).superficieM2 : undefined;
+          const riesgo = esLicitacion(proyecto) ? (proyecto as LicitacionProyecto).nivelRiesgo : undefined;
+          const etiquetaMonto = montoAumentosAprobados > 0 ? 'Contrato vigente' : tieneMontoAdjudicado ? 'Monto adjudicado' : 'Presupuesto estimado';
+          const estadoTxt = estaAdjudicado ? 'Adjudicado' : (licitacionEfectiva?.estado || 'En preparación');
+          return (
+            <div className="portada-root">
+              <div className="portada">
+                <header className="portada-head">
+                  <div className="portada-brand">
+                    <img src={`${import.meta.env.BASE_URL}logo-uct.png`} alt="Universidad Católica de Temuco" className="portada-logo" />
+                    <div>
+                      <div className="portada-inst">Universidad Católica de Temuco · Subdirección de Infraestructura</div>
+                      <div className="portada-doc">Portada de Proyecto</div>
+                    </div>
+                  </div>
+                  <div className="portada-meta">
+                    <div>PS-FOR-DGDC 0003</div>
+                    <div>Emitida el {new Intl.DateTimeFormat('es-CL', { dateStyle: 'long' }).format(new Date())}</div>
+                  </div>
+                </header>
+
+                <section className="portada-title">
+                  <div className="portada-chips">
+                    <span>CP {mainData.codigoCP || codigoCP}</span>
+                    <span>Cód. {mainData.codigoProyecto || codigoProyecto || id}</span>
+                    <span>OC {mainData.codigoOC || ordenCompraNumero || 'Pendiente'}</span>
+                    <span>OT {mainData.codigoOT || codigoOT || 'Pendiente'}</span>
+                    <span>OP {mainData.codigoOP || codigoOP || 'Pendiente'}</span>
+                    <span className="portada-estado">{estadoTxt}</span>
+                  </div>
+                  <h1>{mainData.nombreProyecto || nombreProyectoUpper}</h1>
+                  {descripcionLocal && <p className="portada-desc">{descripcionLocal}</p>}
+                </section>
+
+                <section className="portada-kpis">
+                  <div><label>{etiquetaMonto}</label><strong>{formatoMonedaCLP(montoVigente)}</strong>{tieneMontoAdjudicado && <small>Estimado inicial {formatoMonedaCLP(montoEstimado)}</small>}</div>
+                  <div><label>Plazo</label><strong>{plazoVigenteDias ? `${plazoVigenteDias} días` : 'Por definir'}</strong>{diasAumentoAprobados > 0 && <small>Incluye {diasAumentoAprobados} d de aumento</small>}</div>
+                  <div><label>Inicio → Término</label><strong className="portada-kpi-sm">{fmtFecha(fechaInicioObra)} → {fmtFecha(fechaTerminoVigente)}</strong></div>
+                  <div><label>Superficie</label><strong>{superficie ? `${superficie} m²` : '—'}</strong>{superficie && tieneMontoAdjudicado && <small>{formatoMonedaCLP(Math.round(montoVigente / superficie))}/m²</small>}</div>
+                </section>
+
+                <section className="portada-cols">
+                  <div>
+                    <h2>Antecedentes</h2>
+                    <dl>
+                      <dt>Ubicación</dt><dd>Campus {campusSigla}{edificioSigla ? ` · Edificio ${edificioSigla}` : ''}</dd>
+                      <dt>Responsable UCT</dt><dd>{responsableNombre}{responsableEmail ? ` · ${responsableEmail}` : ''}</dd>
+                      <dt>Uso solicitante</dt><dd>{uso}</dd>
+                      {proyectoMaestroEfectivo?.tipoObra && (<><dt>Tipo de obra</dt><dd>{proyectoMaestroEfectivo.tipoObra}</dd></>)}
+                      {riesgo && (<><dt>Nivel de riesgo</dt><dd>{riesgo}</dd></>)}
+                    </dl>
+                  </div>
+                  <div>
+                    <h2>Adjudicación</h2>
+                    {estaAdjudicado ? (
+                      <dl>
+                        <dt>Contratista</dt><dd>{proveedorAdjudicadoNombre || 'Por identificar'}</dd>
+                        {proveedorAdjudicadoRut && (<><dt>RUT</dt><dd>{proveedorAdjudicadoRut}</dd></>)}
+                        <dt>Orden de compra</dt><dd>{mainData.codigoOC || ordenCompraNumero || 'Pendiente'}</dd>
+                        {montoAumentosAprobados > 0 && (<><dt>Aumentos aprobados</dt><dd>{formatoMonedaCLP(montoAumentosAprobados)}</dd></>)}
+                      </dl>
+                    ) : (
+                      <p className="portada-muted">Proyecto aún no adjudicado.</p>
+                    )}
+                  </div>
+                </section>
+
+                {fasesPortada.length > 0 && (
+                  <section className="portada-fases">
+                    <h2>Presupuesto por fase</h2>
+                    {fasesPortada.slice(0, 6).map(f => {
+                      const pct = totalFases > 0 ? (f.monto / totalFases) * 100 : 0;
+                      return (
+                        <div key={f.fase} className="portada-fase">
+                          <span>{f.fase}</span>
+                          <div className="portada-bar"><i style={{ width: `${pct}%` }} /></div>
+                          <b>{Math.round(pct)}%</b>
+                          <em>{formatoMonedaCLP(f.monto)}</em>
+                        </div>
+                      );
+                    })}
+                    {fasesPortada.length > 6 && <p className="portada-muted">+ {fasesPortada.length - 6} fase(s) adicionales</p>}
+                  </section>
+                )}
+
+                <section className="portada-exp">
+                  <h2>Estado del expediente · {porcentajeAvance}%</h2>
+                  <div className="portada-bar portada-bar-lg"><i style={{ width: `${porcentajeAvance}%` }} /></div>
+                  <ul>
+                    {checklistItems.map(item => (
+                      <li key={item.id}><span>{item.completado ? '☑' : '☐'}</span> {item.label.replace(/^\d+\.\s*/, '')}</li>
+                    ))}
+                  </ul>
+                </section>
+
+                <footer className="portada-firmas">
+                  <div><i />{responsableNombre}<small>Responsable del proyecto</small></div>
+                  <div><i />V°B° Jefatura<small>Subdirección de Infraestructura</small></div>
+                </footer>
+              </div>
+            </div>
+          );
+        })(),
+        document.body
+      )}
 
       {/* Modal Carga Orden de Compra */}
       {showOCModal && (

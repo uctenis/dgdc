@@ -1,27 +1,79 @@
+import { checklistAntecedentesEfectivo, checklistAntecedentesCompleto } from '../utils/proveedorMatching';
 import React, { useState, useEffect } from 'react';
-import type { Cotizacion, Proveedor, LicitacionProyecto, Propuesta, ItemCotizacion } from '../types';
-import { FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Plus, Trash2, ShieldCheck, Leaf, Clock, FileText, Globe, ArrowDownToLine, Loader2 } from 'lucide-react';
+import type { Cotizacion, Proveedor, LicitacionProyecto, Propuesta, ItemCotizacion, ConfiguracionFirmas } from '../types';
+import { FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Plus, Trash2, ShieldCheck, Leaf, Clock, FileText, Globe, ArrowDownToLine, Loader2, Mail } from 'lucide-react';
 import { parseCotizacionExcel } from '../utils/excelParser';
 import { parseCotizacionPdf } from '../utils/pdfParser';
 import { uploadFileToProjectFolder } from '../services/driveService';
 import { uploadLicitacionDocument } from '../services/storageService';
 import { formatoMonedaCLP, ordenarCotizacionesPorResultado } from '../services/evaluationEngine';
-import { subscribeToPropuestas, convertirPropuestaACotizacion, plazoEntregaVencido } from '../services/firestoreService';
+import { subscribeToPropuestas, convertirPropuestaACotizacion } from '../services/firestoreService';
+import { useAuth } from '../context/AuthContext';
+import { validarCotizacion } from '../utils/validacionCotizacion';
+import { textoLimiteOfertas, tiempoRestanteOfertas, plazoOfertasVencido, fechaLimiteOfertas, ahoraParaInput, formatoFechaHoraChile } from '../utils/plazoOfertas';
+import { esProcesoSimplificado, UMBRAL_LICITACION_OBLIGATORIA } from '../data/contratoTemplateData';
 import { SupplierSearchInput } from './SupplierSearchInput';
 import { PremiumDatePicker } from './PremiumDatePicker';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
 
+/** Una propuesta del portal vista como cotización, para validarla con las mismas reglas. */
+const propuestaComoCotizacion = (p: Propuesta): Cotizacion => ({
+  ...(p as unknown as Cotizacion),
+  id: p.id,
+  documentoCotizacionNombre: p.archivoNombre,
+  ofertaTecnicaNombre: p.archivoTecnicoNombre,
+  fechaRecepcion: p.fechaEnvio,
+  origenPropuestaId: p.id,
+});
+
+/** Origen y resultado de la validación de una cotización (información completa y dentro de plazo). */
+const ValidacionCotizacion: React.FC<{ cot: Cotizacion; licitacion: LicitacionProyecto; simplificado?: boolean }> = ({ cot, licitacion, simplificado }) => {
+  const v = validarCotizacion(cot, licitacion);
+  return (
+    <div className="space-y-1.5 pt-1">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {v.admisible ? (
+          <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full text-[9px] font-black uppercase">✓ Validada</span>
+        ) : (
+          <span className="bg-red-100 text-red-800 px-2 py-0.5 rounded-full text-[9px] font-black uppercase">✗ No admisible</span>
+        )}
+        {cot.ingresoManual ? (
+          <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full text-[9px] font-bold" title={`Motivo: ${cot.ingresoManual.motivo} · Ingresó: ${cot.ingresoManual.porEmail}`}>
+            {simplificado ? '✉️ Oferta recibida directamente' : '🛟 Ingreso manual de emergencia'}
+          </span>
+        ) : cot.origenPropuestaId ? (
+          <span className="bg-sky-100 text-sky-800 px-2 py-0.5 rounded-full text-[9px] font-bold">Vía portal</span>
+        ) : null}
+        {cot.fechaRecepcion && (
+          <span className="text-[9px] text-slate-500">Recibida {formatoFechaHoraChile(cot.fechaRecepcion)}</span>
+        )}
+      </div>
+      {v.observaciones.length > 0 && (
+        <ul className="text-[10px] space-y-0.5">
+          {v.observaciones.map((o, i) => (
+            <li key={i} className={o.severidad === 'error' ? 'text-red-700 font-semibold' : 'text-amber-700'}>
+              {o.severidad === 'error' ? '✗' : '⚠'} {o.mensaje}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
 const OnlinePropuestasList: React.FC<{
   licitacionId: string;
+  licitacion: LicitacionProyecto;
   onImportPropuesta: (p: Propuesta) => void;
   procesoCerrado?: boolean;
-}> = ({ licitacionId, onImportPropuesta, procesoCerrado = false }) => {
+}> = ({ licitacionId, licitacion, onImportPropuesta, procesoCerrado = false }) => {
   const [propuestas, setPropuestas] = useState<Propuesta[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const unsub = subscribeToPropuestas(licitacionId, data => {
-      setPropuestas(data);
+      // El administrador ve solo las ofertas ya ENVIADAS por el proveedor (no los borradores).
+      setPropuestas(data.filter(p => p.estado === 'Enviada'));
       setLoading(false);
     });
     return unsub;
@@ -39,26 +91,47 @@ const OnlinePropuestasList: React.FC<{
       </div>
 
       <div className="space-y-2">
-        {propuestas.map(p => (
+        {propuestas.map(p => {
+          const validacion = validarCotizacion(propuestaComoCotizacion(p), licitacion);
+          return (
           <div key={p.id} className="bg-white/10 backdrop-blur-md rounded-xl p-3.5 flex items-center justify-between border border-white/10">
             <div className="space-y-1">
               <span className="font-bold text-sm text-white">{p.proveedorNombre}</span>
-              <div className="flex gap-3 text-xs text-sky-200">
+              <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-sky-200">
+                <span className="font-bold text-emerald-300">✓ Enviada{p.fechaEnvio ? ` ${new Date(p.fechaEnvio).toLocaleString('es-CL')}` : ''}</span>
                 <span>Total: <strong>{formatoMonedaCLP(p.montoTotal)}</strong></span>
                 <span>Plazo: <strong>{p.plazoDias} días</strong></span>
-                {p.archivoNombre && <span>Archivo: <a href={p.archivoURL} target="_blank" rel="noreferrer" className="underline">{p.archivoNombre}</a></span>}
+                {p.archivoNombre && <span>Oferta económica: <a href={p.archivoURL} target="_blank" rel="noreferrer" className="underline">{p.archivoNombre}</a></span>}
+                {p.archivoTecnicoNombre && <span>Oferta técnica: <a href={p.archivoTecnicoURL} target="_blank" rel="noreferrer" className="underline">{p.archivoTecnicoNombre}</a></span>}
+                <span>Confirmación al proveedor: <strong>{p.confirmacionCorreo ? (p.confirmacionCorreo.modo === 'real' ? 'enviada' : 'simulada (prueba)') : 'pendiente'}</strong></span>
               </div>
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${validacion.admisible ? 'bg-emerald-400 text-emerald-950' : 'bg-red-400 text-red-950'}`}>
+                  {validacion.admisible ? '✓ Validada' : '✗ No admisible'}
+                </span>
+              </div>
+              {validacion.observaciones.length > 0 && (
+                <ul className="text-[10px] space-y-0.5 pt-1">
+                  {validacion.observaciones.map((o, i) => (
+                    <li key={i} className={o.severidad === 'error' ? 'text-red-300 font-semibold' : 'text-amber-200'}>
+                      {o.severidad === 'error' ? '✗' : '⚠'} {o.mensaje}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
             <button
               onClick={() => onImportPropuesta(p)}
-              disabled={procesoCerrado}
+              disabled={procesoCerrado || !validacion.admisible}
+              title={!validacion.admisible ? 'Oferta no admisible: revise las observaciones' : undefined}
               className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-600 disabled:text-slate-300 disabled:cursor-not-allowed text-white text-xs font-bold px-3 py-2 rounded-lg transition shadow-sm shrink-0"
             >
               <ArrowDownToLine className="w-3.5 h-3.5" />
-              {procesoCerrado ? 'Proceso cerrado' : 'Convertir en Cotización'}
+              {procesoCerrado ? 'Proceso cerrado' : !validacion.admisible ? 'No admisible' : 'Convertir en Cotización'}
             </button>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -76,6 +149,8 @@ interface QuotationIngestionProps {
   cotizaciones: Cotizacion[];
   onAddCotizacion: (cot: Omit<Cotizacion, 'id' | 'fechaCarga'>) => void | Promise<void>;
   onDeleteCotizacion: (id: string) => void | Promise<void>;
+  /** Umbrales institucionales — determina si el proyecto puede usar el proceso simplificado (ver `esProcesoSimplificado`). */
+  configFirmas?: ConfiguracionFirmas;
 }
 
 export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
@@ -84,6 +159,7 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
   cotizaciones,
   onAddCotizacion,
   onDeleteCotizacion,
+  configFirmas,
 }) => {
   const [mensajeNotificacion, setMensajeNotificacion] = useState<{ tipo: 'exito' | 'error'; texto: string } | null>(null);
 
@@ -105,6 +181,11 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
   const [documentoCotizacionDriveId, setDocumentoCotizacionDriveId] = useState<string>('');
   const [documentoCotizacionStorage, setDocumentoCotizacionStorage] = useState<'drive' | 'firebase'>('firebase');
   const [fechaCotizacion, setFechaCotizacion] = useState<string>('');
+  const { user } = useAuth();
+  // Ingreso manual: solo de emergencia (lo normal es que la oferta llegue por el portal de proveedores).
+  const [mostrarManual, setMostrarManual] = useState(false);
+  const [fechaRecepcion, setFechaRecepcion] = useState<string>(ahoraParaInput());
+  const [motivoManual, setMotivoManual] = useState('');
   const [itemizado, setItemizado] = useState<ItemCotizacion[]>([]);
   const [procesandoArchivo, setProcesandoArchivo] = useState(false);
   const [guardandoCotizacion, setGuardandoCotizacion] = useState(false);
@@ -127,11 +208,11 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
     || Boolean(licitacion.proveedorAdjudicadoId)
     || Boolean(licitacion.proveedorGanadorId);
 
-  const checklistLic = licitacion.checklistAntecedentes;
-  const antecedentesCompletos = Boolean(
-    checklistLic?.basesTecnicasOk && checklistLic?.basesAdministrativasOk && checklistLic?.planosOk &&
-    checklistLic?.calendarioDefinidoOk && checklistLic?.revisadoSecretariaGeneralOk
-  );
+  // Proyecto chico (bajo el umbral institucional de Licitación obligatoria): la Licitación formal
+  // (invitación + portal) es opcional en este rango — las ofertas también pueden llegar directo
+  // (ej. por correo) y registrarse aquí, sin invitación ni checklist de Bases obligatorios.
+  const simplificado = esProcesoSimplificado(licitacion.montoEstimado, configFirmas?.parametrosSgc?.umbralAprobacionVrae ?? UMBRAL_LICITACION_OBLIGATORIA);
+  const antecedentesCompletos = simplificado || checklistAntecedentesCompleto(checklistAntecedentesEfectivo(licitacion));
 
   // Handle Net Amount changes and auto-calculate IVA and Total
   const handleMontoNetoChange = (val: number) => {
@@ -299,19 +380,26 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
       alert('La cotización debe incluir un itemizado completo: item, descripción, unidad, cantidad y precio unitario.');
       return;
     }
-    if (plazoEntregaVencido(licitacion)) {
-      const fechaLimite = licitacion.fechaEntregaPropuestas || licitacion.fechaEvaluacion;
-      const continuar = confirm(
-        `El plazo de entrega de propuestas de esta licitación venció el ${fechaLimite}. ` +
-        `Solo continúe si esta oferta llegó por otro medio (correo, papel) antes de esa fecha y recién ahora se está registrando. ` +
-        `¿Confirma registrarla de todas formas?`
-      );
-      if (!continuar) return;
+    if (!simplificado && motivoManual.trim().length < 10) {
+      alert('Indique el motivo del ingreso manual (mínimo 10 caracteres): este ingreso es solo para emergencias y queda registrado.');
+      return;
+    }
+    if (!fechaRecepcion) {
+      alert('Indique la fecha y hora en que se recibió la oferta.');
+      return;
+    }
+    const recepcion = new Date(fechaRecepcion);
+    if (recepcion.getTime() > Date.now() + 60000) {
+      alert('La fecha y hora de recepción no puede ser futura.');
+      return;
+    }
+    const limiteCierre = fechaLimiteOfertas(licitacion);
+    if (limiteCierre && recepcion.getTime() > limiteCierre.getTime()) {
+      alert(`La oferta se recibió el ${formatoFechaHoraChile(recepcion)} y la recepción cerró el ${textoLimiteOfertas(licitacion)}. Una oferta fuera de plazo no puede registrarse.`);
+      return;
     }
 
-    setGuardandoCotizacion(true);
-    try {
-      await onAddCotizacion({
+    const nuevaCotizacion = {
         licitacionId: licitacion.id,
         proveedorId: prov.id,
         proveedorRut: prov.rut,
@@ -331,7 +419,22 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
         ...(documentoCotizacionURL ? { documentoCotizacionURL, documentoCotizacionStorage } : {}),
         ...(documentoCotizacionDriveId ? { documentoCotizacionDriveId } : {}),
         observaciones,
-      });
+        fechaRecepcion: recepcion.toISOString(),
+        ingresoManual: {
+          motivo: motivoManual.trim() || (simplificado ? 'Proceso simplificado (Comparación de Precios): oferta recibida directamente, sin licitación formal.' : ''),
+          porEmail: user?.email || '',
+          fecha: new Date().toISOString(),
+        },
+      };
+    const validacion = validarCotizacion({ ...nuevaCotizacion, id: 'nueva', fechaCarga: new Date().toISOString() } as Cotizacion, licitacion);
+    if (!validacion.admisible) {
+      alert('La cotización no puede registrarse porque:\n\n• ' + validacion.observaciones.filter(o => o.severidad === 'error').map(o => o.mensaje).join('\n• '));
+      return;
+    }
+
+    setGuardandoCotizacion(true);
+    try {
+      await onAddCotizacion(nuevaCotizacion);
 
       setMontoNeto(0);
       setMontoIva(0);
@@ -342,6 +445,9 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
       setDocumentoCotizacionDriveId('');
       setDocumentoCotizacionStorage('firebase');
       setFechaCotizacion('');
+      setMotivoManual('');
+      setFechaRecepcion(ahoraParaInput());
+      setMostrarManual(false);
       setItemizado([]);
       setMensajeNotificacion({ tipo: 'exito', texto: `Cotización de ${prov.razonSocial} registrada correctamente en la licitación.` });
     } catch (error) {
@@ -369,7 +475,7 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
       <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-md border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <span className="text-[10px] font-extrabold uppercase bg-sky-500/20 text-sky-300 px-2.5 py-0.5 rounded border border-sky-400/30">
-            {procesoCerrado ? 'Proceso cerrado por adjudicación' : 'Licitación Activa'}
+            {procesoCerrado ? 'Proceso cerrado por adjudicación' : simplificado ? 'Comparación de Precios (proceso simplificado)' : 'Licitación Activa'}
           </span>
           <h2 className="text-lg font-bold text-white mt-1">
             CP: {licitacion.codigoCP} | {licitacion.nombreProyecto.toLocaleUpperCase('es-CL')}
@@ -383,6 +489,20 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
           <span className="text-[10px] text-slate-400 block">Cotizaciones Ingresadas</span>
           <span className="text-xl font-bold text-sky-400">{cotizacionesProyecto.length} Ofertas</span>
         </div>
+      </div>
+
+      {simplificado && (
+        <div className="rounded-2xl px-5 py-3 border bg-emerald-50 border-emerald-200 text-emerald-900 flex items-start gap-2 text-xs">
+          <Mail className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>
+            <strong>Proyecto bajo {formatoMonedaCLP(configFirmas?.parametrosSgc?.umbralAprobacionVrae ?? UMBRAL_LICITACION_OBLIGATORIA)}:</strong> la Licitación formal (invitación y portal) es opcional en este rango.
+            Puede usarla igual si quiere, o registrar directamente las ofertas que reciba por otro medio (ej. correo electrónico) y generar el Acta de Adjudicación en la pestaña "Actas" con al menos una oferta.
+          </span>
+        </div>
+      )}
+      <div className={`rounded-2xl px-5 py-3 border flex flex-wrap items-center justify-between gap-2 text-xs ${plazoOfertasVencido(licitacion) ? 'bg-slate-100 border-slate-300 text-slate-700' : 'bg-sky-50 border-sky-200 text-sky-900'}`}>
+        <span><strong>Cierre de recepción de ofertas del portal:</strong> {textoLimiteOfertas(licitacion)}</span>
+        <span className="font-bold">{plazoOfertasVencido(licitacion) ? 'Portal cerrado' : `Portal abierto · quedan ${tiempoRestanteOfertas(licitacion)}`}</span>
       </div>
 
       {procesoCerrado && (
@@ -409,6 +529,63 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Excel Reader & Form Entry (7 Cols) */}
         <div className="lg:col-span-7 space-y-6">
+          {/* Online Proposals from Provider Portal — sigue disponible en proceso simplificado: es una
+              alternativa opcional, no exclusiva, para proyectos bajo el umbral de Licitación obligatoria. */}
+          <OnlinePropuestasList
+            licitacionId={licitacion.id}
+            licitacion={licitacion}
+            procesoCerrado={procesoCerrado || !antecedentesCompletos}
+            onImportPropuesta={async p => {
+              try {
+                await convertirPropuestaACotizacion(p);
+                setMensajeNotificacion({
+                  tipo: 'exito',
+                  texto: `Propuesta enviada por ${p.proveedorNombre} importada como Cotización Oficial.`,
+                });
+              } catch (error) {
+                setMensajeNotificacion({
+                  tipo: 'error',
+                  texto: error instanceof Error && error.message.includes('COTIZACION_DUPLICADA')
+                    ? 'Este proveedor ya tiene una cotización oficial registrada; elimínela primero si desea reemplazarla por esta propuesta.'
+                    : error instanceof Error && error.message.includes('PROCESO_CERRADO')
+                    ? 'Proceso cerrado: la licitación ya fue adjudicada.'
+                    : 'No fue posible importar la propuesta.',
+                });
+              }
+            }}
+          />
+
+          {/* Ingreso de ofertas: canal normal en proceso simplificado; excepción de emergencia en licitación formal */}
+          <div className={simplificado ? 'bg-sky-50 border border-sky-200 rounded-2xl' : 'bg-amber-50 border border-amber-300 rounded-2xl'}>
+            {simplificado ? (
+              <div className="px-5 py-3.5">
+                <span className="text-xs font-extrabold text-sky-950 flex items-center gap-1.5">
+                  <Mail className="w-4 h-4" /> Registrar Oferta Recibida
+                </span>
+                <p className="text-[11px] text-sky-900 leading-relaxed mt-1">
+                  Ingrese aquí cada oferta recibida directamente del proveedor (correo electrónico u otro medio). Queda registrado quién la ingresó y cuándo se recibió.
+                </p>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setMostrarManual(v => !v)}
+                className="w-full px-5 py-3.5 flex items-center justify-between gap-3 text-left"
+              >
+                <span className="text-xs font-extrabold text-amber-950">🛟 Ingreso manual de emergencia</span>
+                <span className="text-[11px] font-bold text-amber-800">{mostrarManual ? 'Ocultar' : 'Mostrar'}</span>
+              </button>
+            )}
+            {!simplificado && (
+              <p className="px-5 pb-3.5 text-[11px] text-amber-900 leading-relaxed">
+                Las ofertas deben llegar por el portal de proveedores. Use esto solo si un proveedor no pudo enviar la suya por el portal.
+                Queda registrado quién la ingresó y por qué, y solo es válida si se recibió antes del cierre.
+              </p>
+            )}
+          </div>
+
+          {(mostrarManual || simplificado) && (
+            <>
           {/* Automatic File Dropzone */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
             <div className="flex items-center justify-between border-b pb-3">
@@ -480,30 +657,6 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
             )}
           </div>
 
-          {/* Online Proposals from Provider Portal */}
-          <OnlinePropuestasList
-            licitacionId={licitacion.id}
-            procesoCerrado={procesoCerrado || !antecedentesCompletos}
-            onImportPropuesta={async p => {
-              try {
-                await convertirPropuestaACotizacion(p);
-                setMensajeNotificacion({
-                  tipo: 'exito',
-                  texto: `Propuesta enviada por ${p.proveedorNombre} importada como Cotización Oficial.`,
-                });
-              } catch (error) {
-                setMensajeNotificacion({
-                  tipo: 'error',
-                  texto: error instanceof Error && error.message.includes('COTIZACION_DUPLICADA')
-                    ? 'Este proveedor ya tiene una cotización oficial registrada; elimínela primero si desea reemplazarla por esta propuesta.'
-                    : error instanceof Error && error.message.includes('PROCESO_CERRADO')
-                    ? 'Proceso cerrado: la licitación ya fue adjudicada.'
-                    : 'No fue posible importar la propuesta.',
-                });
-              }
-            }}
-          />
-
           {/* Form Entry */}
           <form onSubmit={handleSaveCotizacion} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
             <h3 className="text-sm font-bold text-slate-800 border-b pb-3 flex items-center gap-2">
@@ -517,6 +670,33 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
             </h3>
 
             <fieldset disabled={procesoCerrado || !antecedentesCompletos} className="space-y-4 text-xs disabled:opacity-60">
+              <div className={simplificado ? 'rounded-xl border border-sky-200 bg-sky-50 p-3 space-y-3' : 'rounded-xl border border-amber-300 bg-amber-50 p-3 space-y-3'}>
+                <p className={simplificado ? 'text-[11px] font-bold text-sky-900' : 'text-[11px] font-bold text-amber-900'}>
+                  {simplificado ? '✉️ Datos de recepción de la oferta' : '🛟 Ingreso manual de emergencia: solo para ofertas que un proveedor no pudo enviar por el portal.'}
+                </p>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Fecha y hora en que se RECIBIÓ la oferta *</label>
+                  <input
+                    type="datetime-local"
+                    required
+                    value={fechaRecepcion}
+                    onChange={e => setFechaRecepcion(e.target.value)}
+                    className={simplificado ? 'w-full px-3 py-2 bg-white border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-sky-500' : 'w-full px-3 py-2 bg-white border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-amber-500'}
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">Cierre de recepción del portal: {textoLimiteOfertas(licitacion)}. Una oferta recibida después del cierre no puede registrarse.</p>
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">{simplificado ? 'Cómo llegó la oferta (opcional)' : 'Motivo del ingreso manual *'}</label>
+                  <textarea
+                    required={!simplificado}
+                    rows={2}
+                    value={motivoManual}
+                    onChange={e => setMotivoManual(e.target.value)}
+                    placeholder={simplificado ? 'Ej: Oferta recibida por correo electrónico el 20-09-2026.' : 'Ej: El proveedor no pudo acceder al portal y envió su oferta por correo el día del cierre.'}
+                    className={simplificado ? 'w-full px-3 py-2 bg-white border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-sky-500 resize-none' : 'w-full px-3 py-2 bg-white border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-amber-500 resize-none'}
+                  />
+                </div>
+              </div>
               {/* Select Supplier */}
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Buscar y Seleccionar Proveedor (Oferente por RUT o Nombre) *</label>
@@ -698,6 +878,8 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
               {procesoCerrado ? 'Proceso de ofertas cerrado' : guardandoCotizacion ? 'Guardando cotización...' : 'Guardar y Registrar Cotización en el Proyecto'}
             </button>
           </form>
+            </>
+          )}
         </div>
 
         {/* Right Column: Loaded Quotes List (5 Cols) */}
@@ -755,6 +937,8 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
                         </button>
                       </div>
                     </div>
+
+                    <ValidacionCotizacion cot={cot} licitacion={licitacion} simplificado={simplificado} />
 
                     <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-slate-200/60">
                       <div>

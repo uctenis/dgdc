@@ -334,3 +334,52 @@
 .animate-fade-in  { animation: fadeIn 0.3s ease forwards; }
 .animate-slide-down { animation: slideDown 0.25s ease forwards; }
 .animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+
+/* ───────── Portada ejecutiva del proyecto (1 hoja carta) ───────── */
+.portada-root { display: none; page: portada; }
+@page portada { size: letter portrait; margin: 12mm; }
+.portada { font-family: 'Segoe UI', system-ui, sans-serif; color: #0f172a; width: 100%; height: 250mm; overflow: hidden; display: flex; flex-direction: column; gap: 5mm; break-inside: avoid; }
+.portada * { box-sizing: border-box; }
+.portada-head { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2.5px solid #0f172a; padding-bottom: 3mm; }
+.portada-brand { display: flex; align-items: flex-end; gap: 3mm; }
+.portada-logo { height: 12mm; width: auto; object-fit: contain; }
+.portada-inst { font-size: 8.5pt; letter-spacing: .12em; text-transform: uppercase; color: #475569; font-weight: 700; }
+.portada-doc { font-size: 15pt; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
+.portada-meta { text-align: right; font-size: 8pt; color: #64748b; line-height: 1.5; }
+.portada-chips { display: flex; flex-wrap: wrap; gap: 2mm; margin-bottom: 3mm; }
+.portada-chips span { font: 700 8pt ui-monospace, Consolas, monospace; padding: 1mm 2.5mm; border: 1px solid #cbd5e1; border-radius: 99px; background: #f1f5f9; }
+.portada-chips .portada-estado { background: #0f172a; color: #fff; border-color: #0f172a; text-transform: uppercase; margin-left: auto; }
+.portada-title h1 { font-size: 24pt; line-height: 1.12; font-weight: 900; text-transform: uppercase; margin: 0; letter-spacing: -.01em; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.portada-desc { margin: 2.5mm 0 0; font-size: 10pt; line-height: 1.45; color: #334155; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.portada-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; }
+.portada-kpis > div { border: 1px solid #cbd5e1; border-top: 3px solid #0f172a; border-radius: 2mm; padding: 3mm; background: #f8fafc; }
+.portada-kpis label { display: block; font-size: 7pt; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; color: #64748b; }
+.portada-kpis strong { display: block; font-size: 13pt; font-weight: 900; margin-top: 1mm; }
+.portada-kpis .portada-kpi-sm { font-size: 9pt; line-height: 1.3; }
+.portada-kpis small { display: block; font-size: 7.5pt; color: #64748b; margin-top: 1mm; }
+.portada h2 { font-size: 8.5pt; font-weight: 900; text-transform: uppercase; letter-spacing: .1em; color: #475569; border-bottom: 1px solid #cbd5e1; padding-bottom: 1mm; margin: 0 0 2mm; }
+.portada-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
+.portada dl { display: grid; grid-template-columns: 30% 1fr; gap: 1.2mm 3mm; margin: 0; font-size: 9pt; }
+.portada dt { color: #64748b; font-weight: 700; }
+.portada dd { margin: 0; font-weight: 600; }
+.portada-muted { font-size: 9pt; color: #94a3b8; margin: 0; }
+.portada-fase { display: grid; grid-template-columns: 34% 1fr 9mm 28mm; align-items: center; gap: 3mm; font-size: 8.5pt; padding: .7mm 0; }
+.portada-fase span { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.portada-fase b { text-align: right; }
+.portada-fase em { text-align: right; font-style: normal; color: #475569; }
+.portada-bar { height: 3mm; background: #e2e8f0; border-radius: 99px; overflow: hidden; }
+.portada-bar i { display: block; height: 100%; background: #0f172a; }
+.portada-bar-lg { height: 3.5mm; margin-bottom: 2.5mm; }
+.portada-exp ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 1mm 6mm; font-size: 8.5pt; }
+.portada-exp li span { font-size: 10pt; }
+.portada-firmas { margin-top: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 20mm; padding-top: 6mm; }
+.portada-firmas div { text-align: center; font-size: 9pt; font-weight: 700; }
+.portada-firmas i { display: block; border-top: 1px solid #0f172a; margin-bottom: 1.5mm; }
+.portada-firmas small { display: block; font-weight: 500; color: #64748b; font-size: 7.5pt; }
+
+@media print {
+  body.imprimiendo-portada #root { display: none !important; }
+  body.imprimiendo-portada .portada-root, body.imprimiendo-portada .portada-root * { visibility: visible !important; }
+  body.imprimiendo-portada .portada-root { display: block; }
+  .portada, .portada * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

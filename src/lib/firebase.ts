@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, initializeFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getStorage } from 'firebase/storage';
 
@@ -14,6 +14,14 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+// Los campos opcionales sin valor (undefined) se omiten al guardar; sin esto Firestore rechaza el documento entero
+// (p. ej. una propuesta sin observaciones). Si el módulo se vuelve a evaluar (recarga en caliente), se reutiliza la instancia.
+export const db = (() => {
+  try {
+    return initializeFirestore(app, { ignoreUndefinedProperties: true });
+  } catch {
+    return getFirestore(app);
+  }
+})();
 export const auth = getAuth(app);
 export const storage = getStorage(app);

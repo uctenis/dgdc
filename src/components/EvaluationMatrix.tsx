@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import type { LicitacionProyecto, Cotizacion } from '../types';
+import { validarCotizacion } from '../utils/validacionCotizacion';
+import { licitacionCerradaParaOfertas } from '../services/firestoreService';
 import { evaluarCotizaciones, formatoMonedaCLP } from '../services/evaluationEngine';
 import { Trophy, Award, DollarSign, ShieldCheck, Leaf, Sparkles, ArrowRight } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -23,9 +25,23 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
     [cotizaciones, licitacion]
   );
 
+  // Solo se evalúan las ofertas ADMISIBLES (información completa y dentro de plazo). Con el proceso ya adjudicado
+  // se muestra todo tal como quedó, sin excluir nada retroactivamente.
+  const { evaluables, noAdmisibles } = useMemo(() => {
+    if (!licitacion || licitacionCerradaParaOfertas(licitacion)) return { evaluables: cotizacionesProyecto, noAdmisibles: [] as { cot: Cotizacion; mensajes: string[] }[] };
+    const evaluables: Cotizacion[] = [];
+    const noAdmisibles: { cot: Cotizacion; mensajes: string[] }[] = [];
+    for (const cot of cotizacionesProyecto) {
+      const v = validarCotizacion(cot, licitacion);
+      if (v.admisible) evaluables.push(cot);
+      else noAdmisibles.push({ cot, mensajes: v.observaciones.filter(o => o.severidad === 'error').map(o => o.mensaje) });
+    }
+    return { evaluables, noAdmisibles };
+  }, [cotizacionesProyecto, licitacion]);
+
   // Calcular evaluación en tiempo real
   const evaluaciones = useMemo(() => {
-    const resultados = evaluarCotizaciones(cotizacionesProyecto);
+    const resultados = evaluarCotizaciones(evaluables);
     const proveedorAdjudicadoId = licitacion?.proveedorAdjudicadoId || licitacion?.proveedorGanadorId;
     const hayAdjudicacion = Boolean(licitacion?.cotizacionAdjudicadaId || proveedorAdjudicadoId);
     if (!hayAdjudicacion) return resultados;
@@ -41,7 +57,7 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
         if (b.puntajeTotalPonderado !== a.puntajeTotalPonderado) return b.puntajeTotalPonderado - a.puntajeTotalPonderado;
         return a.montoTotal - b.montoTotal;
       });
-  }, [cotizacionesProyecto, licitacion]);
+  }, [evaluables, licitacion]);
 
   if (!licitacion) {
     return (
@@ -79,8 +95,24 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
     }
   };
 
-  if (cotizacionesProyecto.length === 0) {
+  if (evaluables.length === 0) {
     return (
+      <div className="space-y-4">
+            {noAdmisibles.length > 0 && (
+        <div className="bg-red-50 border border-red-300 text-red-950 rounded-2xl px-5 py-4 space-y-2">
+          <p className="text-sm font-extrabold">{noAdmisibles.length} oferta(s) no admisible(s): quedan fuera de la evaluación</p>
+          <ul className="text-xs space-y-1.5">
+            {noAdmisibles.map(({ cot, mensajes }) => (
+              <li key={cot.id}>
+                <strong>{cot.proveedorNombre}</strong>
+                <ul className="list-disc list-inside text-red-800 ml-2">
+                  {mensajes.map((m, i) => <li key={i}>{m}</li>)}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center space-y-4">
         <Trophy className="w-12 h-12 text-slate-300 mx-auto" />
         <h3 className="text-base font-bold text-slate-800">Se requieren cotizaciones para realizar el Cuadro Comparativo</h3>
@@ -88,11 +120,28 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
           Cargue al menos una cotización en la pestaña "Cargar Cotizaciones" para calcular automáticamente la ponderación y la propuesta de adjudicación.
         </p>
       </div>
+      </div>
     );
   }
 
   return (
     <div className="space-y-6">
+      {noAdmisibles.length > 0 && (
+        <div className="bg-red-50 border border-red-300 text-red-950 rounded-2xl px-5 py-4 space-y-2">
+          <p className="text-sm font-extrabold">{noAdmisibles.length} oferta(s) no admisible(s): quedan fuera de la evaluación</p>
+          <ul className="text-xs space-y-1.5">
+            {noAdmisibles.map(({ cot, mensajes }) => (
+              <li key={cot.id}>
+                <strong>{cot.proveedorNombre}</strong>
+                <ul className="list-disc list-inside text-red-800 ml-2">
+                  {mensajes.map((m, i) => <li key={i}>{m}</li>)}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Header Banner with Winning Recommendation */}
       {adjudicado && (
         <div className="bg-gradient-to-r from-slate-900 via-sky-950 to-blue-950 text-white p-6 rounded-2xl shadow-xl border border-sky-800 flex flex-col md:flex-row md:items-center justify-between gap-6 relative overflow-hidden">

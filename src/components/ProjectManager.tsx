@@ -1,24 +1,22 @@
 import React, { useState, useMemo } from 'react';
 import type { LicitacionProyecto, Proveedor, ProyectoMaestro, Cotizacion, ConfiguracionFirmas } from '../types';
+import type { TabId as LicitacionTabId } from './LicitacionWorkspacePage';
 import {
   FolderKanban, Plus, Calendar, ArrowRight, ArrowLeft, Edit3, Trash2,
   CheckCircle, Users, BookOpen, FileText, Sparkles, MapPin,
   Search, TrendingUp, TrendingDown, AlertTriangle,
-  ChevronUp, ChevronDown, Activity, ShieldAlert,
+  ChevronUp, ChevronDown, Activity, ShieldAlert, Mail,
 } from 'lucide-react';
 import { formatoMonedaCLP, ordenarCotizacionesPorResultado } from '../services/evaluationEngine';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
+import { HORA_LIMITE_POR_DEFECTO } from '../utils/plazoOfertas';
 import { corregirTextoAvanzado, normalizarNombreProyecto, ATRIBUTOS_ORTOGRAFIA_ES } from '../utils/spellCorrector';
-import { InvitadosManager } from './InvitadosManager';
-import { AntecedentesManager } from './AntecedentesManager';
-import { ActaEvaluacionModal } from './ActaEvaluacionModal';
-import { IngresoOfertasLicitacionModal } from './IngresoOfertasLicitacionModal';
-import { CargaOrdenCompraModal } from './CargaOrdenCompraModal';
 import { ProyectosMaestros } from './ProyectosMaestros';
 import { PremiumDatePicker } from './PremiumDatePicker';
 import { getCentrosCostoList } from '../data/centrosCostoData';
 import { getRubrosList } from '../data/rubrosData';
 import { HITOS_LICITACION, calcularEstadosHitos, obtenerFechasHitos, formatearFechaCorta, ESTADO_HITO_DOT, ESTADO_HITO_TEXT, LIFECYCLE_COLOR, LIFECYCLE_LABEL } from '../utils/hitosLicitacion';
+import { esProcesoSimplificado, UMBRAL_LICITACION_OBLIGATORIA } from '../data/contratoTemplateData';
 
 // ─── COLORES DE RIESGO ───────────────────────────────────────────────────────
 const RIESGO_COLOR: Record<string, string> = {
@@ -36,6 +34,8 @@ interface ProjectManagerProps {
   licitacionSeleccionadaId: string | null;
   onSelectLicitacion: (id: string) => void;
   onOpenFicha?: (p: LicitacionProyecto) => void;
+  /** Abre la licitación directamente en una de sus pestañas (Invitados, Ofertas, OC...). */
+  onOpenLicitacionTab?: (id: string, tab: LicitacionTabId) => void;
   onAddLicitacion: (lic: Omit<LicitacionProyecto, 'id'>) => void | Promise<void>;
   onUpdateLicitacion: (id: string, lic: Partial<LicitacionProyecto>) => void | Promise<void>;
   onDeleteLicitacion: (id: string) => void;
@@ -44,25 +44,20 @@ interface ProjectManagerProps {
 
 export const ProjectManager: React.FC<ProjectManagerProps> = ({
   licitaciones,
-  proveedores,
   cotizaciones,
   configFirmas,
   licitacionSeleccionadaId,
   onSelectLicitacion,
   onOpenFicha,
+  onOpenLicitacionTab,
   onAddLicitacion,
   onUpdateLicitacion,
   onDeleteLicitacion,
-  onAdjudicarLicitacion,
 }) => {
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [invitadosLicitacion, setInvitadosLicitacion] = useState<LicitacionProyecto | null>(null);
-  const [antecedentesLicitacion, setAntecedentesLicitacion] = useState<LicitacionProyecto | null>(null);
-  const [actaLicitacion, setActaLicitacion] = useState<LicitacionProyecto | null>(null);
-  const [ofertasLicitacion, setOfertasLicitacion] = useState<LicitacionProyecto | null>(null);
-  const [ocLicitacion, setOcLicitacion] = useState<LicitacionProyecto | null>(null);
   const [showMasterSelector, setShowMasterSelector] = useState(false);
+  const [guardandoLicitacion, setGuardandoLicitacion] = useState(false);
 
   // ─── FILTROS Y VISTA ──────────────────────────────────────────────────────
   const [search, setSearch] = useState('');
@@ -175,6 +170,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
   const [fechaRecepcionConsultas, setFechaRecepcionConsultas] = useState(getFutureDate(8));
   const [fechaRespuestaConsultas, setFechaRespuestaConsultas] = useState(getFutureDate(10));
   const [fechaEvaluacion, setFechaEvaluacion] = useState(getFutureDate(12));
+  const [horaLimiteOfertas, setHoraLimiteOfertas] = useState(HORA_LIMITE_POR_DEFECTO);
 
   const handleOpenAdd = () => {
     setEditingId(null);
@@ -195,6 +191,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     setFechaRecepcionConsultas(getFutureDate(8));
     setFechaRespuestaConsultas(getFutureDate(10));
     setFechaEvaluacion(getFutureDate(12));
+    setHoraLimiteOfertas(HORA_LIMITE_POR_DEFECTO);
     setSelectedMasterProyectoId(null);
     // Abre primero el selector de la Lista de Proyectos
     setShowMasterSelector(true);
@@ -219,6 +216,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     setFechaRecepcionConsultas(lic.fechaRecepcionConsultas || getFutureDate(8));
     setFechaRespuestaConsultas(lic.fechaRespuestaConsultas || getFutureDate(10));
     setFechaEvaluacion(lic.fechaEvaluacion);
+    setHoraLimiteOfertas(lic.horaLimiteOfertas || HORA_LIMITE_POR_DEFECTO);
     setShowModal(true);
   };
 
@@ -252,55 +250,64 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
 
     const nombreFormateado = normalizarNombreProyecto(nombreProyecto);
 
-    if (editingId) {
-      await onUpdateLicitacion(editingId, {
-        codigoCP,
-        codigoOP,
-        codigoOT,
-        codigoProyecto,
-        nombreProyecto: nombreFormateado,
-        descripcion,
-        montoEstimado,
-        fechaVisitaTerreno,
-        fechaRecepcionConsultas,
-        fechaRespuestaConsultas,
-        fechaEvaluacion,
-        fechaEntregaPropuestas: fechaEvaluacion,
-        campusSigla,
-        edificioSigla,
-        responsableNombre,
-        responsableEmail,
-        tipoObra,
-        rubro,
-      });
-    } else {
-      await onAddLicitacion({
-        codigoCP,
-        codigoOP,
-        codigoOT,
-        codigoProyecto,
-        nombreProyecto: nombreFormateado,
-        descripcion,
-        montoEstimado,
-        fechaCreacion: new Date().toISOString().split('T')[0],
-        fechaVisitaTerreno,
-        fechaRecepcionConsultas,
-        fechaRespuestaConsultas,
-        fechaEvaluacion,
-        fechaEntregaPropuestas: fechaEvaluacion,
-        campusSigla,
-        edificioSigla,
-        responsableNombre,
-        responsableEmail,
-        tipoObra,
-        rubro,
-        estado: 'En Evaluacion',
-        estadoLifecycle: 'Invitando',
-        ...(selectedMasterProyectoId ? { proyectoMaestroId: selectedMasterProyectoId } : {}),
-      });
+    setGuardandoLicitacion(true);
+    try {
+      if (editingId) {
+        await onUpdateLicitacion(editingId, {
+          codigoCP,
+          codigoOP,
+          codigoOT,
+          codigoProyecto,
+          nombreProyecto: nombreFormateado,
+          descripcion,
+          montoEstimado,
+          fechaVisitaTerreno,
+          fechaRecepcionConsultas,
+          fechaRespuestaConsultas,
+          fechaEvaluacion,
+          fechaEntregaPropuestas: fechaEvaluacion,
+          horaLimiteOfertas,
+          campusSigla,
+          edificioSigla,
+          responsableNombre,
+          responsableEmail,
+          tipoObra,
+          rubro,
+        });
+      } else {
+        await onAddLicitacion({
+          codigoCP,
+          codigoOP,
+          codigoOT,
+          codigoProyecto,
+          nombreProyecto: nombreFormateado,
+          descripcion,
+          montoEstimado,
+          fechaCreacion: new Date().toISOString().split('T')[0],
+          fechaVisitaTerreno,
+          fechaRecepcionConsultas,
+          fechaRespuestaConsultas,
+          fechaEvaluacion,
+          fechaEntregaPropuestas: fechaEvaluacion,
+          horaLimiteOfertas,
+          campusSigla,
+          edificioSigla,
+          responsableNombre,
+          responsableEmail,
+          tipoObra,
+          rubro,
+          estado: 'En Evaluacion',
+          estadoLifecycle: 'Invitando',
+          ...(selectedMasterProyectoId ? { proyectoMaestroId: selectedMasterProyectoId } : {}),
+        });
+      }
+      setShowModal(false);
+    } catch (err) {
+      console.error('Error guardando licitación:', err);
+      alert('No se pudo guardar la licitación: ' + (err instanceof Error ? err.message : 'error desconocido') + '. Sus datos NO se perdieron de esta ventana — intente guardar de nuevo; si el error persiste, avise al administrador del sistema.');
+    } finally {
+      setGuardandoLicitacion(false);
     }
-
-    setShowModal(false);
   };
 
   return (
@@ -500,6 +507,12 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                         Riesgo {lic.nivelRiesgo}
                       </span>
                     )}
+                    {esProcesoSimplificado(lic.montoEstimado, configFirmas?.parametrosSgc?.umbralAprobacionVrae) && (
+                      <span className="font-bold px-2 py-0.5 rounded border bg-emerald-50 text-emerald-800 border-emerald-200 flex items-center gap-1" title="Bajo el umbral institucional: la Licitación formal es opcional, puede registrar ofertas directamente.">
+                        <Mail className="w-3 h-3" />
+                        Comparación de Precios
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -550,7 +563,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                     type="button"
                     onClick={e => {
                       e.stopPropagation();
-                      setAntecedentesLicitacion(lic);
+                      onOpenLicitacionTab?.(lic.id, 'antecedentes');
                     }}
                     className="p-2 bg-indigo-50/70 hover:bg-indigo-100 rounded-xl border border-indigo-100 flex items-center justify-between text-indigo-900 transition"
                   >
@@ -567,7 +580,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                     type="button"
                     onClick={e => {
                       e.stopPropagation();
-                      setInvitadosLicitacion(lic);
+                      onOpenLicitacionTab?.(lic.id, 'invitados');
                     }}
                     className="p-2 bg-sky-50/70 hover:bg-sky-100 rounded-xl border border-sky-100 flex items-center justify-between text-sky-900 transition"
                   >
@@ -592,7 +605,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                       type="button"
                       onClick={e => {
                         e.stopPropagation();
-                        setOfertasLicitacion(lic);
+                        onOpenLicitacionTab?.(lic.id, 'ofertas');
                       }}
                       className="text-[10px] text-sky-400 font-bold hover:underline"
                     >
@@ -644,7 +657,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                       type="button"
                       onClick={e => {
                         e.stopPropagation();
-                        setOcLicitacion(lic);
+                        onOpenLicitacionTab?.(lic.id, 'oc');
                       }}
                       className="px-3 py-1.5 bg-purple-700 hover:bg-purple-800 text-white font-bold rounded-lg transition text-[11px] shrink-0 shadow-sm"
                     >
@@ -660,7 +673,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                       type="button"
                       onClick={e => {
                         e.stopPropagation();
-                        setActaLicitacion(lic);
+                        onOpenLicitacionTab?.(lic.id, 'actas');
                       }}
                       className="flex items-center gap-1.5 text-xs text-amber-900 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-xl transition font-bold border border-amber-300 shadow-sm"
                       title="Ver y editar Acta de Evaluación Propuesta y Adjudicación"
@@ -711,7 +724,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                     type="button"
                     onClick={e => {
                       e.stopPropagation();
-                      setOfertasLicitacion(lic);
+                      onOpenLicitacionTab?.(lic.id, 'ofertas');
                     }}
                     className="flex items-center gap-1.5 text-xs font-bold bg-sky-600 hover:bg-sky-700 text-white px-3.5 py-1.5 rounded-xl transition shadow-sm"
                   >
@@ -730,58 +743,6 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
           </div>
         )}
       </div>
-
-      {/* Carga Orden de Compra Modal */}
-      {ocLicitacion && (
-        <CargaOrdenCompraModal
-          licitacion={ocLicitacion}
-          onClose={() => setOcLicitacion(null)}
-        />
-      )}
-
-      {/* Ingreso Secuencial de Ofertas Modal */}
-      {ofertasLicitacion && (
-        <IngresoOfertasLicitacionModal
-          licitacion={ofertasLicitacion}
-          cotizaciones={cotizaciones}
-          proveedores={proveedores}
-          onClose={() => setOfertasLicitacion(null)}
-        />
-      )}
-
-      {/* Acta de Evaluación Propuesta Modal */}
-      {actaLicitacion && (
-        <ActaEvaluacionModal
-          licitacion={actaLicitacion}
-          cotizaciones={cotizaciones}
-          proveedores={proveedores}
-          configFirmas={configFirmas}
-          onClose={() => setActaLicitacion(null)}
-          onAdjudicar={(provId, justificacion) => onAdjudicarLicitacion(actaLicitacion.id, provId, justificacion)}
-        />
-      )}
-
-      {/* Antecedentes Técnicos & Checklist Modal */}
-      {antecedentesLicitacion && (
-        <AntecedentesManager
-          licitacion={antecedentesLicitacion}
-          onClose={() => setAntecedentesLicitacion(null)}
-          onChecklistComplete={() => {
-            // Se actualiza el objeto localmente
-            setAntecedentesLicitacion(null);
-          }}
-        />
-      )}
-
-      {/* Invitados Modal */}
-      {invitadosLicitacion && (
-        <InvitadosManager
-          licitacion={invitadosLicitacion}
-          proveedores={proveedores}
-          configFirmas={configFirmas}
-          onClose={() => setInvitadosLicitacion(null)}
-        />
-      )}
 
       {/* Selector de Proyecto desde Lista de Proyectos */}
       {showMasterSelector && (
@@ -982,11 +943,19 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1 text-[11px]">4. Entrega Propuestas</label>
+                    <label className="block font-semibold text-slate-700 mb-1 text-[11px]">4. Entrega Propuestas (cierre)</label>
                     <PremiumDatePicker
                       value={fechaEvaluacion}
                       onChange={setFechaEvaluacion}
                       className="flex items-center gap-1.5 w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-[11px] text-left"
+                    />
+                    <label className="block font-semibold text-slate-600 mt-1.5 mb-0.5 text-[10px]">Hora de cierre del portal (hora de Chile)</label>
+                    <input
+                      type="time"
+                      required
+                      value={horaLimiteOfertas}
+                      onChange={e => setHoraLimiteOfertas(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none text-[11px]"
                     />
                   </div>
                 </div>
@@ -1021,6 +990,21 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                   />
                 </div>
               </div>
+
+              {esProcesoSimplificado(montoEstimado, configFirmas?.parametrosSgc?.umbralAprobacionVrae) ? (
+                <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-xl px-4 py-3 flex items-start gap-2 text-[11px]">
+                  <Mail className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>
+                    <strong>Proceso simplificado — Comparación de Precios:</strong> por estar bajo {formatoMonedaCLP(configFirmas?.parametrosSgc?.umbralAprobacionVrae ?? UMBRAL_LICITACION_OBLIGATORIA)},
+                    la Licitación formal (invitación y portal) es opcional — puede usarla igual si quiere, o en la pestaña "Ofertas" registrar directamente las que reciba
+                    (ej. por correo electrónico) y generar el Acta de Adjudicación con al menos una oferta.
+                  </span>
+                </div>
+              ) : (
+                <div className="bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-4 py-3 text-[11px]">
+                  Monto igual o superior a {formatoMonedaCLP(configFirmas?.parametrosSgc?.umbralAprobacionVrae ?? UMBRAL_LICITACION_OBLIGATORIA)}: requiere Licitación formal (invitación y portal de proveedores).
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -1076,10 +1060,10 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                   </button>
                   <button
                     type="submit"
-                    disabled={fechaVisitaTerreno > fechaRecepcionConsultas || fechaRecepcionConsultas > fechaRespuestaConsultas || fechaRespuestaConsultas > fechaEvaluacion}
+                    disabled={guardandoLicitacion || fechaVisitaTerreno > fechaRecepcionConsultas || fechaRecepcionConsultas > fechaRespuestaConsultas || fechaRespuestaConsultas > fechaEvaluacion}
                     className="px-5 py-2 bg-sky-600 hover:bg-sky-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg font-semibold shadow-sm"
                   >
-                    {editingId ? 'Guardar Cambios' : 'Crear Licitación'}
+                    {guardandoLicitacion ? 'Guardando…' : editingId ? 'Guardar Cambios' : 'Crear Licitación'}
                   </button>
                 </div>
               </div>

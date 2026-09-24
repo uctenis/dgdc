@@ -1,0 +1,40 @@
+rules_version = '2';
+
+// REGLAS SUGERIDAS — no están desplegadas. Léase LEEME.md antes de aplicarlas.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function esInterno() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.matches('.*@uct[.]cl');
+    }
+
+    function miProveedorId() {
+      return firestore.get(/databases/(default)/documents/usuarios/$(request.auth.uid)).data.proveedorId;
+    }
+
+    // Proveedor con sesión que figura como invitado de la licitación.
+    function proveedorInvitado(licId) {
+      return request.auth != null && !esInterno()
+        && firestore.exists(/databases/(default)/documents/licitaciones/$(licId)/invitados/$(miProveedorId()));
+    }
+
+    // Ofertas: cada proveedor solo sube y lee dentro de SU carpeta (no puede listar ni ver las de otros).
+    match /licitaciones/{licId}/ofertas/{provId}/{archivo=**} {
+      allow get: if esInterno()
+        || (proveedorInvitado(licId) && provId == miProveedorId());
+      // Solo se puede subir hasta la hora de cierre (reloj del servidor).
+      allow create: if esInterno()
+        || (proveedorInvitado(licId) && provId == miProveedorId()
+            && request.time.toMillis() <= firestore.get(/databases/(default)/documents/licitaciones/$(licId)).data.get('limiteOfertasMs', 9999999999999));
+      allow list, update, delete: if esInterno();
+    }
+
+    // Todo lo demás: solo personal interno. Los documentos de antecedentes se entregan al proveedor mediante
+    // los enlaces de descarga que ya guarda la licitación.
+    match /{todo=**} {
+      allow read, write: if esInterno();
+    }
+  }
+}

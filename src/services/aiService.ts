@@ -26,15 +26,40 @@ export function proveedorIAActivo(): ProveedorIA | null {
 const TIMEOUT_MS = 60000;
 
 /** fetch con límite de tiempo — sin esto, una IA que no responde deja el botón "Pensando…" para siempre. */
-function fetchConTimeout(url: string, opciones: RequestInit): Promise<Response> {
+function fetchConTimeout(url: string, opciones: RequestInit, timeoutMs = TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   return fetch(url, { ...opciones, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
-async function llamarGemini(prompt: string, maxOutputTokens: number): Promise<string> {
+// Si el modelo configurado está saturado (503/429) o no responde a tiempo, se reintenta con estos
+// modelos alternativos antes de fallar — Google devuelve 503 "high demand" con frecuencia.
+const MODELOS_GEMINI_RESPALDO = ['gemini-3.5-flash', 'gemini-3.7-flash'];
+
+// Los modelos Gemini 3.x "piensan" antes de responder y ese razonamiento consume maxOutputTokens:
+// con el límite justo, la respuesta llegaba cortada (finishReason MAX_TOKENS). Se suma este margen.
+const MARGEN_TOKENS_RAZONAMIENTO = 6000;
+
+async function llamarGemini(prompt: string, maxOutputTokens: number, timeoutMs?: number): Promise<string> {
+  const principal = import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.6-flash';
+  const modelos = [principal, ...MODELOS_GEMINI_RESPALDO.filter(m => m !== principal)];
+  let ultimoError: unknown;
+  for (const model of modelos) {
+    try {
+      return await llamarGeminiModelo(model, prompt, maxOutputTokens + MARGEN_TOKENS_RAZONAMIENTO, timeoutMs);
+    } catch (err) {
+      ultimoError = err;
+      const msg = err instanceof Error ? err.message : '';
+      const reintentable = msg.includes('AI_TIMEOUT') || /AI_REQUEST_FAILED: (503|429|500|404)/.test(msg);
+      if (!reintentable) throw err;
+      console.warn(`Gemini ${model} no disponible, probando con el siguiente modelo:`, msg.slice(0, 200));
+    }
+  }
+  throw ultimoError;
+}
+
+async function llamarGeminiModelo(model: string, prompt: string, maxOutputTokens: number, timeoutMs?: number): Promise<string> {
   const key = import.meta.env.VITE_GEMINI_API_KEY;
-  const model = import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.6-flash';
 
   let resp: Response;
   try {
@@ -47,7 +72,8 @@ async function llamarGemini(prompt: string, maxOutputTokens: number): Promise<st
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: { maxOutputTokens, temperature: 0.3 },
         }),
-      }
+      },
+      timeoutMs
     );
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw new Error('AI_TIMEOUT');
@@ -60,12 +86,13 @@ async function llamarGemini(prompt: string, maxOutputTokens: number): Promise<st
   }
 
   const data = await resp.json();
-  const texto = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  const partes: { text?: string; thought?: boolean }[] = data?.candidates?.[0]?.content?.parts || [];
+  const texto = partes.filter(p => !p.thought && p.text).map(p => p.text).join('');
   if (!texto) throw new Error(`AI_EMPTY_RESPONSE: ${JSON.stringify(data).slice(0, 300)}`);
   return texto.trim();
 }
 
-async function llamarOpenAI(prompt: string, maxTokens: number): Promise<string> {
+async function llamarOpenAI(prompt: string, maxTokens: number, timeoutMs?: number): Promise<string> {
   const key = import.meta.env.VITE_OPENAI_API_KEY;
   const model = import.meta.env.VITE_OPENAI_MODEL || 'gpt-4o-mini';
 
@@ -83,7 +110,7 @@ async function llamarOpenAI(prompt: string, maxTokens: number): Promise<string> 
         max_tokens: maxTokens,
         temperature: 0.3,
       }),
-    });
+    }, timeoutMs);
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw new Error('AI_TIMEOUT');
     throw new Error(`AI_NETWORK_ERROR: ${err instanceof Error ? err.message : String(err)}`);
@@ -101,15 +128,139 @@ async function llamarOpenAI(prompt: string, maxTokens: number): Promise<string> 
 }
 
 /** Envía `prompt` al proveedor de IA configurado (Gemini primero, luego OpenAI) y retorna el texto de respuesta. */
-async function llamarIA(prompt: string, maxTokens: number): Promise<string> {
+async function llamarIA(prompt: string, maxTokens: number, timeoutMs?: number): Promise<string> {
   const proveedor = proveedorActivo();
   if (!proveedor) throw new Error('AI_API_KEY_NOT_CONFIGURED');
-  return proveedor === 'gemini' ? llamarGemini(prompt, maxTokens) : llamarOpenAI(prompt, maxTokens);
+  return proveedor === 'gemini' ? llamarGemini(prompt, maxTokens, timeoutMs) : llamarOpenAI(prompt, maxTokens, timeoutMs);
 }
 
 export async function rewriteTextWithAI(text: string, style = 'técnico y conciso'): Promise<string> {
   const prompt = `Reescribe el siguiente texto en un lenguaje ${style}, corrige ortografía y gramática, conserva la información técnica y mejora la redacción (responde solo con el texto reescrito):\n\n${text}`;
   return llamarIA(prompt, 800);
+}
+
+/**
+ * Mejora la Descripción del Requerimiento de un proyecto con fundamento técnico: precisa el alcance,
+ * los trabajos, materiales/sistemas y normativa chilena aplicable, a partir de lo que escribió el
+ * usuario y los datos del proyecto. No inventa cifras (m2, montos, plazos) que el usuario no dio.
+ */
+export async function mejorarDescripcionProyectoConIA(params: {
+  descripcion: string;
+  nombre?: string;
+  tipoObra?: string;
+  rubro?: string;
+  uso?: string;
+  ubicacion?: string;
+}): Promise<string> {
+  const contexto = [
+    params.nombre ? `Título del proyecto (define QUÉ se va a hacer): "${params.nombre}"` : '',
+    params.ubicacion ? `Lugar donde se ejecuta (define DÓNDE): ${params.ubicacion}` : '',
+    params.uso ? `Uso del espacio intervenido: ${params.uso}` : '',
+    params.tipoObra ? `Tipo de obra: ${params.tipoObra}` : '',
+    params.rubro ? `Rubro: ${params.rubro}` : '',
+  ].filter(Boolean).join('\n');
+
+  const descripcionUsuario = params.descripcion.trim();
+
+  const prompt = `Eres un profesional de la Subdirección de Infraestructura de una universidad chilena (Universidad Católica de Temuco), experto en obras civiles, instalaciones y mantención de edificios. Debes ${descripcionUsuario ? 'mejorar' : 'redactar'} la "Descripción del Requerimiento Institucional" de un proyecto, que luego se usará en las Bases de licitación.
+
+Datos del proyecto:
+${contexto}
+
+${descripcionUsuario ? `Descripción escrita por el usuario:
+"""
+${descripcionUsuario}
+"""` : 'El usuario aún no escribió una descripción: redáctala a partir del título y el lugar.'}
+
+Usa el título y el lugar como referencia principal: interpreta qué solución indica el título, en qué tipo de recinto y ciudad se ejecuta (clima de la zona, condiciones de uso del recinto, si es un edificio universitario en funcionamiento) y ajusta las consideraciones técnicas a ese contexto concreto. Nombra el recinto y el campus en la descripción.
+
+Redacta una descripción ${descripcionUsuario ? 'mejorada ' : ''}que:
+- ${descripcionUsuario ? 'Conserve TODA la información que dio el usuario y su intención; no cambies el alcance.' : 'Se limite al alcance que indica el título; no agregues trabajos ajenos a él.'}
+- Precise el alcance con fundamento técnico: trabajos a ejecutar, materiales o sistemas típicos para este tipo de solución, y consideraciones técnicas relevantes (seguridad, compatibilidad con lo existente, mantención, eficiencia).
+- Mencione normativa chilena aplicable solo si corresponde con certeza (ej. OGUC, NCh, normas SEC), sin inventar números de norma dudosos.
+- Incluya una breve justificación de la necesidad institucional.
+- NO inventes cifras que el usuario no dio (superficies, cantidades, montos, plazos, marcas); si son relevantes, indícalas como "a definir" o "según levantamiento en terreno".
+- Use lenguaje técnico, formal e impersonal, en español de Chile, en 1 a 3 párrafos (máximo ~180 palabras), sin títulos, viñetas ni markdown.
+
+Responde solo con el texto de la descripción mejorada.`;
+
+  const texto = await llamarIA(prompt, 1200);
+  return texto.replace(/^["“]|["”]$/g, '').trim();
+}
+
+// ─── ESPECIFICACIONES TÉCNICAS (EETT) desde el itemizado ─────────────────────
+
+export interface ContextoProyectoEETT {
+  nombre: string;
+  descripcion?: string;
+  ubicacion?: string;
+  tipoObra?: string;
+  rubro?: string;
+  uso?: string;
+}
+
+function contextoEETT(p: ContextoProyectoEETT): string {
+  return [
+    `Proyecto: "${p.nombre}"`,
+    p.ubicacion ? `Ubicación: ${p.ubicacion}` : '',
+    p.tipoObra ? `Tipo de obra: ${p.tipoObra}` : '',
+    p.rubro ? `Rubro: ${p.rubro}` : '',
+    p.uso ? `Uso del espacio: ${p.uso}` : '',
+    p.descripcion ? `Descripción del requerimiento: ${p.descripcion}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+const ROL_EETT = 'Eres un arquitecto/ingeniero especificador de la Subdirección de Infraestructura de la Universidad Católica de Temuco (Chile), experto en redactar Especificaciones Técnicas (EETT) para licitaciones de obras.';
+
+/** Generalidades de las EETT (alcance, normativa, materiales, faena, seguridad, aseo y recepción). */
+export async function generarGeneralidadesEETTConIA(proyecto: ContextoProyectoEETT, fases: string[]): Promise<string> {
+  const prompt = `${ROL_EETT}
+
+${contextoEETT(proyecto)}
+Fases de la obra según el presupuesto: ${fases.join(', ')}
+
+Redacta la sección "GENERALIDADES" de las Especificaciones Técnicas de este proyecto. Debe cubrir, en párrafos breves con un subtítulo en MAYÚSCULAS al inicio de cada uno (ej. "ALCANCE:"): alcance de la obra; normativa aplicable (OGUC, NCh pertinentes, normas SEC si hay instalaciones, Ley 16.744 y DS 594 para seguridad); calidad de materiales (nuevos, de primera calidad; cuando se nombre una marca se entiende "o equivalente técnico" aprobado por la ITO); instalación de faenas y trabajo en un recinto universitario en funcionamiento; prevención de riesgos; aseo y retiro de escombros a botadero autorizado; y recepción de la obra por la ITO. NO inventes cifras (superficies, cantidades, plazos, montos). Español de Chile, lenguaje técnico e impersonal, sin markdown ni viñetas con asteriscos, máximo ~350 palabras. Responde solo con el texto.`;
+  const texto = await llamarIA(prompt, 2000, 120000);
+  return texto.replace(/\*\*/g, '').trim();
+}
+
+/**
+ * Especificación técnica de cada partida recibida (se llama por lotes, p. ej. una fase a la vez,
+ * para que la respuesta no se corte). Retorna un mapa clave → especificación (la clave es única por
+ * partida; el número de ítem no sirve porque puede repetirse antes de renumerar el itemizado).
+ */
+export async function generarEspecificacionesPartidasConIA(
+  proyecto: ContextoProyectoEETT,
+  partidas: { clave: string; item: string; descripcion: string; unidad: string; cantidad?: number; fase?: string }[]
+): Promise<Record<string, string>> {
+  const lista = partidas
+    .map(p => `- [${p.clave}] Ítem ${p.item}${p.fase ? ` [${p.fase}]` : ''}: ${p.descripcion} (unidad: ${p.unidad}${p.cantidad ? `, cantidad: ${p.cantidad}` : ''})`)
+    .join('\n');
+
+  const prompt = `${ROL_EETT}
+
+${contextoEETT(proyecto)}
+
+Partidas del presupuesto aprobado a especificar:
+${lista}
+
+Para CADA partida redacta su especificación técnica (80 a 160 palabras), coherente con la descripción y unidad de la partida y con el contexto del proyecto. Cada especificación debe indicar, en este orden y en texto corrido: alcance de la partida; materiales y su calidad mínima (marcas solo como referencia, "o equivalente técnico"); procedimiento de ejecución; normativa o control de calidad si aplica; y forma de medición y pago según la unidad de la partida. NO inventes cifras que no estén en los datos (cantidades, dimensiones, montos); si hacen falta, indica "según planos" o "según levantamiento en terreno". Español de Chile, técnico e impersonal, sin markdown.
+
+Responde EXCLUSIVAMENTE con un array JSON válido, sin texto adicional, con un objeto por partida y la clave (lo que va entre corchetes) exactamente igual a la recibida:
+[{"clave":"P1","especificacion":"..."}]`;
+
+  // Especificar varias partidas con razonamiento toma ~40 s: se da el doble del límite general.
+  const content = await llamarIA(prompt, 700 * partidas.length + 500, 120000);
+  const parsed = parsearArregloJsonDeIA(content);
+  const resultado: Record<string, string> = {};
+  for (const x of parsed) {
+    if (typeof x !== 'object' || x === null) continue;
+    const obj = x as Record<string, unknown>;
+    const clave = String(obj.clave ?? '').replace(/[[\]]/g, '').trim();
+    const esp = String(obj.especificacion ?? '').replace(/\*\*/g, '').trim();
+    if (clave && esp) resultado[clave] = esp;
+  }
+  return resultado;
 }
 
 export interface ItemItemizadoSugeridoIA {
@@ -216,6 +367,135 @@ Usa unidades reales de construcción chilena (m2, m3, ml, un, gl, kg, hh, etc).`
       descripcion: String(x.descripcion ?? '').trim(),
       unidad: String(x.unidad ?? 'un').trim(),
       fase: normalizarFase(String(x.fase ?? '')),
+    }))
+    .filter(x => x.descripcion.length > 0);
+}
+
+// ─── PRESUPUESTO PRECISO (preguntas técnicas dinámicas + itemizado con cantidades y precio referencial) ──
+
+export interface PreguntaTecnicaIA {
+  id: string;
+  pregunta: string;
+  tipo: 'numero' | 'texto' | 'seleccion';
+  /** Solo si tipo === 'numero' (ej. "m2", "ml", "un"). */
+  unidad?: string;
+  /** Solo si tipo === 'seleccion'. */
+  opciones?: string[];
+}
+
+/**
+ * Analiza el proyecto y propone entre 3 y 6 preguntas técnicas ESPECÍFICAS para ESTE caso
+ * particular (ej. para "cambio de cubierta": m2 de techumbre, tipo de estructura, si lleva
+ * aislación y de qué tipo) — son la base para calcular cantidades reales en
+ * `sugerirItemizadoPrecisoConIA`, en vez de dejar todo en cantidad 0.
+ */
+export async function sugerirPreguntasTecnicasConIA(params: {
+  nombre: string;
+  descripcion?: string;
+  tipoObra?: string;
+  rubro?: string;
+  uso?: string;
+}): Promise<PreguntaTecnicaIA[]> {
+  const contexto = [
+    `Nombre del proyecto: "${params.nombre}"`,
+    params.tipoObra ? `Tipo de obra: ${params.tipoObra}` : '',
+    params.rubro ? `Rubro: ${params.rubro}` : '',
+    params.uso ? `Uso del espacio: ${params.uso}` : '',
+    params.descripcion ? `Descripción: ${params.descripcion}` : '',
+  ].filter(Boolean).join('\n');
+
+  const prompt = `Eres un presupuestista experto en obras civiles y de infraestructura en Chile. Dado este proyecto:
+
+${contexto}
+
+Determina qué datos técnicos específicos necesitas conocer de ESTE proyecto en particular para poder calcular cantidades de obra reales (metros cuadrados, metros lineales, tipo de estructura, tipo de materialidad, si lleva o no ciertas partidas opcionales, etc.), en vez de asumirlos. Propone entre 3 y 6 preguntas, las mínimas e imprescindibles para dimensionar el presupuesto — no preguntes nada que no cambie una cantidad o partida del itemizado. Responde EXCLUSIVAMENTE con un array JSON válido, sin texto adicional ni markdown, con este formato exacto:
+[{"id":"m2_techumbre","pregunta":"¿Cuántos m2 tiene la techumbre a intervenir?","tipo":"numero","unidad":"m2"}, {"id":"tipo_estructura","pregunta":"¿La estructura de soporte es metálica o de madera?","tipo":"seleccion","opciones":["Metálica","Madera","No sé / a definir en terreno"]}, {"id":"lleva_aislacion","pregunta":"¿Lleva aislación térmica? ¿De qué tipo?","tipo":"texto"}]
+"tipo" debe ser exactamente "numero", "texto" o "seleccion". Usa "numero" con su "unidad" (m2, ml, m3, un, etc.) siempre que la respuesta sea una cantidad medible; usa "seleccion" con "opciones" (incluyendo una opción tipo "No sé / a definir en terreno") cuando haya alternativas típicas conocidas; usa "texto" solo si no calza en las anteriores.`;
+
+  const content = await llamarIA(prompt, 1500);
+  const parsed = parsearArregloJsonDeIA(content);
+
+  return parsed
+    .filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null)
+    .map((x, i) => ({
+      id: String(x.id ?? `pregunta-${i + 1}`),
+      pregunta: String(x.pregunta ?? '').trim(),
+      tipo: (x.tipo === 'numero' || x.tipo === 'seleccion' ? x.tipo : 'texto') as PreguntaTecnicaIA['tipo'],
+      unidad: x.unidad ? String(x.unidad).trim() : undefined,
+      opciones: Array.isArray(x.opciones) ? x.opciones.map(o => String(o)) : undefined,
+    }))
+    .filter(x => x.pregunta.length > 0);
+}
+
+export interface ItemItemizadoPrecisoSugeridoIA {
+  item: string;
+  descripcion: string;
+  unidad: string;
+  fase: string;
+  cantidad: number;
+  /** Estimación de mercado chileno propuesta por la IA — NO es una cotización real, se marca
+   * como referencial en la UI y el usuario debe validarla o reemplazarla. */
+  precioUnitarioReferencial: number;
+}
+
+/**
+ * Igual que `sugerirItemizadoConIA`, pero a partir de las respuestas técnicas del usuario
+ * (ver `sugerirPreguntasTecnicasConIA`) calcula además la CANTIDAD real de cada partida y
+ * propone un precio unitario referencial de mercado chileno. A diferencia de la sugerencia
+ * simple, aquí sí se le pide a la IA estimar precios — quedan marcados como no vinculantes
+ * (`precioReferencial: true` en el itemizado) para que el usuario los valide antes de usarlos
+ * como Presupuesto Estimado oficial.
+ */
+export async function sugerirItemizadoPrecisoConIA(params: {
+  nombre: string;
+  descripcion?: string;
+  tipoObra?: string;
+  rubro?: string;
+  uso?: string;
+  respuestas: { pregunta: string; respuesta: string }[];
+}): Promise<ItemItemizadoPrecisoSugeridoIA[]> {
+  const contexto = [
+    `Nombre del proyecto: "${params.nombre}"`,
+    params.tipoObra ? `Tipo de obra: ${params.tipoObra}` : '',
+    params.rubro ? `Rubro: ${params.rubro}` : '',
+    params.uso ? `Uso del espacio: ${params.uso}` : '',
+    params.descripcion ? `Descripción: ${params.descripcion}` : '',
+  ].filter(Boolean).join('\n');
+
+  const listaRespuestas = params.respuestas
+    .filter(r => r.respuesta.trim().length > 0)
+    .map(r => `- ${r.pregunta}: ${r.respuesta}`)
+    .join('\n') || '(sin datos adicionales — estime con criterio conservador)';
+
+  const catalogoFases = FASES_ITEMIZADO.map(f => `"${f}"`).join(', ');
+
+  const prompt = `Eres un presupuestista experto en obras civiles y de infraestructura en Chile, trabajando para la Subdirección de Infraestructura de una universidad. Proyecto:
+
+${contexto}
+
+Datos técnicos entregados por el responsable del proyecto:
+${listaRespuestas}
+
+Con esos datos, propone entre 6 y 14 partidas de itemizado (Bill of Quantities), en el orden lógico de ejecución de la obra. Para cada partida:
+- Clasifícala en EXACTAMENTE una de estas fases (texto tal cual, sin inventar otras): ${catalogoFases}.
+- Calcula una CANTIDAD real (no 0) a partir de los datos entregados — si un dato no fue precisado, estímalo con criterio profesional conservador a partir del resto del contexto (ej. metros lineales de cumbrera o canaletas a partir del m2 y la geometría típica de una techumbre) y dilo implícito en la cantidad, sin inventar partidas que no correspondan al alcance.
+- Propón un precioUnitarioReferencial en pesos chilenos (CLP, sin IVA), como estimación de mercado chileno actual para esa partida específica — es una referencia orientativa, no una cotización real.
+No todas las fases son obligatorias — usa solo las que apliquen. Responde EXCLUSIVAMENTE con un array JSON válido, sin texto adicional ni markdown, con este formato exacto:
+[{"item":"1.1","fase":"Obra Gruesa","descripcion":"...","unidad":"m2","cantidad":120,"precioUnitarioReferencial":18000}, ...]
+Usa unidades reales de construcción chilena (m2, m3, ml, un, gl, kg, hh, etc).`;
+
+  const content = await llamarIA(prompt, 4000);
+  const parsed = parsearArregloJsonDeIA(content);
+
+  return parsed
+    .filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null)
+    .map((x, i) => ({
+      item: String(x.item ?? i + 1),
+      descripcion: String(x.descripcion ?? '').trim(),
+      unidad: String(x.unidad ?? 'un').trim(),
+      fase: normalizarFase(String(x.fase ?? '')),
+      cantidad: Math.max(0, Number(x.cantidad ?? 0)),
+      precioUnitarioReferencial: Math.max(0, Number(x.precioUnitarioReferencial ?? 0)),
     }))
     .filter(x => x.descripcion.length > 0);
 }

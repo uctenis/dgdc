@@ -6,11 +6,14 @@ import {
 import type { LicitacionProyecto } from '../types';
 import { updateLicitacion } from '../services/firestoreService';
 import { uploadLicitacionDocument } from '../services/storageService';
+import { checklistAntecedentesEfectivo } from '../utils/proveedorMatching';
 
 interface AntecedentesManagerProps {
   licitacion: LicitacionProyecto;
   onClose: () => void;
   onChecklistComplete?: () => void;
+  /** true = se muestra dentro de la pestaña de la licitación, no como ventana modal. */
+  embedded?: boolean;
 }
 
 type TipoAntecedente = 'Bases Tecnicas' | 'Bases Administrativas' | 'Planos' | 'Anexo' | 'Presupuesto';
@@ -23,14 +26,39 @@ export const AntecedentesManager: React.FC<AntecedentesManagerProps> = ({
   licitacion,
   onClose,
   onChecklistComplete,
+  embedded = false,
 }) => {
   const [antecedentes, setAntecedentes] = useState(licitacion.antecedentesTecnicos || []);
 
   // Los 3 primeros ítems del checklist se derivan de documentos reales adjuntos — no son
   // togglables a mano, así se evita que el sistema marque "verificado" sin un archivo real.
-  const basesTecnicasOk = useMemo(() => tieneDocumentoReal(antecedentes, 'Bases Tecnicas'), [antecedentes]);
-  const basesAdministrativasOk = useMemo(() => tieneDocumentoReal(antecedentes, 'Bases Administrativas'), [antecedentes]);
-  const planosOk = useMemo(() => tieneDocumentoReal(antecedentes, 'Planos'), [antecedentes]);
+  const conArchivo = {
+    basesTecnicasOk: useMemo(() => tieneDocumentoReal(antecedentes, 'Bases Tecnicas'), [antecedentes]),
+    basesAdministrativasOk: useMemo(() => tieneDocumentoReal(antecedentes, 'Bases Administrativas'), [antecedentes]),
+    planosOk: useMemo(() => tieneDocumentoReal(antecedentes, 'Planos'), [antecedentes]),
+  };
+  // Hay proyectos sin planos (o sin alguna base): se permite marcarlos a mano, pero queda registrado y se advierte.
+  const [marcaManual, setMarcaManual] = useState(() => {
+    const previo = checklistAntecedentesEfectivo(licitacion);
+    return {
+      basesTecnicasOk: previo.sinAdjuntos.basesTecnicasOk,
+      basesAdministrativasOk: previo.sinAdjuntos.basesAdministrativasOk,
+      planosOk: previo.sinAdjuntos.planosOk,
+    };
+  });
+  const manual = {
+    basesTecnicasOk: marcaManual.basesTecnicasOk && !conArchivo.basesTecnicasOk,
+    basesAdministrativasOk: marcaManual.basesAdministrativasOk && !conArchivo.basesAdministrativasOk,
+    planosOk: marcaManual.planosOk && !conArchivo.planosOk,
+  };
+  const basesTecnicasOk = conArchivo.basesTecnicasOk || manual.basesTecnicasOk;
+  const basesAdministrativasOk = conArchivo.basesAdministrativasOk || manual.basesAdministrativasOk;
+  const planosOk = conArchivo.planosOk || manual.planosOk;
+  const sinAdjuntosLista = [
+    manual.basesAdministrativasOk && 'Bases Administrativas',
+    manual.basesTecnicasOk && 'Bases Técnicas',
+    manual.planosOk && 'Planos',
+  ].filter(Boolean) as string[];
   const calendarioDefinidoOk = Boolean(
     licitacion.fechaVisitaTerreno && licitacion.fechaRecepcionConsultas && licitacion.fechaRespuestaConsultas && licitacion.fechaEvaluacion
   );
@@ -93,13 +121,16 @@ export const AntecedentesManager: React.FC<AntecedentesManagerProps> = ({
           basesTecnicasOk,
           basesAdministrativasOk,
           planosOk,
+          planosSinAdjuntos: manual.planosOk,
+          basesTecnicasSinAdjuntos: manual.basesTecnicasOk,
+          basesAdministrativasSinAdjuntos: manual.basesAdministrativasOk,
           calendarioDefinidoOk,
           revisadoSecretariaGeneralOk,
         },
       });
       alert('¡Antecedentes técnicos y checklist de verificación guardados con éxito!');
       if (todoCompleto) onChecklistComplete?.();
-      onClose();
+      if (!embedded) onClose();
     } catch (err) {
       console.error('Error guardando antecedentes:', err);
       setErrorGuardado('No se pudieron guardar los antecedentes. Intente nuevamente.');
@@ -109,16 +140,16 @@ export const AntecedentesManager: React.FC<AntecedentesManagerProps> = ({
   };
 
   const checklistItems: { key: string; label: string; checked: boolean; auto: boolean }[] = [
-    { key: 'basesTecnicasOk', label: '1. Bases Técnicas de Servicio y Alcances de Obra cargadas', checked: basesTecnicasOk, auto: true },
-    { key: 'basesAdministrativasOk', label: '2. Bases Administrativas y Criterios de Evaluación integrados', checked: basesAdministrativasOk, auto: true },
-    { key: 'planosOk', label: '3. Planos, Esquemas o Croquis del Edificio adjuntos', checked: planosOk, auto: true },
+    { key: 'basesTecnicasOk', label: '1. Bases Técnicas de Servicio y Alcances de Obra cargadas', checked: basesTecnicasOk, auto: conArchivo.basesTecnicasOk },
+    { key: 'basesAdministrativasOk', label: '2. Bases Administrativas y Criterios de Evaluación integrados', checked: basesAdministrativasOk, auto: conArchivo.basesAdministrativasOk },
+    { key: 'planosOk', label: '3. Planos, Esquemas, Croquis o Fotos del Edificio adjuntos', checked: planosOk, auto: conArchivo.planosOk },
     { key: 'calendarioDefinidoOk', label: '4. Fechas clave (Visita Terreno, Consultas y Entrega) definidas', checked: calendarioDefinidoOk, auto: true },
     { key: 'revisadoSecretariaGeneralOk', label: '5. Pertinencia Legal revisada por Secretaría General / Coordinación', checked: revisadoSecretariaGeneralOk, auto: false },
   ];
 
   return (
-    <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-2xl space-y-5 max-h-[90vh] flex flex-col border border-slate-200">
+    <div className={embedded ? '' : 'fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4'}>
+      <div className={embedded ? 'bg-white rounded-2xl w-full p-6 shadow-sm space-y-5 flex flex-col border border-slate-200' : 'bg-white rounded-2xl max-w-3xl w-full p-6 shadow-2xl space-y-5 max-h-[90vh] flex flex-col border border-slate-200'}>
 
         {/* Header */}
         <div className="flex items-center justify-between border-b pb-4 shrink-0">
@@ -134,9 +165,11 @@ export const AntecedentesManager: React.FC<AntecedentesManagerProps> = ({
             </h3>
             <p className="text-xs text-slate-500">{licitacion.nombreProyecto.toLocaleUpperCase('es-CL')}</p>
           </div>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition">
-            <X className="w-5 h-5" />
-          </button>
+          {!embedded && (
+            <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition">
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto space-y-6 pr-1">
@@ -161,8 +194,13 @@ export const AntecedentesManager: React.FC<AntecedentesManagerProps> = ({
               <p className="mt-1 text-[11px] opacity-90">
                 {todoCompleto
                   ? 'Las bases administrativas, técnicas, planos y calendario están verificados. El sistema autoriza el envío de invitaciones a los proveedores.'
-                  : 'Los 3 primeros puntos se validan automáticamente al adjuntar el archivo correspondiente. El envío de invitaciones y el ingreso de ofertas quedarán bloqueados hasta completar los 5 puntos.'}
+                  : 'Los 3 primeros puntos se validan al adjuntar el archivo correspondiente (o pueden marcarse a mano si el proyecto no los tiene, con advertencia). El envío de invitaciones y el ingreso de ofertas quedarán bloqueados hasta completar los 5 puntos.'}
               </p>
+              {sinAdjuntosLista.length > 0 && (
+                <p className="mt-1.5 text-[11px] font-bold text-amber-800">
+                  ⚠ Atención: se marcaron como cumplidos sin archivos adjuntos: {sinAdjuntosLista.join(', ')}. Los proveedores no recibirán esos documentos.
+                </p>
+              )}
             </div>
           </div>
 
@@ -186,13 +224,26 @@ export const AntecedentesManager: React.FC<AntecedentesManagerProps> = ({
                     type="checkbox"
                     checked={item.checked}
                     disabled={item.auto}
-                    onChange={item.auto ? undefined : () => setRevisadoSecretariaGeneralOk(v => !v)}
+                    onChange={item.auto ? undefined : () => {
+                      if (item.key === 'basesTecnicasOk' || item.key === 'basesAdministrativasOk' || item.key === 'planosOk') {
+                        const k = item.key;
+                        if (!marcaManual[k] && !confirm(`¿Confirma marcar "${item.label.replace(/^\d+\.\s*/, '')}" como cumplido SIN adjuntar archivos (por ejemplo, porque este proyecto no cuenta con ello)? Quedará registrado y se advertirá en la licitación.`)) return;
+                        setMarcaManual(prev => ({ ...prev, [k]: !prev[k] }));
+                      } else {
+                        setRevisadoSecretariaGeneralOk(v => !v);
+                      }
+                    }}
                     className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500 disabled:opacity-70"
                   />
                   <span className="flex-1">{item.label}</span>
                   {item.auto && (
                     <span className="text-[9px] font-bold uppercase text-slate-400 shrink-0">
                       {item.checked ? 'Verificado por archivo' : 'Falta archivo'}
+                    </span>
+                  )}
+                  {(item.key === 'basesTecnicasOk' || item.key === 'basesAdministrativasOk' || item.key === 'planosOk') && manual[item.key] && (
+                    <span className="text-[9px] font-bold uppercase text-amber-700 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded shrink-0">
+                      ⚠ Sin archivo adjunto
                     </span>
                   )}
                 </label>
@@ -312,6 +363,7 @@ export const AntecedentesManager: React.FC<AntecedentesManagerProps> = ({
 
         {/* Footer */}
         <div className="flex items-center justify-between pt-4 border-t shrink-0 text-xs">
+          {embedded ? <span /> : (
           <button
             type="button"
             onClick={onClose}
@@ -319,6 +371,7 @@ export const AntecedentesManager: React.FC<AntecedentesManagerProps> = ({
           >
             Cerrar
           </button>
+          )}
           <div className="flex items-center gap-3">
             {errorGuardado && <span className="text-[11px] text-red-700 font-semibold">{errorGuardado}</span>}
             <button

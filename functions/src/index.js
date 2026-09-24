@@ -5,6 +5,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { defineSecret, defineString } from 'firebase-functions/params';
 import { onRequest } from 'firebase-functions/v2/https';
 import nodemailer from 'nodemailer';
+import { randomBytes } from 'node:crypto';
 
 initializeApp();
 
@@ -423,17 +424,23 @@ export const enviarInvitacionesLicitacion = onRequest({
     if (!licitacionSnap.exists) return sendError(res, 404, 'Licitación no encontrada.');
     const licitacion = licitacionSnap.data();
 
+    // Mismo criterio que el cliente (checklistAntecedentesEfectivo): archivo real adjunto o marca manual.
     const checklist = licitacion.checklistAntecedentes || {};
+    const marcaManual = licitacion.checklistManual || {};
+    const tieneArchivo = tipo => Boolean(licitacion.antecedentesTecnicos?.some(d => d.tipo === tipo && d.archivoURL && d.archivoURL !== '#'));
     const antecedentesCompletos = Boolean(
-      checklist.basesTecnicasOk && checklist.basesAdministrativasOk && checklist.planosOk &&
-      checklist.calendarioDefinidoOk && checklist.revisadoSecretariaGeneralOk
+      (tieneArchivo('Bases Tecnicas') || checklist.basesTecnicasSinAdjuntos || marcaManual['ch-02']) &&
+      (tieneArchivo('Bases Administrativas') || checklist.basesAdministrativasSinAdjuntos || marcaManual['ch-01']) &&
+      (tieneArchivo('Planos') || checklist.planosSinAdjuntos || marcaManual['ch-03']) &&
+      licitacion.fechaVisitaTerreno && licitacion.fechaRecepcionConsultas && licitacion.fechaRespuestaConsultas && licitacion.fechaEvaluacion &&
+      checklist.revisadoSecretariaGeneralOk
     );
     if (!antecedentesCompletos) {
       return sendError(res, 409, 'El checklist de "Bases & Planos" (Antecedentes Técnicos) no está completo — no se pueden enviar invitaciones todavía.');
     }
 
     const invitados = invitadosSnap.docs
-      .map(doc => doc.data())
+      .map(doc => ({ ...doc.data(), _ref: doc.ref }))
       .filter(inv => inv.proveedorEmail);
     if (!invitados.length) {
       return sendError(res, 400, 'No hay proveedores invitados con correo registrado en su ficha.');
@@ -448,6 +455,19 @@ export const enviarInvitacionesLicitacion = onRequest({
     const asunto = `Invitación a licitación — ${licitacion.codigoProyecto || ''} ${licitacion.nombreProyecto || ''}`.trim();
     const resultados = [];
     for (const inv of invitados) {
+      // Enlace personal de este proveedor (se crea el código si el invitado es anterior a esta función).
+      let tokenAcceso = inv.tokenAcceso;
+      if (!tokenAcceso) {
+        tokenAcceso = randomBytes(16).toString('hex');
+        await inv._ref.update({ tokenAcceso });
+      }
+      await db.collection('invitaciones').doc(tokenAcceso).set({
+        licitacionId,
+        proveedorId: inv.proveedorId,
+        proveedorEmail: inv.proveedorEmail,
+        proveedorNombre: inv.proveedorNombre || '',
+      }, { merge: true });
+      const enlacePersonal = `${portalUrl}?t=${tokenAcceso}`;
       const htmlBody = `
         <div style="font-family: Arial, sans-serif; color: #1e293b; line-height: 1.6; font-size: 14px;">
           <p>Estimados <strong>${inv.proveedorNombre || ''}</strong>,</p>
@@ -457,14 +477,14 @@ export const enviarInvitacionesLicitacion = onRequest({
             Código de Proyecto: ${licitacion.codigoProyecto || 'No informado'} · Centro de Costo: ${licitacion.codigoCP || 'No informado'}
           </p>
           <p>Para revisar las bases, antecedentes técnicos y presentar su oferta, ingrese con su cuenta de correo al portal de proveedores:</p>
-          <p><a href="${portalUrl}" style="display:inline-block; background:#0369a1; color:#fff; text-decoration:none; padding:10px 18px; border-radius:8px; font-weight:bold;">Ingresar al Portal de Proveedores</a></p>
-          <p style="font-size:12px; color:#64748b;">Si el botón no funciona, copie y pegue este enlace en su navegador: ${portalUrl}</p>
+          <p><a href="${enlacePersonal}" style="display:inline-block; background:#0369a1; color:#fff; text-decoration:none; padding:10px 18px; border-radius:8px; font-weight:bold;">Ingresar al Portal de Proveedores</a></p>
+          <p style="font-size:12px; color:#64748b;">Si el botón no funciona, copie y pegue este enlace en su navegador: ${enlacePersonal}</p>
           <p><strong>Calendario del proceso:</strong></p>
           <table style="border-collapse: collapse; font-size: 13px;">
             <tr><td style="padding:4px 12px 4px 0; color:#64748b;">Visita a Terreno</td><td><strong>${formatearFechaEmail(licitacion.fechaVisitaTerreno)}</strong></td></tr>
             <tr><td style="padding:4px 12px 4px 0; color:#64748b;">Recepción de Consultas</td><td><strong>${formatearFechaEmail(licitacion.fechaRecepcionConsultas)}</strong></td></tr>
             <tr><td style="padding:4px 12px 4px 0; color:#64748b;">Respuesta de Consultas</td><td><strong>${formatearFechaEmail(licitacion.fechaRespuestaConsultas)}</strong></td></tr>
-            <tr><td style="padding:4px 12px 4px 0; color:#64748b;">Entrega de Propuestas</td><td><strong>${formatearFechaEmail(licitacion.fechaEntregaPropuestas || licitacion.fechaEvaluacion)}</strong></td></tr>
+            <tr><td style="padding:4px 12px 4px 0; color:#64748b;">Entrega de Propuestas</td><td><strong>${formatearFechaEmail(licitacion.fechaEntregaPropuestas || licitacion.fechaEvaluacion)}, hasta las ${licitacion.horaLimiteOfertas || '23:59'} hrs (hora de Chile)</strong></td></tr>
           </table>
           <p style="margin-top:16px;">Saludos cordiales,<br/>Subdirección de Infraestructura — Universidad Católica de Temuco</p>
         </div>
@@ -478,18 +498,110 @@ export const enviarInvitacionesLicitacion = onRequest({
           subject: asunto,
           html: htmlBody,
         });
-        resultados.push({ proveedorId: inv.proveedorId, email: inv.proveedorEmail, enviado: true });
+        resultados.push({ proveedorId: inv.proveedorId, proveedorNombre: inv.proveedorNombre || '', email: inv.proveedorEmail, enviado: true, html: htmlBody });
       } catch (err) {
         console.error(`Error enviando invitación a ${inv.proveedorEmail}:`, err);
-        resultados.push({ proveedorId: inv.proveedorId, email: inv.proveedorEmail, enviado: false, error: err instanceof Error ? err.message : 'Error desconocido' });
+        resultados.push({ proveedorId: inv.proveedorId, proveedorNombre: inv.proveedorNombre || '', email: inv.proveedorEmail, enviado: false, error: err instanceof Error ? err.message : 'Error desconocido', html: htmlBody });
       }
     }
 
     console.log(`Invitaciones de licitación ${licitacionId} procesadas por ${firebaseUser.email}: ${resultados.filter(r => r.enviado).length}/${resultados.length} enviadas.`);
-    return res.json({ resultados });
+    return res.json({ resultados, asunto, cc: [licitacion.responsableEmail, ...ccExtra].filter(Boolean) });
   } catch (error) {
     console.error('Error enviando invitaciones de licitación', error);
     if (error.message === 'AUTH_REQUIRED') return sendError(res, 401, 'Debe iniciar sesión para enviar invitaciones.');
     return sendError(res, 500, error instanceof Error ? error.message : 'Error inesperado al enviar las invitaciones.');
+  }
+});
+
+function escaparHtml(valor) {
+  return String(valor ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function formatoClp(valor) {
+  return new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(valor || 0);
+}
+
+/**
+ * Confirma por correo al proveedor que su oferta fue recibida. Solo la puede pedir el proveedor autenticado
+ * dueño de una propuesta ya ENVIADA; el correo va a la dirección con la que fue invitado, con copia al
+ * responsable del proyecto. (Espejo de src/utils/confirmacionPropuesta.ts, que se usa en modo prueba.)
+ */
+export const confirmarPropuestaEnviada = onRequest({
+  cors: true,
+  timeoutSeconds: 60,
+  secrets: [gmailUser, gmailAppPassword],
+}, async (req, res) => {
+  if (req.method !== 'POST') return sendError(res, 405, 'Método no permitido.');
+  try {
+    const firebaseUser = await requireFirebaseUser(req);
+    const licitacionId = String(req.body?.licitacionId || '').trim();
+    if (!licitacionId) return sendError(res, 400, 'Falta el ID de la licitación.');
+
+    const perfil = (await db.collection('usuarios').doc(firebaseUser.uid).get()).data();
+    const proveedorId = perfil?.proveedorId;
+    if (perfil?.role !== 'proveedor' || !proveedorId) return sendError(res, 403, 'Solo los proveedores pueden solicitar esta confirmación.');
+
+    const licitacionRef = db.collection('licitaciones').doc(licitacionId);
+    const [licitacionSnap, propuestaSnap, invitadoSnap] = await Promise.all([
+      licitacionRef.get(),
+      licitacionRef.collection('propuestas').doc(proveedorId).get(),
+      licitacionRef.collection('invitados').doc(proveedorId).get(),
+    ]);
+    if (!licitacionSnap.exists) return sendError(res, 404, 'Licitación no encontrada.');
+    if (!invitadoSnap.exists) return sendError(res, 403, 'No figura como invitado a esta licitación.');
+    if (!propuestaSnap.exists) return sendError(res, 404, 'No hay una oferta registrada.');
+
+    const licitacion = licitacionSnap.data();
+    const propuesta = propuestaSnap.data();
+    if (propuesta.proveedorUid !== firebaseUser.uid) return sendError(res, 403, 'La oferta no pertenece a esta cuenta.');
+    if (propuesta.estado !== 'Enviada') return sendError(res, 409, 'La oferta aún no fue enviada.');
+
+    const destino = invitadoSnap.data().proveedorEmail || firebaseUser.email;
+    if (propuesta.confirmacionCorreo?.modo === 'real') {
+      return res.json({ ok: true, yaEnviada: true, email: propuesta.confirmacionCorreo.email, asunto: propuesta.confirmacionCorreo.asunto || '' });
+    }
+
+    const asunto = `Confirmación de oferta recibida — ${licitacion.codigoProyecto || ''} ${licitacion.nombreProyecto || ''}`.trim();
+    const fecha = propuesta.fechaEnvio ? new Date(propuesta.fechaEnvio) : new Date();
+    const html = `
+        <div style="font-family: Arial, sans-serif; color: #1e293b; line-height: 1.6; font-size: 14px;">
+          <p>Estimados <strong>${escaparHtml(propuesta.proveedorNombre)}</strong>,</p>
+          <p>Confirmamos que su oferta para la siguiente licitación fue <strong>recibida correctamente</strong>:</p>
+          <p style="background:#f1f5f9; border-radius:8px; padding:12px 16px;">
+            <strong>${escaparHtml(licitacion.nombreProyecto)}</strong><br/>
+            Código de Proyecto: ${escaparHtml(licitacion.codigoProyecto || 'No informado')}
+          </p>
+          <table style="border-collapse: collapse; font-size: 13px;">
+            <tr><td style="padding:4px 12px 4px 0; color:#64748b;">Fecha y hora de envío</td><td><strong>${escaparHtml(fecha.toLocaleString('es-CL', { timeZone: 'America/Santiago' }))}</strong></td></tr>
+            <tr><td style="padding:4px 12px 4px 0; color:#64748b;">Monto neto</td><td><strong>${escaparHtml(formatoClp(propuesta.montoNeto))}</strong></td></tr>
+            <tr><td style="padding:4px 12px 4px 0; color:#64748b;">Total con IVA</td><td><strong>${escaparHtml(formatoClp(propuesta.montoTotal))}</strong></td></tr>
+            <tr><td style="padding:4px 12px 4px 0; color:#64748b;">Plazo de ejecución</td><td><strong>${escaparHtml(propuesta.plazoDias || 0)} días corridos</strong></td></tr>
+            <tr><td style="padding:4px 12px 4px 0; color:#64748b;">Oferta económica</td><td>${escaparHtml(propuesta.archivoNombre || '—')}</td></tr>
+            <tr><td style="padding:4px 12px 4px 0; color:#64748b;">Oferta técnica</td><td>${escaparHtml(propuesta.archivoTecnicoNombre || '—')}</td></tr>
+          </table>
+          <p style="font-size:12px; color:#64748b;">Este correo es una confirmación automática de recepción; no constituye adjudicación. La evaluación se realizará según las bases de la licitación.</p>
+          <p style="margin-top:16px;">Saludos cordiales,<br/>Subdirección de Infraestructura — Universidad Católica de Temuco</p>
+        </div>
+      `.trim();
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: gmailUser.value(), pass: gmailAppPassword.value() },
+    });
+    await transporter.sendMail({
+      from: `"Subdirección de Infraestructura UCT" <${gmailUser.value()}>`,
+      to: destino,
+      cc: licitacion.responsableEmail || undefined,
+      subject: asunto,
+      html,
+    });
+    await propuestaSnap.ref.update({ confirmacionCorreo: { modo: 'real', fecha: new Date().toISOString(), email: destino, asunto } });
+    console.log(`Confirmación de oferta enviada a ${destino} (licitación ${licitacionId}).`);
+    return res.json({ ok: true, email: destino, asunto });
+  } catch (error) {
+    console.error('Error enviando confirmación de oferta', error);
+    if (error.message === 'AUTH_REQUIRED') return sendError(res, 401, 'Debe iniciar sesión.');
+    return sendError(res, 500, error instanceof Error ? error.message : 'Error inesperado al enviar la confirmación.');
   }
 });

@@ -23,6 +23,7 @@ import {
 import { db } from '../lib/firebase';
 import { formatearRUT } from '../utils/rutUtils';
 import { normalizarNombreProyecto } from '../utils/spellCorrector';
+import { plazoOfertasVencido, fechaLimiteOfertas, textoLimiteOfertas } from '../utils/plazoOfertas';
 import { construirSeccionesBasesDesdeCero, CAMPOS_QUE_AFECTAN_BASES } from '../utils/basesGenerator';
 import type {
   Proveedor,
@@ -36,15 +37,15 @@ import type {
   AumentoObra,
   HitoDesarrolloProyecto,
   UserProfile,
-  EvaluacionDesempeno,
-} from '../types';
+  EvaluacionDesempeno, EnvioInvitacion, InvitacionAcceso } from '../types';
 
 // ═══════════════════════════════════════════════════════════════════
 // PROVEEDORES
 // ═══════════════════════════════════════════════════════════════════
 
 export function subscribeToProveedores(
-  callback: (proveedores: Proveedor[]) => void
+  callback: (proveedores: Proveedor[]) => void,
+  onError?: (error: Error) => void
 ): Unsubscribe {
   const q = query(collection(db, 'proveedores'), orderBy('fechaRegistro', 'desc'));
   return onSnapshot(q, snapshot => {
@@ -54,7 +55,7 @@ export function subscribeToProveedores(
         return { ...prov, rut: formatearRUT(prov.rut) };
       })
     );
-  });
+  }, err => onError?.(err));
 }
 
 export async function getProveedorPorId(id: string): Promise<Proveedor | null> {
@@ -283,7 +284,8 @@ export async function getAllProyectosMaestros(): Promise<ProyectoMaestro[]> {
 }
 
 export function subscribeToProyectos(
-  callback: (proyectos: ProyectoMaestro[]) => void
+  callback: (proyectos: ProyectoMaestro[]) => void,
+  onError?: (error: Error) => void
 ): Unsubscribe {
   const q = query(collection(db, 'proyectos'), orderBy('correlativo', 'asc'));
   return onSnapshot(q, snap => {
@@ -291,7 +293,7 @@ export function subscribeToProyectos(
       const proyecto = { id: d.id, ...(d.data() as Omit<ProyectoMaestro, 'id'>) };
       return { ...proyecto, nombre: normalizarNombreProyecto(proyecto.nombre) };
     }));
-  });
+  }, err => onError?.(err));
 }
 
 export async function addProyectoMaestro(
@@ -370,6 +372,38 @@ export async function updateProyectoMaestro(
   await updateDoc(doc(db, 'proyectos', id), {
     ...datosFinales,
     ...(datosFinales.nombre !== undefined ? { nombre: normalizarNombreProyecto(datosFinales.nombre) } : {}),
+    _updatedAt: serverTimestamp(),
+  });
+
+  // Si cambió el itemizado, las licitaciones del proyecto actualizan el formato de presupuesto del portal.
+  if ('itemizado' in datosFinales) {
+    try {
+      const licitaciones = await getDocs(query(collection(db, 'licitaciones'), where('proyectoMaestroId', '==', id)));
+      const formato = construirFormatoPresupuesto(datosFinales.itemizado || []);
+      await Promise.all(licitaciones.docs.map(l => updateDoc(l.ref, { formatoPresupuesto: formato, _updatedAt: serverTimestamp() })));
+    } catch (err) {
+      console.warn('No se pudo actualizar el formato de presupuesto de las licitaciones:', err);
+    }
+  }
+}
+
+/** Partidas sin cantidades ni precios: lo único que se le muestra al proveedor del presupuesto del proyecto. */
+function construirFormatoPresupuesto(itemizado: NonNullable<ProyectoMaestro['itemizado']>): NonNullable<LicitacionProyecto['formatoPresupuesto']> {
+  return itemizado.map(p => ({
+    item: p.item,
+    ...(p.fase ? { fase: String(p.fase) } : {}),
+    descripcion: p.descripcion,
+    unidad: p.unidad,
+  }));
+}
+
+/** Copia las partidas (sin precios) del proyecto a la licitación, para el formato de presupuesto del portal. */
+export async function sincronizarFormatoPresupuesto(licitacionId: string, proyectoMaestroId: string): Promise<void> {
+  const snap = await getDoc(doc(db, 'proyectos', proyectoMaestroId));
+  if (!snap.exists()) return;
+  const proyecto = snap.data() as ProyectoMaestro;
+  await updateDoc(doc(db, 'licitaciones', licitacionId), {
+    formatoPresupuesto: construirFormatoPresupuesto(proyecto.itemizado || []),
     _updatedAt: serverTimestamp(),
   });
 }
@@ -520,7 +554,8 @@ export async function syncGastoEfectivoToProyectoMaestro(
 // ═══════════════════════════════════════════════════════════════════
 
 export function subscribeToLicitaciones(
-  callback: (licitaciones: LicitacionProyecto[]) => void
+  callback: (licitaciones: LicitacionProyecto[]) => void,
+  onError?: (error: Error) => void
 ): Unsubscribe {
   const q = query(collection(db, 'licitaciones'), orderBy('_createdAt', 'desc'));
   return onSnapshot(q, snap => {
@@ -528,7 +563,20 @@ export function subscribeToLicitaciones(
       const licitacion = { id: d.id, ...(d.data() as Omit<LicitacionProyecto, 'id'>) };
       return { ...licitacion, nombreProyecto: normalizarNombreProyecto(licitacion.nombreProyecto) };
     }));
-  });
+  }, err => onError?.(err));
+}
+
+/** Suscripción a UNA licitación (el portal de proveedores nunca descarga la colección completa). */
+export function subscribeToLicitacion(
+  licitacionId: string,
+  callback: (licitacion: LicitacionProyecto | null) => void,
+  onError?: (error: Error) => void
+): Unsubscribe {
+  return onSnapshot(doc(db, 'licitaciones', licitacionId), snap => {
+    if (!snap.exists()) { callback(null); return; }
+    const licitacion = { id: snap.id, ...(snap.data() as Omit<LicitacionProyecto, 'id'>) };
+    callback({ ...licitacion, nombreProyecto: normalizarNombreProyecto(licitacion.nombreProyecto) });
+  }, err => onError?.(err));
 }
 
 export async function getAllLicitaciones(): Promise<LicitacionProyecto[]> {
@@ -537,11 +585,25 @@ export async function getAllLicitaciones(): Promise<LicitacionProyecto[]> {
   return snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<LicitacionProyecto, 'id'>) }));
 }
 
+/** Instante exacto del cierre de ofertas (ms): las reglas de Firebase lo usan para cerrar el portal a la hora. */
+function limiteOfertasMsDe(data: Partial<LicitacionProyecto>): { limiteOfertasMs?: number } {
+  const limite = fechaLimiteOfertas(data);
+  return limite ? { limiteOfertasMs: limite.getTime() } : {};
+}
+
+/** Deja al día el instante de cierre de una licitación anterior a este campo. */
+export async function asegurarLimiteOfertas(lic: LicitacionProyecto): Promise<void> {
+  const limite = fechaLimiteOfertas(lic);
+  if (!limite || lic.limiteOfertasMs === limite.getTime()) return;
+  await updateDoc(doc(db, 'licitaciones', lic.id), { limiteOfertasMs: limite.getTime() });
+}
+
 export async function addLicitacion(
   data: Omit<LicitacionProyecto, 'id'>
 ): Promise<string> {
   const ref = await addDoc(collection(db, 'licitaciones'), {
     ...data,
+    ...limiteOfertasMsDe(data),
     nombreProyecto: normalizarNombreProyecto(data.nombreProyecto),
     _createdAt: serverTimestamp(),
   });
@@ -552,8 +614,14 @@ export async function updateLicitacion(
   id: string,
   data: Partial<LicitacionProyecto>
 ): Promise<void> {
+  let cierre: { limiteOfertasMs?: number } = {};
+  if ('fechaEntregaPropuestas' in data || 'fechaEvaluacion' in data || 'horaLimiteOfertas' in data) {
+    const actual = await getDoc(doc(db, 'licitaciones', id));
+    cierre = limiteOfertasMsDe({ ...(actual.exists() ? (actual.data() as Partial<LicitacionProyecto>) : {}), ...data });
+  }
   await updateDoc(doc(db, 'licitaciones', id), {
     ...data,
+    ...cierre,
     ...(data.nombreProyecto !== undefined ? { nombreProyecto: normalizarNombreProyecto(data.nombreProyecto) } : {}),
     _updatedAt: serverTimestamp(),
   });
@@ -586,13 +654,53 @@ export function subscribeToInvitados(
   });
 }
 
+/** Código aleatorio (128 bits) del enlace personal de una invitación. */
+function generarTokenAcceso(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Publica el código en `invitaciones/{código}`: es lo que consulta el proveedor al entrar (solo se puede leer
+ * conociendo el código; no se puede listar), así el proveedor nunca necesita leer la lista de invitados.
+ */
+async function publicarInvitacionPorToken(
+  token: string,
+  licitacionId: string,
+  inv: { proveedorId: string; proveedorEmail: string; proveedorNombre: string }
+): Promise<void> {
+  await setDoc(doc(db, 'invitaciones', token), {
+    licitacionId,
+    proveedorId: inv.proveedorId,
+    proveedorEmail: inv.proveedorEmail,
+    proveedorNombre: inv.proveedorNombre,
+  });
+}
+
+/** Garantiza que cada invitado tenga su enlace personal (los invitados anteriores a esta función no lo tenían). */
+export async function asegurarTokensInvitados(licitacionId: string, invitados: InvitadoLicitacion[]): Promise<InvitadoLicitacion[]> {
+  return Promise.all(invitados.map(async inv => {
+    if (inv.tokenAcceso) {
+      await publicarInvitacionPorToken(inv.tokenAcceso, licitacionId, inv);
+      return inv;
+    }
+    const tokenAcceso = generarTokenAcceso();
+    await updateDoc(doc(db, 'licitaciones', licitacionId, 'invitados', inv.proveedorId), { tokenAcceso });
+    await publicarInvitacionPorToken(tokenAcceso, licitacionId, inv);
+    return { ...inv, tokenAcceso };
+  }));
+}
+
 export async function addInvitado(
   licitacionId: string,
   data: Omit<InvitadoLicitacion, 'id'>
 ): Promise<void> {
   const ref = doc(db, 'licitaciones', licitacionId, 'invitados', data.proveedorId);
+  const tokenAcceso = data.tokenAcceso || generarTokenAcceso();
   await Promise.all([
-    setDoc(ref, { ...data, _createdAt: serverTimestamp() }),
+    setDoc(ref, { ...data, tokenAcceso, _createdAt: serverTimestamp() }),
+    publicarInvitacionPorToken(tokenAcceso, licitacionId, data),
     updateDoc(doc(db, 'licitaciones', licitacionId), {
       proveedoresInvitadosIds: arrayUnion(data.proveedorId),
       _updatedAt: serverTimestamp(),
@@ -600,7 +708,52 @@ export async function addInvitado(
   ]);
 }
 
+export async function addEnvioInvitacion(
+  licitacionId: string,
+  data: Omit<EnvioInvitacion, 'id'>
+): Promise<void> {
+  await addDoc(collection(db, 'licitaciones', licitacionId, 'envios'), { ...data, _createdAt: serverTimestamp() });
+}
+
+export function subscribeToEnviosInvitaciones(
+  licitacionId: string,
+  callback: (envios: EnvioInvitacion[]) => void
+): Unsubscribe {
+  const q = collection(db, 'licitaciones', licitacionId, 'envios');
+  return onSnapshot(q, snap => {
+    const envios = snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<EnvioInvitacion, 'id'>) }));
+    callback(envios.sort((a, b) => b.fecha.localeCompare(a.fecha)));
+  });
+}
+
+export async function getInvitadosLicitacion(licitacionId: string): Promise<InvitadoLicitacion[]> {
+  const snap = await getDocs(collection(db, 'licitaciones', licitacionId, 'invitados'));
+  return snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<InvitadoLicitacion, 'id'>) }));
+}
+
+/**
+ * Valida el acceso al portal: el enlace personal (código) debe corresponder a la invitación de ESA licitación Y la
+ * cuenta que entra debe ser de ese mismo proveedor (por su cuenta ya vinculada o por el correo con el que se le
+ * invitó). Sin enlace personal no hay acceso. Solo lee `invitaciones/{código}`: el proveedor nunca lista invitados.
+ */
+export async function verificarInvitacionLicitacion(
+  licitacionId: string,
+  quien: { proveedorId?: string | null; email?: string | null; token?: string | null }
+): Promise<InvitacionAcceso | null> {
+  if (!licitacionId || !quien.token) return null;
+  const snap = await getDoc(doc(db, 'invitaciones', quien.token));
+  if (!snap.exists()) return null;
+  const invitacion = snap.data() as InvitacionAcceso;
+  if (invitacion.licitacionId !== licitacionId) return null;
+  if (quien.proveedorId) return invitacion.proveedorId === quien.proveedorId ? invitacion : null;
+  const email = (quien.email || '').trim().toLowerCase();
+  return email && (invitacion.proveedorEmail || '').trim().toLowerCase() === email ? invitacion : null;
+}
+
 export async function removeInvitado(licitacionId: string, proveedorId: string): Promise<void> {
+  const previo = await getDoc(doc(db, 'licitaciones', licitacionId, 'invitados', proveedorId));
+  const token = previo.exists() ? (previo.data() as InvitadoLicitacion).tokenAcceso : undefined;
+  if (token) await deleteDoc(doc(db, 'invitaciones', token)).catch(() => { /* ya no existía */ });
   await Promise.all([
     deleteDoc(doc(db, 'licitaciones', licitacionId, 'invitados', proveedorId)),
     updateDoc(doc(db, 'licitaciones', licitacionId), {
@@ -615,7 +768,10 @@ export async function updateInvitadoEstado(
   proveedorId: string,
   estado: InvitadoLicitacion['estadoPropuesta']
 ): Promise<void> {
-  await updateDoc(doc(db, 'licitaciones', licitacionId, 'invitados', proveedorId), { estadoPropuesta: estado });
+  await updateDoc(doc(db, 'licitaciones', licitacionId, 'invitados', proveedorId), {
+    estadoPropuesta: estado,
+    ...(estado === 'Presentada' ? { fechaPresentacion: new Date().toISOString() } : {}),
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -665,10 +821,9 @@ function validarRecepcionOfertasAbierta(
   }
 }
 
-/** true si ya pasó la fecha límite de entrega de propuestas de la licitación. */
-export function plazoEntregaVencido(data: Pick<LicitacionProyecto, 'fechaEntregaPropuestas' | 'fechaEvaluacion'>): boolean {
-  const fechaLimite = data.fechaEntregaPropuestas || data.fechaEvaluacion;
-  return Boolean(fechaLimite) && new Date() > new Date(fechaLimite as string);
+/** true si ya pasó el cierre (fecha Y hora) de la recepción de ofertas de la licitación. */
+export function plazoEntregaVencido(data: Pick<LicitacionProyecto, 'fechaEntregaPropuestas' | 'fechaEvaluacion' | 'horaLimiteOfertas'>): boolean {
+  return plazoOfertasVencido(data);
 }
 
 /**
@@ -683,9 +838,9 @@ function validarPlazoEntregaVigente(
   licitacionSnap: { exists: () => boolean; data: () => unknown }
 ): void {
   const data = licitacionSnap.data() as Partial<LicitacionProyecto>;
-  if (plazoEntregaVencido(data as Pick<LicitacionProyecto, 'fechaEntregaPropuestas' | 'fechaEvaluacion'>)) {
-    const fechaLimite = data.fechaEntregaPropuestas || data.fechaEvaluacion;
-    throw new Error(`PLAZO_VENCIDO: El plazo de entrega de propuestas venció el ${fechaLimite}. No se pueden enviar ni modificar propuestas después de esa fecha.`);
+  const campos = data as Pick<LicitacionProyecto, 'fechaEntregaPropuestas' | 'fechaEvaluacion' | 'horaLimiteOfertas'>;
+  if (plazoEntregaVencido(campos)) {
+    throw new Error(`PLAZO_VENCIDO: La recepción de ofertas se cerró el ${textoLimiteOfertas(campos)}. No se pueden enviar ni modificar propuestas después del cierre.`);
   }
 }
 
@@ -903,6 +1058,46 @@ export async function savePropuesta(
   });
 }
 
+/**
+ * Reúne lo que el contrato toma de la adjudicación: la licitación del proyecto, la oferta ganadora (su
+ * itemizado es el Presupuesto Oficial, Anexo N°1), la propuesta del proveedor (datos de su representación
+ * legal) y su ficha.
+ */
+export async function cargarAntecedentesContrato(proyecto: ProyectoMaestro): Promise<{
+  licitacion?: LicitacionProyecto;
+  cotizacion?: Cotizacion;
+  propuesta?: Propuesta | null;
+  proveedor?: Proveedor | null;
+}> {
+  let licSnap = await getDocs(query(collection(db, 'licitaciones'), where('proyectoMaestroId', '==', proyecto.id)));
+  if (licSnap.empty && proyecto.codigoProyecto) {
+    licSnap = await getDocs(query(collection(db, 'licitaciones'), where('codigoProyecto', '==', proyecto.codigoProyecto)));
+  }
+  if (licSnap.empty) return {};
+  const licitacion = { id: licSnap.docs[0].id, ...(licSnap.docs[0].data() as Omit<LicitacionProyecto, 'id'>) } as LicitacionProyecto;
+  const proveedorId = licitacion.proveedorAdjudicadoId || licitacion.proveedorGanadorId;
+
+  const cotSnap = await getDocs(query(collection(db, 'cotizaciones'), where('licitacionId', '==', licitacion.id)));
+  const cotizaciones = cotSnap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Cotizacion, 'id'>) })) as Cotizacion[];
+  const cotizacion = cotizaciones.find(c => c.id === licitacion.cotizacionAdjudicadaId)
+    || cotizaciones.find(c => proveedorId && c.proveedorId === proveedorId);
+
+  const [propuesta, proveedor] = await Promise.all([
+    proveedorId ? getPropuesta(licitacion.id, proveedorId).catch(() => null) : Promise.resolve(null),
+    proveedorId ? getProveedorPorId(proveedorId).catch(() => null) : Promise.resolve(null),
+  ]);
+  return { licitacion, cotizacion, propuesta, proveedor };
+}
+
+/** Deja constancia en la propuesta de la confirmación por correo enviada (o simulada) al proveedor. */
+export async function registrarConfirmacionPropuesta(
+  licitacionId: string,
+  proveedorId: string,
+  confirmacion: NonNullable<Propuesta['confirmacionCorreo']>
+): Promise<void> {
+  await updateDoc(doc(db, 'licitaciones', licitacionId, 'propuestas', proveedorId), { confirmacionCorreo: confirmacion });
+}
+
 export async function getPropuesta(
   licitacionId: string,
   proveedorId: string
@@ -936,6 +1131,9 @@ export async function convertirPropuestaACotizacion(
     documentoCotizacionURL: propuesta.archivoURL,
     observaciones: propuesta.observaciones,
     origenPropuestaId: propuesta.id,
+    fechaRecepcion: propuesta.fechaEnvio,
+    ...(propuesta.archivoTecnicoNombre ? { ofertaTecnicaNombre: propuesta.archivoTecnicoNombre } : {}),
+    ...(propuesta.archivoTecnicoURL ? { ofertaTecnicaURL: propuesta.archivoTecnicoURL } : {}),
   };
   return addCotizacion(cotizacion);
 }

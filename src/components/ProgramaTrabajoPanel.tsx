@@ -2,12 +2,15 @@ import { useEffect, useState } from 'react';
 import { CalendarRange, Sparkles, Loader2, AlertTriangle } from 'lucide-react';
 import type { ProyectoMaestro } from '../types';
 import { updateProyectoMaestro } from '../services/firestoreService';
-import { sugerirProgramaTrabajoConIA } from '../services/aiService';
+import { sugerirProgramaTrabajoConIA, isAIConfigured } from '../services/aiService';
 import { agruparPorFase, SIN_FASE } from '../utils/itemizadoOrganizer';
 import { calcularFechaTerminoEfectiva } from '../utils/avanceFinanciero';
 
 interface Props {
   proyecto: ProyectoMaestro;
+  /** Respaldo cuando el proyecto maestro aún no tiene fecha de inicio/plazo propios (ej. los del encabezado de la ficha). */
+  fechaInicioRespaldo?: string;
+  duracionRespaldoDias?: number;
 }
 
 interface FaseProgramada {
@@ -33,12 +36,36 @@ function sumarDias(fechaISO: string, dias: number): string {
   return d.toLocaleDateString('es-CL', { day: 'numeric', month: 'short' });
 }
 
-export function ProgramaTrabajoPanel({ proyecto }: Props) {
+/**
+ * Reparto determinístico (sin IA): fases en orden, cada una dura en proporción a su peso
+ * presupuestario, con un traslape leve (10 % de su duración) con la fase anterior.
+ */
+function repartoPorPresupuesto(fases: { fase: string; pesoPresupuestario: number }[]) {
+  const totalPeso = fases.reduce((s, f) => s + f.pesoPresupuestario, 0) || 1;
+  const TRASLAPE = 0.1;
+  let cursor = 0;
+  const bruto = fases.map((f, i) => {
+    const dur = f.pesoPresupuestario / totalPeso;
+    const inicio = i === 0 ? 0 : Math.max(0, cursor - dur * TRASLAPE);
+    cursor = inicio + dur;
+    return { fase: f.fase, inicio, fin: cursor };
+  });
+  const escala = cursor > 0 ? 100 / cursor : 1;
+  return bruto.map(b => ({ fase: b.fase, inicioPct: b.inicio * escala, duracionPct: (b.fin - b.inicio) * escala }));
+}
+
+export function ProgramaTrabajoPanel({ proyecto: proyectoBase, fechaInicioRespaldo, duracionRespaldoDias }: Props) {
+  const proyecto: ProyectoMaestro = {
+    ...proyectoBase,
+    fechaInicio: proyectoBase.fechaInicio || fechaInicioRespaldo || undefined,
+    duracionEstimadaDias: proyectoBase.duracionEstimadaDias || duracionRespaldoDias || undefined,
+  };
   const [programa, setPrograma] = useState<FaseProgramada[]>(proyecto.programaTrabajo?.fases || []);
   const [generando, setGenerando] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hayCambios, setHayCambios] = useState(false);
+  const [duracionManual, setDuracionManual] = useState(0);
 
   useEffect(() => {
     setPrograma(proyecto.programaTrabajo?.fases || []);
@@ -46,14 +73,28 @@ export function ProgramaTrabajoPanel({ proyecto }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proyecto.id]);
 
-  const duracionTotalDias = calcularDuracionTotalDias(proyecto);
-  const fasesDelItemizado = agruparPorFase(proyecto.itemizado || [])
-    .filter(g => g.fase !== SIN_FASE)
+  const duracionCalculada = calcularDuracionTotalDias(proyecto);
+  const duracionTotalDias = duracionCalculada || duracionManual;
+  const gruposConMonto = agruparPorFase(proyecto.itemizado || [])
     .map(g => ({ fase: g.fase, monto: g.items.reduce((s, it) => s + (it.precioTotal || 0), 0) }))
     .filter(g => g.monto > 0);
+  // Las partidas sin fase solo se programan como una única fase si ninguna está clasificada.
+  const conFase = gruposConMonto.filter(g => g.fase !== SIN_FASE);
+  const fasesDelItemizado = conFase.length > 0
+    ? conFase
+    : gruposConMonto.map(g => ({ ...g, fase: 'Ejecución de obra' }));
   const totalItemizado = fasesDelItemizado.reduce((s, f) => s + f.monto, 0);
 
-  const puedeGenerar = duracionTotalDias > 0 && fasesDelItemizado.length > 0;
+  // El programa se habilita cuando TODAS las partidas del presupuesto estimativo tienen su información.
+  const partidas = proyecto.itemizado || [];
+  const partidasIncompletas = partidas.filter(it =>
+    !it.descripcion?.trim() || !it.unidad?.trim() || !(it.cantidad > 0) || !(it.precioUnitario > 0)
+  ).length;
+  const hayFasesClasificadas = partidas.some(it => it.fase && it.fase !== SIN_FASE);
+  const partidasSinFase = hayFasesClasificadas ? partidas.filter(it => !it.fase || it.fase === SIN_FASE).length : 0;
+  const presupuestoCompleto = partidas.length > 0 && partidasIncompletas === 0 && partidasSinFase === 0;
+
+  const puedeGenerar = presupuestoCompleto && duracionTotalDias > 0 && fasesDelItemizado.length > 0;
 
   const generar = async () => {
     setError(null);
@@ -63,14 +104,32 @@ export function ProgramaTrabajoPanel({ proyecto }: Props) {
         fase: f.fase,
         pesoPresupuestario: totalItemizado > 0 ? Math.round((f.monto / totalItemizado) * 100) : 0,
       }));
-      const sugerencias = await sugerirProgramaTrabajoConIA({
-        tipoObra: proyecto.tipoObra,
-        duracionTotalDias,
-        fases: fasesConPeso,
-      });
+      let sugerencias: { fase: string; inicioPct: number; duracionPct: number }[] = [];
+      let motivoRespaldo = '';
+      if (fasesConPeso.length === 1) {
+        sugerencias = [{ fase: fasesConPeso[0].fase, inicioPct: 0, duracionPct: 100 }];
+      } else if (!isAIConfigured()) {
+        motivoRespaldo = 'La IA no está configurada';
+      } else {
+        try {
+          sugerencias = await sugerirProgramaTrabajoConIA({
+            tipoObra: proyecto.tipoObra,
+            duracionTotalDias,
+            fases: fasesConPeso,
+          });
+          const nombres = new Set(fasesConPeso.map(f => f.fase));
+          if (sugerencias.length !== fasesConPeso.length || !sugerencias.every(x => nombres.has(x.fase))) {
+            sugerencias = [];
+            motivoRespaldo = 'La IA devolvió una secuencia inconsistente con las fases del presupuesto';
+          }
+        } catch (err) {
+          console.error('Error generando el programa de trabajo con IA:', err);
+          motivoRespaldo = 'La IA no respondió';
+        }
+      }
       if (!sugerencias.length) {
-        setError('La IA no devolvió una secuencia. Intente nuevamente.');
-        return;
+        sugerencias = repartoPorPresupuesto(fasesConPeso);
+        setError(`${motivoRespaldo}: se calculó el programa proporcional al presupuesto de cada fase (ajústelo manualmente si corresponde).`);
       }
       setPrograma(sugerencias.map(s => ({
         fase: s.fase,
@@ -107,6 +166,7 @@ export function ProgramaTrabajoPanel({ proyecto }: Props) {
           duracionTotalDias,
           fases: programa,
         },
+        ...(!duracionCalculada && duracionManual > 0 ? { duracionEstimadaDias: duracionManual } : {}),
       });
       setHayCambios(false);
     } catch (err) {
@@ -133,21 +193,46 @@ export function ProgramaTrabajoPanel({ proyecto }: Props) {
           type="button"
           onClick={generar}
           disabled={generando || !puedeGenerar}
-          title={!puedeGenerar ? 'Complete el Itemizado (con fases) y la Duración/Fecha de Inicio del proyecto primero' : undefined}
+          title={!puedeGenerar ? 'Complete todas las partidas del presupuesto estimativo y declare la duración del proyecto' : undefined}
           className="flex items-center gap-1.5 bg-violet-50 hover:bg-violet-100 disabled:opacity-50 disabled:cursor-not-allowed border border-violet-200 text-violet-800 font-bold px-3 py-1.5 rounded-lg text-[11px] shadow-sm shrink-0"
         >
           {generando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-          {generando ? 'Pensando…' : programa.length > 0 ? 'Regenerar con IA' : 'Generar Programa con IA'}
+          {generando ? 'Generando…' : programa.length > 0 ? 'Regenerar Programa' : 'Generar Programa'}
         </button>
       </div>
+
+      {partidas.length > 0 && (
+        <div className="flex items-center gap-2 text-[10px] text-slate-500">
+          <span className={`font-bold ${presupuestoCompleto ? 'text-emerald-700' : 'text-amber-700'}`}>
+            {partidas.length - partidasIncompletas}/{partidas.length} partidas completas
+          </span>
+          {presupuestoCompleto && <span className="text-emerald-700">· Presupuesto estimativo listo para programar</span>}
+        </div>
+      )}
+
+      {!duracionCalculada && (
+        <div className="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-[11px] text-slate-600">
+          <span className="font-bold">Duración total del proyecto:</span>
+          <input
+            type="number"
+            min={0}
+            value={duracionManual || ''}
+            onChange={e => { setDuracionManual(Math.max(0, Number(e.target.value) || 0)); setHayCambios(true); }}
+            placeholder="0"
+            className="w-20 p-1 border border-slate-200 rounded text-right"
+          />
+          <span>días corridos (o declare Inicio y Plazo en el resumen del proyecto)</span>
+        </div>
+      )}
 
       {!puedeGenerar && (
         <div className="flex items-start gap-2 bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-[11px] text-slate-500">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <span>
-            {fasesDelItemizado.length === 0 && duracionTotalDias === 0 && 'Falta el Itemizado (con partidas clasificadas por fase) y la Duración Aproximada o Fecha de Inicio del proyecto.'}
-            {fasesDelItemizado.length === 0 && duracionTotalDias > 0 && 'Falta el Itemizado del Proyecto — agregue partidas y clasifíquelas por fase para poder generar la secuencia.'}
-            {fasesDelItemizado.length > 0 && duracionTotalDias === 0 && 'Falta declarar la Duración Aproximada (días) o la Fecha de Inicio del proyecto.'}
+            {partidas.length === 0 && 'Falta el Presupuesto Estimativo: agregue las partidas del proyecto para poder generar la Gantt.'}
+            {partidasIncompletas > 0 && `${partidasIncompletas} partida(s) sin información completa (descripción, unidad, cantidad y precio unitario). `}
+            {partidasSinFase > 0 && `${partidasSinFase} partida(s) sin fase asignada. `}
+            {presupuestoCompleto && duracionTotalDias === 0 && 'Declare la duración total del proyecto para generar la Gantt.'}
           </span>
         </div>
       )}

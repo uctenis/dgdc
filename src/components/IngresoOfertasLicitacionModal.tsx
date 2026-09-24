@@ -1,3 +1,4 @@
+import { checklistAntecedentesEfectivo, checklistAntecedentesCompleto } from '../utils/proveedorMatching';
 import React, { useState } from 'react';
 import {
   Upload, CheckCircle2, X, Plus
@@ -29,11 +30,7 @@ export const IngresoOfertasLicitacionModal: React.FC<IngresoOfertasLicitacionMod
   );
   const cotizacionesExistentes = resultadosOrdenados.map(resultado => resultado.cotizacion);
   const procesoCerrado = licitacionCerradaParaOfertas(licitacion);
-  const checklist = licitacion.checklistAntecedentes;
-  const antecedentesCompletos = Boolean(
-    checklist?.basesTecnicasOk && checklist?.basesAdministrativasOk && checklist?.planosOk &&
-    checklist?.calendarioDefinidoOk && checklist?.revisadoSecretariaGeneralOk
-  );
+  const antecedentesCompletos = checklistAntecedentesCompleto(checklistAntecedentesEfectivo(licitacion));
 
   const [ofertaActivaIndex, setOfertaActivaIndex] = useState<number>(0);
 

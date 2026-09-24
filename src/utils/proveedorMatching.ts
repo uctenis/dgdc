@@ -1,4 +1,4 @@
-import type { Proveedor, EvaluacionDesempeno } from '../types';
+import type { Proveedor, EvaluacionDesempeno, LicitacionProyecto } from '../types';
 import { calcularPromedioDesempeno } from '../services/firestoreService';
 
 export interface ProveedorSugerido {
@@ -40,6 +40,56 @@ export function ordenarProveedoresPorRubroYDesempeno(
     return a.proveedor.razonSocial.localeCompare(b.proveedor.razonSocial);
   });
 }
+
+export interface ChecklistAntecedentesEfectivo {
+  basesTecnicasOk: boolean;
+  basesAdministrativasOk: boolean;
+  planosOk: boolean;
+  calendarioDefinidoOk: boolean;
+  revisadoSecretariaGeneralOk: boolean;
+  /** Ítems cumplidos a mano, sin archivo que los respalde (deben advertirse). */
+  sinAdjuntos: { basesTecnicasOk: boolean; basesAdministrativasOk: boolean; planosOk: boolean };
+}
+
+const tieneArchivoReal = (lic: LicitacionProyecto, tipo: string) =>
+  Boolean(lic.antecedentesTecnicos?.some(d => d.tipo === tipo && d.archivoURL && d.archivoURL !== '#'));
+
+/**
+ * Checklist previo a invitar / recibir ofertas, calculado en un solo lugar para que todas las
+ * pantallas coincidan: archivo real adjunto, o marca manual (desde Antecedentes o desde el checklist
+ * de la Ficha: ch-01 Bases Administrativas, ch-02 EETT/Bases Técnicas, ch-03 Planos).
+ */
+export function checklistAntecedentesEfectivo(lic: LicitacionProyecto): ChecklistAntecedentesEfectivo {
+  const g = lic.checklistAntecedentes;
+  const f = lic.checklistManual || {};
+  const manual = {
+    basesTecnicasOk: Boolean(g?.basesTecnicasSinAdjuntos) || f['ch-02'] === true,
+    basesAdministrativasOk: Boolean(g?.basesAdministrativasSinAdjuntos) || f['ch-01'] === true,
+    planosOk: Boolean(g?.planosSinAdjuntos) || f['ch-03'] === true,
+  };
+  const conArchivo = {
+    basesTecnicasOk: tieneArchivoReal(lic, 'Bases Tecnicas'),
+    basesAdministrativasOk: tieneArchivoReal(lic, 'Bases Administrativas'),
+    planosOk: tieneArchivoReal(lic, 'Planos'),
+  };
+  return {
+    basesTecnicasOk: conArchivo.basesTecnicasOk || manual.basesTecnicasOk,
+    basesAdministrativasOk: conArchivo.basesAdministrativasOk || manual.basesAdministrativasOk,
+    planosOk: conArchivo.planosOk || manual.planosOk,
+    calendarioDefinidoOk: Boolean(
+      lic.fechaVisitaTerreno && lic.fechaRecepcionConsultas && lic.fechaRespuestaConsultas && lic.fechaEvaluacion
+    ),
+    revisadoSecretariaGeneralOk: g?.revisadoSecretariaGeneralOk === true,
+    sinAdjuntos: {
+      basesTecnicasOk: !conArchivo.basesTecnicasOk && manual.basesTecnicasOk,
+      basesAdministrativasOk: !conArchivo.basesAdministrativasOk && manual.basesAdministrativasOk,
+      planosOk: !conArchivo.planosOk && manual.planosOk,
+    },
+  };
+}
+
+export const checklistAntecedentesCompleto = (c: ChecklistAntecedentesEfectivo) =>
+  c.basesTecnicasOk && c.basesAdministrativasOk && c.planosOk && c.calendarioDefinidoOk && c.revisadoSecretariaGeneralOk;
 
 /** % de cumplimiento de los 5 campos mínimos del checklist de antecedentes previo a invitar. */
 export function porcentajeAntecedentes(checklist?: {

@@ -148,11 +148,13 @@ export function uploadLicitacionDocument(
   licitacionId: string,
   categoria: 'ofertas' | 'ordenes-compra' | 'estados-pago' | 'antecedentes',
   file: File,
-  onProgress?: (pct: number) => void
+  onProgress?: (pct: number) => void,
+  /** Subcarpeta (ej. el id del proveedor): así cada proveedor solo escribe en la suya. */
+  subcarpeta?: string
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const nombreSeguro = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const storageRef = ref(storage, `licitaciones/${licitacionId}/${categoria}/${Date.now()}_${nombreSeguro}`);
+    const storageRef = ref(storage, `licitaciones/${licitacionId}/${categoria}/${subcarpeta ? `${subcarpeta}/` : ''}${Date.now()}_${nombreSeguro}`);
     const task = uploadBytesResumable(storageRef, file);
     task.on(
       'state_changed',

@@ -1,3 +1,21 @@
+// ─── DATOS DEL CONTRATISTA PARA EL CONTRATO ────────────────────────────────
+export interface RepresentanteLegal {
+  /** Tratamiento con que se cita en el contrato (se pide, no se deduce del nombre). */
+  tratamiento: 'don' | 'doña';
+  nombre: string;
+  /** Cédula de identidad. */
+  rut: string;
+}
+
+/** Lo que el contrato necesita de cada contratista: quién firma, dónde se domicilia y con qué personería. */
+export interface DatosContratista {
+  representantes: RepresentanteLegal[];
+  domicilioLegal: string;
+  /** Documento que acredita a los representantes (ej. Certificado de Estatuto Actualizado, escritura pública). */
+  personeria: string;
+  datosBancarios?: { banco: string; tipoCuenta: string; numeroCuenta: string; titular: string; rutTitular: string };
+}
+
 // ─── PROVEEDOR ─────────────────────────────────────────────────────────────
 export interface Proveedor {
   id: string;
@@ -10,6 +28,8 @@ export interface Proveedor {
   cuentaSustentabilidad: boolean;
   direccion?: string;
   ciudad?: string;
+  /** Representantes legales, domicilio y personería: se usan para redactar el contrato. */
+  datosContrato?: DatosContratista;
   estado: 'Activo' | 'Inactivo';
   fechaRegistro: string;
 }
@@ -97,6 +117,16 @@ export interface ProyectoMaestro {
    * partida por partida, que se completa en la Ficha del Proyecto a medida que se detalla el alcance.
    * Es independiente del itemizado de cada Cotización (`ItemCotizacion`), que es la oferta del proveedor. */
   itemizado?: ItemItemizadoProyecto[];
+  /** Gastos Generales y Utilidad del itemizado, en % — igual al esquema típico de un presupuesto de
+   * construcción: Gastos Generales se calcula sobre el Costo Directo (suma de partidas), y Utilidad
+   * sobre Costo Directo + Gastos Generales; el IVA se aplica al final, sobre ese Total Neto. Quedan
+   * en 0 mientras no se definan (el Presupuesto Estimado es solo la suma de partidas + IVA). */
+  itemizadoMarkup?: {
+    gastosGeneralesPct: number;
+    utilidadPct: number;
+  };
+  /** Ítems del checklist de la Ficha marcados a mano, sin documento que los respalde. */
+  checklistManual?: Record<string, boolean>;
 
   /** Programa de Trabajo / Carta Gantt referencial — calculado a partir de las fases del
    * itemizado (peso presupuestario de cada una) y la duración total declarada del proyecto,
@@ -156,12 +186,16 @@ export interface ProyectoMaestro {
     archivoFinalCargadoPor?: string;
   };
 
+  // Especificaciones Técnicas (EETT) — una especificación por cada partida del itemizado
+  // (Presupuesto Estimativo), más generalidades de la obra. Se generan con IA y se editan a mano.
+  eett?: EspecificacionesTecnicasProyecto;
+
   // Contrato de Adjudicación — se genera al adjudicar, con los datos reales del proveedor ganador
   // (distinto de "bases": bases son las reglas pre-adjudicación, el contrato es el documento bilateral post-adjudicación)
   contrato?: {
     version: number;
     estado: 'Borrador' | 'En Revisión Legal' | 'Firmado';
-    secciones: { id: string; titulo: string; contenido: string }[];
+    secciones: { id: string; titulo: string; contenido: string; tabla?: string[][] }[];
     fechaActualizacion: string;
     actualizadoPor?: string;
     fechaFirma?: string;
@@ -208,6 +242,28 @@ export const FASES_ITEMIZADO = [
 ] as const;
 export type FaseItemizado = typeof FASES_ITEMIZADO[number];
 
+/** Especificación técnica de UNA partida del itemizado — enlazada por `partidaId` (id estable de
+ * la partida; `item`/`descripcion` se guardan como referencia por si la partida cambia después). */
+export interface EspecificacionPartida {
+  partidaId: string;
+  item: string;
+  descripcion: string;
+  unidad: string;
+  especificacion: string;
+  origen: 'IA' | 'Manual';
+}
+
+export interface EspecificacionesTecnicasProyecto {
+  version: number;
+  estado: 'Borrador' | 'Aprobada';
+  generalidades: string;
+  partidas: EspecificacionPartida[];
+  fechaActualizacion: string;
+  actualizadoPor?: string;
+  fechaAprobacion?: string;
+  aprobadoPor?: string;
+}
+
 export interface ItemItemizadoProyecto {
   id: string;
   item: string;
@@ -216,9 +272,12 @@ export interface ItemItemizadoProyecto {
   cantidad: number;
   precioUnitario: number;
   precioTotal: number;
-  origen: 'Manual' | 'IA';
+  origen: 'Manual' | 'IA' | 'Excel' | 'PDF';
   /** Sin valor = itemizado creado antes de esta clasificación, o partida aún sin asignar. */
   fase?: FaseItemizado | string;
+  /** true = el precioUnitario fue estimado por la IA (Presupuesto Preciso), NO es una cotización
+   * real — queda marcado en la UI como referencial hasta que el usuario lo valide o lo reemplace. */
+  precioReferencial?: boolean;
 }
 
 // ─── COTIZACIÓN (cargada por admin) ───────────────────────────────────────
@@ -253,6 +312,12 @@ export interface Cotizacion {
 
   // Origen de la cotización
   origenPropuestaId?: string; // Si fue generada desde una propuesta de proveedor
+  /** Cuándo se RECIBIÓ la oferta (ISO). En las del portal es la hora de envío; en las manuales la indica el administrador. */
+  fechaRecepcion?: string;
+  ofertaTecnicaNombre?: string;
+  ofertaTecnicaURL?: string;
+  /** Solo en ingresos de emergencia hechos por el administrador: quién y por qué. */
+  ingresoManual?: { motivo: string; porEmail: string; fecha: string };
 }
 
 // ─── INVITADO A LICITACIÓN ─────────────────────────────────────────────────
@@ -264,6 +329,18 @@ export interface InvitadoLicitacion {
   proveedorRut: string;
   fechaInvitacion: string;
   estadoPropuesta: 'Pendiente' | 'Presentada' | 'Rechazada';
+  /** Código secreto del enlace personal de la invitación (portal/licitacion/:id?t=...). Único por proveedor. */
+  tokenAcceso?: string;
+  /** Cuándo el proveedor envió su oferta desde el portal (ISO). */
+  fechaPresentacion?: string;
+}
+
+/** Lo que resuelve un enlace personal de invitación (colección `invitaciones/{código}`). */
+export interface InvitacionAcceso {
+  licitacionId: string;
+  proveedorId: string;
+  proveedorEmail: string;
+  proveedorNombre: string;
 }
 
 // ─── PROPUESTA DEL PROVEEDOR (vía portal) ─────────────────────────────────
@@ -293,6 +370,16 @@ export interface Propuesta {
   archivoNombre?: string;
   archivoURL?: string;
   archivoTipo?: 'excel' | 'pdf';
+
+  // Oferta técnica (archivo aparte de la oferta económica)
+  archivoTecnicoNombre?: string;
+  archivoTecnicoURL?: string;
+
+  /** Confirmación por correo al proveedor tras enviar su oferta. 'prueba' = simulada, no salió ningún correo. */
+  confirmacionCorreo?: { modo: 'real' | 'prueba'; fecha: string; email: string; asunto?: string; html?: string };
+
+  /** Datos de representación legal que el proveedor informa al ofertar (se usan solo si resulta adjudicado). */
+  datosContrato?: DatosContratista;
 
   observaciones?: string;
   fechaEnvio: string;
@@ -369,6 +456,10 @@ export interface LicitacionProyecto {
   fechaRecepcionConsultas?: string;  // Fecha límite para recepción de consultas de los oferentes
   fechaRespuestaConsultas?: string;  // Fecha en que la Universidad publica las respuestas a las consultas
   fechaEntregaPropuestas?: string;   // Fecha límite de entrega de ofertas — no se aceptan propuestas después de esta fecha
+  /** Hora de cierre de la recepción de ofertas (HH:MM, hora de Chile) del día de fechaEntregaPropuestas. Sin valor = 23:59. */
+  horaLimiteOfertas?: string;
+  /** Instante exacto del cierre (ms), calculado al guardar la licitación; lo usan las reglas de Firebase para cerrar el portal a la hora. */
+  limiteOfertasMs?: number;
   // Empresas Invitadas
   proveedoresInvitadosIds?: string[];
 
@@ -383,13 +474,24 @@ export interface LicitacionProyecto {
     cargadoPor?: string;
   }[];
 
+  /** Partidas del proyecto SIN precios, para el formato de presupuesto que descarga el proveedor. Se copia del
+   * itemizado del proyecto (ver sincronizarFormatoPresupuesto) para que el portal no lea el presupuesto interno. */
+  formatoPresupuesto?: { item: string; fase?: string; descripcion: string; unidad: string }[];
+
   checklistAntecedentes?: {
     basesTecnicasOk: boolean;
     basesAdministrativasOk: boolean;
     planosOk: boolean;
     calendarioDefinidoOk: boolean;
     revisadoSecretariaGeneralOk: boolean;
+    /** Planos marcados como cumplidos SIN archivo adjunto (ej. el proyecto no tiene planos). Debe advertirse. */
+    planosSinAdjuntos?: boolean;
+    /** Ídem para las Bases: marcadas como cumplidas SIN archivo adjunto. */
+    basesTecnicasSinAdjuntos?: boolean;
+    basesAdministrativasSinAdjuntos?: boolean;
   };
+  /** Ítems del checklist de la Ficha marcados a mano, sin documento que los respalde. */
+  checklistManual?: Record<string, boolean>;
 
   // Traza Documental Legafos & Flujo Administrativo (OT → OP → OC)
   ordenTrabajoNumero?: string;      // ej: OT-2026-099 (Generada al adjudicar)
@@ -595,6 +697,8 @@ export interface UserProfile {
   email: string;
   role: 'admin' | 'responsable' | 'proveedor';
   proveedorId?: string;  // Si es proveedor, referencia al doc en /proveedores
+  /** Proveedores: código del enlace de invitación con el que se vinculó la cuenta (lo exigen las reglas de Firestore). */
+  tokenInvitacion?: string;
   displayName: string;
   fechaRegistro: string;
   verificado: boolean;
@@ -642,4 +746,25 @@ export interface ConfiguracionFirmas {
   parametrosSgc?: ParametrosLicitacionSGC;
   /** Techo institucional anual (CLP) que la Cartera de Proyectos no debe sobrepasar — distinto del monto adjudicado, que es cuánto ya se comprometió contra ese techo. */
   presupuestoAnualAprobado?: number;
+}
+
+// ─── HISTORIAL DE ENVÍOS DE INVITACIONES (licitaciones/{id}/envios) ────────
+export interface EnvioInvitacion {
+  id: string;
+  fecha: string; // ISO
+  /** 'prueba' = envío simulado (no salió ningún correo); 'real' = enviado a los proveedores. */
+  modo: 'prueba' | 'real';
+  enviadoPorEmail: string;
+  asunto: string;
+  cc: string[];
+  portalUrl: string;
+  destinatarios: {
+    proveedorId: string;
+    proveedorNombre: string;
+    email: string;
+    enviado: boolean;
+    error?: string;
+    /** Cuerpo HTML exacto del mensaje enviado a este destinatario. */
+    html: string;
+  }[];
 }

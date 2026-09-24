@@ -19,6 +19,7 @@ import {
 import { obtenerClausulaNormativaPorRubro } from '../data/normativaPorRubro';
 import { obtenerCampusPorSigla } from '../data/campusData';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
+import { PARAMETROS_CONTRATO } from '../data/contratoTemplateData';
 
 /** Campos del proyecto que, al cambiar, dejan desactualizado el texto ya generado de las Bases. */
 export const CAMPOS_QUE_AFECTAN_BASES: (keyof ProyectoMaestro)[] = [
@@ -52,6 +53,19 @@ export function construirDatosMergeBases(proyecto: ProyectoMaestro): Record<stri
     plazoDias: plazoDiasEfectivo ? `${plazoDiasEfectivo}` : '[definir]',
     tipoObra: proyecto.tipoObra || '[definir]',
     descripcionProyecto: proyecto.descripcion?.trim() || 'Complete aquí el detalle específico del alcance de este proyecto.',
+    // Mismos valores que el contrato (PARAMETROS_CONTRATO): Bases y contrato no pueden contradecirse.
+    multaDiariaPct: PARAMETROS_CONTRATO.multaDiariaPct,
+    topeMultasPct: String(PARAMETROS_CONTRATO.topeMultasPct),
+    diasResolucionPorAtraso: String(PARAMETROS_CONTRATO.diasResolucionPorAtraso),
+    retencionPct: String(PARAMETROS_CONTRATO.retencionPct),
+    anticipoPct: String(PARAMETROS_CONTRATO.anticipoPct),
+    fielCumplimientoPct: String(PARAMETROS_CONTRATO.fielCumplimientoPct),
+    vigenciaFielCumplimientoDias: String(PARAMETROS_CONTRATO.vigenciaFielCumplimientoDias),
+    postVentaDias: String(PARAMETROS_CONTRATO.postVentaDias),
+    boletaPostVentaPct: String(PARAMETROS_CONTRATO.boletaPostVentaPct),
+    diasRevisionEstadoPago: String(PARAMETROS_CONTRATO.diasRevisionEstadoPago),
+    diasHabilesMedicion: String(PARAMETROS_CONTRATO.diasHabilesMedicion),
+    diasFacturacion: String(PARAMETROS_CONTRATO.diasFacturacion),
   };
 }
 

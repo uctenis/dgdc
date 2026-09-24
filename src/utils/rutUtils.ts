@@ -1,3 +1,14 @@
+const RANGO_DIACRITICOS = new RegExp('[' + String.fromCharCode(0x0300) + '-' + String.fromCharCode(0x036f) + ']', 'g');
+
+/**
+ * Quita tildes/diacríticos y pasa a minúsculas — para comparar texto sin que "Ítem" vs "item" o
+ * "Descripción" vs "descripcion" cuenten como distintos (ej. al reconocer encabezados de una
+ * planilla o PDF cargados por el usuario, donde no se controla cómo vienen escritos).
+ */
+export function sinTildes(valor: string): string {
+  return valor.trim().toLowerCase().normalize('NFD').replace(RANGO_DIACRITICOS, '');
+}
+
 /**
  * Calcula el Dígito Verificador (DV) esperado según el algoritmo chileno Módulo 11.
  */

@@ -1,4 +1,7 @@
 import React, { useState } from 'react';
+import { DatosContratistaForm } from './DatosContratistaForm';
+import { datosContratistaVacios } from '../utils/datosContratista';
+import type { DatosContratista } from '../types';
 import type { Proveedor } from '../types';
 import { Building2, Search, Plus, Leaf, Edit3, Trash2, Phone, Mail, MapPin, Wifi, History, CheckCircle2, AlertCircle, Upload, Loader2, FileText, X, Trophy } from 'lucide-react';
 import { HistorialObrasModal } from './HistorialObrasModal';
@@ -49,6 +52,7 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
   const [cuentaSustentabilidad, setCuentaSustentabilidad] = useState(true);
   const [direccion, setDireccion] = useState('');
   const [ciudad, setCiudad] = useState('Temuco');
+  const [datosContrato, setDatosContrato] = useState<DatosContratista>(datosContratistaVacios());
   const [leyendoCotizacion, setLeyendoCotizacion] = useState(false);
   const [guardandoProveedor, setGuardandoProveedor] = useState(false);
   const [lecturaFeedback, setLecturaFeedback] = useState<string[]>([]);
@@ -71,6 +75,7 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
     setCuentaSustentabilidad(true);
     setDireccion('');
     setCiudad('Temuco');
+    setDatosContrato(datosContratistaVacios());
     setLecturaFeedback([]);
     setLecturaError('');
     setLeyendoCotizacion(false);
@@ -89,6 +94,7 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
     setCuentaSustentabilidad(prov.cuentaSustentabilidad);
     setDireccion(prov.direccion || '');
     setCiudad(prov.ciudad || 'Temuco');
+    setDatosContrato(prov.datosContrato ?? datosContratistaVacios());
     setLecturaFeedback([]);
     setLecturaError('');
     setLeyendoCotizacion(false);
@@ -159,6 +165,7 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
           cuentaSustentabilidad,
           direccion,
           ciudad,
+          datosContrato,
         });
       } else {
         await onAddProveedor({
@@ -171,6 +178,7 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
           cuentaSustentabilidad,
           direccion,
           ciudad,
+          datosContrato,
           estado: 'Activo',
         });
       }
@@ -608,6 +616,16 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none"
                   />
                 </div>
+              </div>
+
+              <div className="border border-indigo-200 bg-indigo-50/40 rounded-xl p-4 space-y-2">
+                <div>
+                  <span className="font-semibold text-indigo-950 block">Datos para el contrato</span>
+                  <span className="text-[11px] text-indigo-800">
+                    Se usan para redactar el contrato si la empresa resulta adjudicada. El proveedor también los completa en el portal al ofertar.
+                  </span>
+                </div>
+                <DatosContratistaForm value={datosContrato} onChange={setDatosContrato} conBanco />
               </div>
 
               <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200 flex items-center justify-between">

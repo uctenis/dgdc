@@ -4,7 +4,7 @@ import {
   CalendarDays, CircleDollarSign, Clock3, Loader2, Receipt, Save, TrendingUp,
   Trophy, Upload, WalletCards, ShieldCheck, LockKeyhole,
   AlertTriangle, ShieldAlert, Award, CheckSquare, Minus, TrendingDown, BarChart3,
-  Camera, Plus, Trash2, Image as ImageIcon, Users,
+  Camera, Plus, Trash2, Image as ImageIcon, Users, BookOpen,
 } from 'lucide-react';
 
 import type {
@@ -21,6 +21,7 @@ import { CargaFacturaEstadoPagoModal } from './CargaFacturaEstadoPagoModal';
 import { ActaRecepcionModal } from './ActaRecepcionModal';
 import { EvaluacionDesempenoModal } from './EvaluacionDesempenoModal';
 import { InvitadosManager } from './InvitadosManager';
+import { AntecedentesManager } from './AntecedentesManager';
 import { PremiumDatePicker } from './PremiumDatePicker';
 import { HITOS_LICITACION, calcularEstadosHitos, obtenerFechasHitos, formatearFechaCorta, ESTADO_HITO_DOT, ESTADO_HITO_TEXT, LIFECYCLE_COLOR, LIFECYCLE_LABEL } from '../utils/hitosLicitacion';
 import { parseOrdenDeCompra } from '../utils/ocParser';
@@ -31,8 +32,9 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { isProjectResponsible } from '../services/internalAccessService';
 import { firmarEstadoPagoSeguro } from '../services/paymentSignatureService';
+import { esProcesoSimplificado, UMBRAL_LICITACION_OBLIGATORIA } from '../data/contratoTemplateData';
 
-type TabId = 'resumen' | 'expediente' | 'invitados' | 'ofertas' | 'evaluacion' | 'actas' | 'oc' | 'pagos';
+export type TabId = 'resumen' | 'expediente' | 'antecedentes' | 'invitados' | 'ofertas' | 'evaluacion' | 'actas' | 'oc' | 'pagos';
 
 interface Props {
   licitacion: LicitacionProyecto;
@@ -43,11 +45,14 @@ interface Props {
   onAddCotizacion: (cotizacion: Omit<Cotizacion, 'id' | 'fechaCarga'>) => void | Promise<void>;
   onDeleteCotizacion: (id: string) => void | Promise<void>;
   onAdjudicarLicitacion: (licitacionId: string, proveedorId: string, justificacion: string) => Promise<void>;
+  /** Pestaña con la que se abre la licitación (ej. Invitados desde el botón de la tarjeta). */
+  initialTab?: TabId;
 }
 
 const tabs: { id: TabId; label: string; icon: typeof FileText }[] = [
   { id: 'resumen', label: 'Resumen', icon: ClipboardCheck },
   { id: 'expediente', label: 'Ficha', icon: FolderOpen },
+  { id: 'antecedentes', label: 'Bases & Planos', icon: BookOpen },
   { id: 'invitados', label: 'Invitados', icon: Users },
   { id: 'ofertas', label: 'Ofertas', icon: Receipt },
   { id: 'evaluacion', label: 'Evaluación', icon: Trophy },
@@ -58,9 +63,9 @@ const tabs: { id: TabId; label: string; icon: typeof FileText }[] = [
 
 export function LicitacionWorkspacePage({
   licitacion, proveedores, cotizaciones, configFirmas, onBack,
-  onAddCotizacion, onDeleteCotizacion, onAdjudicarLicitacion,
+  onAddCotizacion, onDeleteCotizacion, onAdjudicarLicitacion, initialTab,
 }: Props) {
-  const [activeTab, setActiveTab] = useState<TabId>('resumen');
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab || 'resumen');
   const ofertas = cotizaciones.filter(c => c.licitacionId === licitacion.id);
   const ofertaAdjudicada = ofertas.find(c => c.id === licitacion.cotizacionAdjudicadaId)
     || ofertas.find(c => c.proveedorId === (licitacion.proveedorAdjudicadoId || licitacion.proveedorGanadorId));
@@ -71,6 +76,7 @@ export function LicitacionWorkspacePage({
     (licitacion.estado === 'Adjudicado' || Boolean(licitacion.proveedorAdjudicadoId || licitacion.proveedorGanadorId)),
   );
   const montoProyecto = tieneMontoAdjudicado ? montoAdjudicado! : licitacion.montoEstimado;
+  const simplificado = esProcesoSimplificado(licitacion.montoEstimado, configFirmas.parametrosSgc?.umbralAprobacionVrae ?? UMBRAL_LICITACION_OBLIGATORIA);
 
   return (
     <div className="space-y-5">
@@ -85,6 +91,9 @@ export function LicitacionWorkspacePage({
               <span className="px-2.5 py-1 rounded-full bg-white/10 border border-white/10">CP {licitacion.codigoCP}</span>
               <span className="px-2.5 py-1 rounded-full bg-white/10 border border-white/10">{licitacion.codigoProyecto}</span>
               <span className="px-2.5 py-1 rounded-full bg-sky-400/15 text-sky-200 border border-sky-300/20">{licitacion.estado}</span>
+              {simplificado && (
+                <span className="px-2.5 py-1 rounded-full bg-emerald-400/15 text-emerald-200 border border-emerald-300/20">Comparación de Precios (proceso simplificado)</span>
+              )}
             </div>
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight">{licitacion.nombreProyecto.toLocaleUpperCase('es-CL')}</h1>
             <p className="text-sm text-slate-300 max-w-3xl">{licitacion.descripcion}</p>
@@ -134,7 +143,7 @@ export function LicitacionWorkspacePage({
         })}
       </nav>
 
-      {activeTab === 'resumen' && <ResumenLicitacion licitacion={licitacion} oferta={ofertaAdjudicada} ofertasCount={ofertas.length} onNavigate={setActiveTab} cotizaciones={cotizaciones} />}
+      {activeTab === 'resumen' && <ResumenLicitacion licitacion={licitacion} oferta={ofertaAdjudicada} ofertasCount={ofertas.length} onNavigate={setActiveTab} cotizaciones={cotizaciones} simplificado={simplificado} />}
       {activeTab === 'expediente' && (
         <FichaProyectoPage
           proyecto={licitacion}
@@ -145,8 +154,16 @@ export function LicitacionWorkspacePage({
           configFirmas={configFirmas}
         />
       )}
+      {activeTab === 'antecedentes' && (
+        <AntecedentesManager
+          embedded
+          licitacion={licitacion}
+          onClose={() => setActiveTab('resumen')}
+        />
+      )}
       {activeTab === 'invitados' && (
         <InvitadosManager
+          embedded
           licitacion={licitacion}
           proveedores={proveedores}
           configFirmas={configFirmas}
@@ -154,7 +171,7 @@ export function LicitacionWorkspacePage({
         />
       )}
       {activeTab === 'ofertas' && (
-        <QuotationIngestion licitacion={licitacion} proveedores={proveedores} cotizaciones={cotizaciones} onAddCotizacion={onAddCotizacion} onDeleteCotizacion={onDeleteCotizacion} />
+        <QuotationIngestion licitacion={licitacion} proveedores={proveedores} cotizaciones={cotizaciones} onAddCotizacion={onAddCotizacion} onDeleteCotizacion={onDeleteCotizacion} configFirmas={configFirmas} />
       )}
       {activeTab === 'evaluacion' && (
         <EvaluationMatrix licitacion={licitacion} cotizaciones={cotizaciones} onAdjudicarLicitacion={onAdjudicarLicitacion} onNavigateToDocumentos={() => setActiveTab('actas')} />
@@ -174,12 +191,13 @@ export function LicitacionWorkspacePage({
   );
 }
 
-function ResumenLicitacion({ licitacion, oferta, ofertasCount, onNavigate, cotizaciones }: {
+function ResumenLicitacion({ licitacion, oferta, ofertasCount, onNavigate, cotizaciones, simplificado }: {
   licitacion: LicitacionProyecto;
   oferta?: Cotizacion;
   ofertasCount: number;
   onNavigate: (tab: TabId) => void;
   cotizaciones: Cotizacion[];
+  simplificado?: boolean;
 }) {
   const empresaAdjudicada = oferta?.proveedorNombre || licitacion.proveedorAdjudicadoNombre;
   const rutAdjudicado = oferta?.proveedorRut || licitacion.proveedorAdjudicadoRut;
@@ -210,12 +228,15 @@ function ResumenLicitacion({ licitacion, oferta, ofertasCount, onNavigate, cotiz
   const diasTranscurridos = fechaInicio ? Math.max(0, Math.floor((new Date(hoy).getTime() - new Date(fechaInicio).getTime()) / 86400000) + 1) : 0;
   const avanceProgramadoPct = fechaInicio && plazoAdjudicado > 0 ? Math.min(100, Math.round(diasTranscurridos / plazoAdjudicado * 100)) : 0;
 
-  // ─ Trazabilidad documental
+  // ─ Trazabilidad documental — en proceso simplificado (bajo el umbral de Licitación obligatoria) no se
+  // exigen Bases formales, visita/consultas ni invitación, así que esos hitos no aplican y se omiten del avance.
   const hitos = [
-    { label: 'Bases y planos', ok: Boolean(licitacion.antecedentesTecnicos?.length), tab: 'expediente' as TabId },
-    { label: 'Visita a terreno', ok: Boolean(licitacion.fechaVisitaTerreno), tab: 'expediente' as TabId },
-    { label: 'Consultas respondidas', ok: Boolean(licitacion.fechaRespuestaConsultas), tab: 'expediente' as TabId },
-    { label: 'Empresas invitadas', ok: Boolean(licitacion.proveedoresInvitadosIds?.length), tab: 'invitados' as TabId },
+    ...(simplificado ? [] : [
+      { label: 'Bases y planos', ok: Boolean(licitacion.antecedentesTecnicos?.length), tab: 'expediente' as TabId },
+      { label: 'Visita a terreno', ok: Boolean(licitacion.fechaVisitaTerreno), tab: 'expediente' as TabId },
+      { label: 'Consultas respondidas', ok: Boolean(licitacion.fechaRespuestaConsultas), tab: 'expediente' as TabId },
+      { label: 'Empresas invitadas', ok: Boolean(licitacion.proveedoresInvitadosIds?.length), tab: 'invitados' as TabId },
+    ]),
     { label: 'Ofertas recibidas', ok: ofertasCount > 0, tab: 'ofertas' as TabId },
     { label: 'Empresa adjudicada', ok: Boolean(empresaAdjudicada), tab: 'evaluacion' as TabId },
     { label: 'Acta de evaluación', ok: Boolean(licitacion.actaFirmaDigital), tab: 'actas' as TabId },
