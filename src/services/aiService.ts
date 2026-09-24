@@ -58,18 +58,27 @@ async function llamarGemini(prompt: string, maxOutputTokens: number, timeoutMs?:
   throw ultimoError;
 }
 
+// Dos formas de acceder a Gemini con una API key: AI Studio (generativelanguage.googleapis.com) o
+// Vertex AI en modo express (aiplatform.googleapis.com, claves creadas desde Google Cloud con una
+// "Bound account"). Mismo formato de petición y respuesta; solo cambia la URL.
+function urlGemini(model: string, key: string): string {
+  return import.meta.env.VITE_GEMINI_PROVEEDOR === 'vertex'
+    ? `https://aiplatform.googleapis.com/v1/publishers/google/models/${model}:generateContent?key=${key}`
+    : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+}
+
 async function llamarGeminiModelo(model: string, prompt: string, maxOutputTokens: number, timeoutMs?: number): Promise<string> {
   const key = import.meta.env.VITE_GEMINI_API_KEY;
 
   let resp: Response;
   try {
     resp = await fetchConTimeout(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+      urlGemini(model, key),
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
           generationConfig: { maxOutputTokens, temperature: 0.3 },
         }),
       },
