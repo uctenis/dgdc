@@ -10,6 +10,7 @@ import { formatearRUT, validarRUT } from '../utils/rutUtils';
 import { parseProveedorDesdeCotizacion } from '../utils/providerDocumentParser';
 
 import { getRubrosList } from '../data/rubrosData';
+import { ReclasificarRubrosModal } from './ReclasificarRubrosModal';
 
 /** Separa un campo de contacto (email o teléfono) que puede traer varios valores juntos (", " / ";" / "/" / salto de línea). */
 function splitContactos(valor?: string): string[] {
@@ -41,6 +42,7 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedHistorialProv, setSelectedHistorialProv] = useState<Proveedor | null>(null);
   const [rankingAbierto, setRankingAbierto] = useState(false);
+  const [reclasificarAbierto, setReclasificarAbierto] = useState(false);
 
   // Form state
   const [rut, setRut] = useState('');
@@ -222,6 +224,13 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
 
         <div className="flex items-center gap-2 shrink-0">
           <button
+            onClick={() => setReclasificarAbierto(true)}
+            className="flex items-center justify-center gap-2 bg-violet-50 hover:bg-violet-100 border border-violet-300 text-violet-800 font-semibold px-4 py-2.5 rounded-xl shadow-sm transition text-xs"
+            title="Asignar rubros a varios proveedores a la vez (con ayuda de IA)"
+          >
+            <span>Reclasificar rubros</span>
+          </button>
+          <button
             onClick={() => setRankingAbierto(true)}
             className="flex items-center justify-center gap-2 bg-purple-50 hover:bg-purple-100 border border-purple-300 text-purple-800 font-semibold px-4 py-2.5 rounded-xl shadow-sm transition text-xs"
             title="Ver ranking de desempeño post-ejecución de todos los proveedores"
@@ -385,6 +394,14 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
         <HistorialObrasModal
           proveedor={selectedHistorialProv}
           onClose={() => setSelectedHistorialProv(null)}
+        />
+      )}
+
+      {reclasificarAbierto && (
+        <ReclasificarRubrosModal
+          proveedores={proveedores}
+          onUpdateProveedor={onUpdateProveedor}
+          onClose={() => setReclasificarAbierto(false)}
         />
       )}
 

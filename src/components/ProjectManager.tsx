@@ -14,7 +14,7 @@ import { corregirTextoAvanzado, normalizarNombreProyecto, ATRIBUTOS_ORTOGRAFIA_E
 import { ProyectosMaestros } from './ProyectosMaestros';
 import { PremiumDatePicker } from './PremiumDatePicker';
 import { getCentrosCostoList } from '../data/centrosCostoData';
-import { getRubrosList } from '../data/rubrosData';
+import { RubroSelect } from './RubroSelect';
 import { HITOS_LICITACION, calcularEstadosHitos, obtenerFechasHitos, formatearFechaCorta, ESTADO_HITO_DOT, ESTADO_HITO_TEXT, LIFECYCLE_COLOR, LIFECYCLE_LABEL } from '../utils/hitosLicitacion';
 import { esProcesoSimplificado, UMBRAL_LICITACION_OBLIGATORIA } from '../data/contratoTemplateData';
 
@@ -1019,16 +1019,13 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                 </div>
                 <div>
                   <label className="block font-semibold text-slate-700 mb-1">Rubro Requerido (para sugerir proveedores)</label>
-                  <select
+                  <RubroSelect
+                    tipoObra={tipoObra}
                     value={rubro}
-                    onChange={e => setRubro(e.target.value)}
+                    onChange={setRubro}
+                    placeholder="-- Sin rubro --"
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 outline-none font-semibold text-slate-700"
-                  >
-                    <option value="">-- Sin rubro --</option>
-                    {getRubrosList().map(r => (
-                      <option key={r.id} value={r.nombre}>{r.nombre}</option>
-                    ))}
-                  </select>
+                  />
                 </div>
               </div>
 

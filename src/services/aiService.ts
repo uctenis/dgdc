@@ -228,6 +228,42 @@ Responde solo con el texto de la descripción mejorada.`;
   return texto.replace(/^["“]|["”]$/g, '').trim();
 }
 
+// ─── RUBRO DE PROVEEDORES (reclasificación asistida) ─────────────────────────
+
+/**
+ * Sugiere el rubro de cada proveedor según su razón social (y su rubro actual como pista débil).
+ * Devuelve clave → nombre de rubro EXACTO del catálogo; si la razón social no permite deducirlo, la
+ * IA omite ese proveedor (mejor sin sugerencia que una inventada).
+ */
+export async function sugerirRubrosProveedoresConIA(
+  proveedores: { clave: string; razonSocial: string }[],
+  rubros: { nombre: string; descripcion?: string }[]
+): Promise<Record<string, string>> {
+  const catalogo = rubros.map(r => `- "${r.nombre}"${r.descripcion ? `: ${r.descripcion}` : ''}`).join('\n');
+  const lista = proveedores.map(p => `- [${p.clave}] ${p.razonSocial}`).join('\n');
+  const prompt = `Eres analista de abastecimiento de la Subdirección de Infraestructura de una universidad chilena. Clasifica cada proveedor en UNO de estos rubros (usa el nombre exacto, entre comillas):
+${catalogo}
+
+Proveedores (razón social):
+${lista}
+
+Reglas: deduce el rubro solo por la razón social (ej. "Eléctrica", "Climatización", "Pinturas", "Paisajismo", "Áridos", "Techos"). Si la razón social es genérica (ej. solo un apellido, "Constructora X", "Inversiones Y") y no permite distinguir la especialidad, usa "Obras Civiles y Estructuras" solo si dice "Constructora"/"Construcciones"; si no, OMITE ese proveedor. No inventes rubros fuera del catálogo.
+
+Responde EXCLUSIVAMENTE con un array JSON: [{"clave":"P1","rubro":"Instalaciones Eléctricas"}]`;
+
+  const content = await llamarIA(prompt, 60 * proveedores.length + 400);
+  const nombres = new Set(rubros.map(r => r.nombre));
+  const resultado: Record<string, string> = {};
+  for (const x of parsearArregloJsonDeIA(content)) {
+    if (typeof x !== 'object' || x === null) continue;
+    const obj = x as Record<string, unknown>;
+    const clave = String(obj.clave ?? '').replace(/[[\]]/g, '').trim();
+    const rubro = String(obj.rubro ?? '').trim();
+    if (clave && nombres.has(rubro)) resultado[clave] = rubro;
+  }
+  return resultado;
+}
+
 // ─── ESPECIFICACIONES TÉCNICAS (EETT) desde el itemizado ─────────────────────
 
 export interface ContextoProyectoEETT {

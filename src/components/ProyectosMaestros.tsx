@@ -20,6 +20,8 @@ import { getCampusList, obtenerEdificiosDeCampus, obtenerCampusPorSigla } from '
 import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
 import { getCentrosCostoList } from '../data/centrosCostoData';
 import { getRubrosList } from '../data/rubrosData';
+import { RubroSelect } from './RubroSelect';
+import { rubroAlCambiarTipo } from '../data/tiposObraData';
 import { getTiposObraList } from '../data/tiposObraData';
 import { sugerirPoliticaGarantias } from '../data/basesTemplateData';
 import { VisualizadorOCModal } from './VisualizadorOCModal';
@@ -733,7 +735,9 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                             value={p.tipoObra || ''}
                             onClick={e => e.stopPropagation()}
                             onChange={async (e) => {
-                              await updateProyectoMaestro(p.id, { tipoObra: e.target.value });
+                              const tipo = e.target.value;
+                              const rubro = rubroAlCambiarTipo(p.tipoObra, tipo, p.rubro);
+                              await updateProyectoMaestro(p.id, { tipoObra: tipo, ...(rubro !== (p.rubro || '') ? { rubro } : {}) });
                             }}
                             className={`text-[9px] font-semibold rounded px-1 py-0.5 outline-none cursor-pointer border transition w-1/2 ${
                               p.tipoObra
@@ -749,26 +753,19 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                               </option>
                             ))}
                           </select>
-                          <select
-                            value={p.rubro || ''}
-                            onClick={e => e.stopPropagation()}
-                            onChange={async (e) => {
-                              await updateProyectoMaestro(p.id, { rubro: e.target.value });
-                            }}
-                            className={`text-[9px] font-semibold rounded px-1 py-0.5 outline-none cursor-pointer border transition w-1/2 ${
-                              p.rubro
-                                ? 'text-violet-800 bg-violet-50 border-violet-200 hover:bg-violet-100'
-                                : 'text-slate-400 bg-slate-50 border-slate-200 hover:bg-slate-100 italic'
-                            }`}
-                            title="Asignar Rubro del Proyecto"
-                          >
-                            <option value="">-- Rubro --</option>
-                            {rubrosDisponibles.map(r => (
-                              <option key={r.id} value={r.nombre}>
-                                {r.nombre}
-                              </option>
-                            ))}
-                          </select>
+                          <span onClick={e => e.stopPropagation()} className="w-1/2" title="Asignar Rubro del Proyecto">
+                            <RubroSelect
+                              tipoObra={p.tipoObra}
+                              value={p.rubro || ''}
+                              onChange={async rubro => { await updateProyectoMaestro(p.id, { rubro }); }}
+                              placeholder="-- Rubro --"
+                              className={`text-[9px] font-semibold rounded px-1 py-0.5 outline-none cursor-pointer border transition w-full ${
+                                p.rubro
+                                  ? 'text-violet-800 bg-violet-50 border-violet-200 hover:bg-violet-100'
+                                  : 'text-slate-400 bg-slate-50 border-slate-200 hover:bg-slate-100 italic'
+                              }`}
+                            />
+                          </span>
                         </div>
                       )}
                     </td>
@@ -1245,7 +1242,10 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                       <select
                         required
                         value={form.tipoObra}
-                        onChange={e => setForm(f => ({ ...f, tipoObra: e.target.value }))}
+                        onChange={e => {
+                          const tipo = e.target.value;
+                          setForm(f => ({ ...f, tipoObra: tipo, rubro: rubroAlCambiarTipo(f.tipoObra, tipo, f.rubro) }));
+                        }}
                         className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
                       >
                         <option value="">-- Seleccionar Tipo de Obra --</option>
@@ -1262,18 +1262,14 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                         <ScrollText className="w-3.5 h-3.5 text-indigo-600" />
                         Rubro del Proyecto
                       </label>
-                      <select
+                      <RubroSelect
+                        tipoObra={form.tipoObra}
                         value={form.rubro}
-                        onChange={e => setForm(f => ({ ...f, rubro: e.target.value }))}
+                        onChange={rubro => setForm(f => ({ ...f, rubro }))}
+                        placeholder="-- Seleccionar Rubro --"
                         className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
-                      >
-                        <option value="">-- Seleccionar Rubro --</option>
-                        {rubrosDisponibles.map(r => (
-                          <option key={r.id} value={r.nombre}>
-                            {r.nombre}
-                          </option>
-                        ))}
-                      </select>
+                      />
+                      <p className="text-[10px] text-slate-400 mt-1">Especialidad del contratista: define a qué proveedores se sugiere invitar y la normativa de las Bases. ★ = sugerido para el tipo de obra.</p>
                     </div>
                   </div>
 

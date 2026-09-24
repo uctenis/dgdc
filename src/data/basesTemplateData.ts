@@ -22,6 +22,7 @@ export const TIPO_OBRA_A_FAMILIA: Record<string, FamiliaBases> = {
   'REMODELACION': 'obra-menor',
   'ALHAJAMIENTO': 'obra-menor',
   'AREAS VERDES': 'obra-menor',
+  'OBRAS EXTERIORES': 'obra-civil',
   'REGULARIZACION': 'obra-menor',
   'INSTALACIONES': 'obra-menor',
   'DISEÑO': 'diseno',

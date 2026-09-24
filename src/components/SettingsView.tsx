@@ -1381,6 +1381,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       </div>
                     </div>
 
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">Rubros sugeridos para este tipo de obra</label>
+                      <p className="text-[10px] text-slate-500 mb-2">
+                        Al crear un proyecto con este tipo, se muestran primero y se preselecciona el ★ principal (el primero marcado).
+                        Sin rubros marcados = se ofrece cualquier rubro.
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {rubros.filter(r => r.estado === 'Activo').map(r => {
+                          const sugeridos = tipoObraEditando.rubrosSugeridos || [];
+                          const idx = sugeridos.indexOf(r.nombre);
+                          const marcado = idx >= 0;
+                          return (
+                            <button
+                              key={r.id}
+                              type="button"
+                              onClick={() => setTipoObraEditando({
+                                ...tipoObraEditando,
+                                rubrosSugeridos: marcado ? sugeridos.filter(n => n !== r.nombre) : [...sugeridos, r.nombre],
+                              })}
+                              className={`px-2 py-1 rounded-lg border text-[10px] font-bold transition ${
+                                marcado ? 'bg-violet-600 text-white border-violet-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+                              }`}
+                            >
+                              {idx === 0 ? '★ ' : marcado ? `${idx + 1}. ` : ''}{r.nombre}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     <div className="flex items-center justify-end gap-2 pt-2">
                       <button
                         type="button"
@@ -1408,6 +1438,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       <tr className="bg-slate-900 text-white font-bold text-[11px]">
                         <th className="p-3">Tipo de Obra / Categoría</th>
                         <th className="p-3">Descripción y Alcance</th>
+                        <th className="p-3">Rubros sugeridos</th>
                         <th className="p-3 text-center">Estado</th>
                         <th className="p-3 text-right">Acciones</th>
                       </tr>
@@ -1415,7 +1446,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <tbody className="divide-y divide-slate-200 text-xs">
                       {tiposObraFiltrados.length === 0 ? (
                         <tr>
-                          <td colSpan={4} className="p-6 text-center text-slate-400">
+                          <td colSpan={5} className="p-6 text-center text-slate-400">
                             No se encontraron tipos de obra registrados.
                           </td>
                         </tr>
@@ -1427,6 +1458,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               <span>{t.nombre}</span>
                             </td>
                             <td className="p-3 text-slate-600 font-medium">{t.descripcion || '—'}</td>
+                            <td className="p-3">
+                              {(t.rubrosSugeridos || []).length === 0 ? (
+                                <span className="text-slate-400 italic text-[10px]">Cualquier rubro</span>
+                              ) : (
+                                <div className="flex flex-wrap gap-1">
+                                  {(t.rubrosSugeridos || []).map((n, i) => (
+                                    <span key={n} className={`px-1.5 py-0.5 rounded text-[9px] font-bold border ${i === 0 ? 'bg-violet-100 text-violet-800 border-violet-300' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                                      {i === 0 ? '★ ' : ''}{n}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </td>
                             <td className="p-3 text-center">
                               <button
                                 type="button"

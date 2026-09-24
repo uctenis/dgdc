@@ -27,6 +27,9 @@ import { CargaOrdenCompraModal } from './CargaOrdenCompraModal';
 import { PremiumDatePicker } from './PremiumDatePicker';
 import { BasesLicitacionModal } from './BasesLicitacionModal';
 import { EETTProyectoPanel } from './EETTProyectoPanel';
+import { RubroSelect } from './RubroSelect';
+import { rubroAlCambiarTipo } from '../data/tiposObraData';
+import { getTiposObraList } from '../data/tiposObraData';
 import { ContratoAdjudicacionModal } from './ContratoAdjudicacionModal';
 import { requiereContratoFormal, UMBRAL_CONTRATO_FORMAL } from '../data/contratoTemplateData';
 
@@ -481,6 +484,22 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
   useEffect(() => {
     setMainData(prev => (prev.montoEstimado === montoEstimado ? prev : { ...prev, montoEstimado }));
   }, [montoEstimado]);
+
+  // Tipo de obra y rubro viven en el ProyectoMaestro (Cartera) y se copian a la licitación vinculada,
+  // que es la que usa el rubro para sugerir proveedores a invitar.
+  const tiposObraFicha = getTiposObraList().filter(t => t.estado === 'Activo').map(t => t.nombre);
+  const tipoObraFicha = proyectoMaestroEfectivo?.tipoObra || licitacionEfectiva?.tipoObra || '';
+  const rubroFicha = proyectoMaestroEfectivo?.rubro || licitacionEfectiva?.rubro || '';
+  const guardarTipoYRubro = async (tipoObra: string, rubro: string) => {
+    try {
+      if (idProyectoMaestro) await updateProyectoMaestro(idProyectoMaestro, { tipoObra, rubro });
+      if (licitacionEfectiva) await updateLicitacion(licitacionEfectiva.id, { tipoObra, rubro });
+      setHasChanges(true);
+    } catch (e) {
+      console.error(e);
+      alert(`Error guardando tipo de obra / rubro: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
 
   const saveInlineUpdate = async (updates: Partial<typeof mainData>) => {
     try {
@@ -1029,6 +1048,29 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
                 <option value="Deportivo">Deportivo</option>
                 <option value="Otro">Otro</option>
               </select>
+            </div>
+
+            {/* Tipo de obra y rubro: antes solo se veían al crear el proyecto. El tipo define la plantilla
+                de Bases; el rubro, a qué proveedores se sugiere invitar y la normativa de las Bases. */}
+            <div className="bg-slate-700/50 p-2.5 rounded-xl border border-slate-600/80 space-y-1.5">
+              <p className="text-slate-300 text-[10px] font-extrabold uppercase">Tipo de obra y rubro</p>
+              <select
+                value={tipoObraFicha}
+                onChange={e => guardarTipoYRubro(e.target.value, rubroAlCambiarTipo(tipoObraFicha, e.target.value, rubroFicha))}
+                title="Tipo de obra: define la plantilla de Bases"
+                className="w-full bg-slate-800 text-amber-200 text-[10px] font-bold border border-slate-600 rounded p-1 outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="">Sin tipo de obra</option>
+                {tiposObraFicha.map(t => <option key={t} value={t}>{t}</option>)}
+                {tipoObraFicha && !tiposObraFicha.includes(tipoObraFicha) && <option value={tipoObraFicha}>{tipoObraFicha}</option>}
+              </select>
+              <RubroSelect
+                tipoObra={tipoObraFicha}
+                value={rubroFicha}
+                onChange={rubro => guardarTipoYRubro(tipoObraFicha, rubro)}
+                placeholder="Sin rubro"
+                className="w-full bg-slate-800 text-violet-200 text-[10px] font-bold border border-slate-600 rounded p-1 outline-none focus:ring-1 focus:ring-indigo-500"
+              />
             </div>
 
             <div className="bg-slate-700/50 p-2.5 rounded-xl border border-slate-600/80 space-y-1">

@@ -90,6 +90,18 @@ export const NORMATIVA_POR_RUBRO: Record<string, ClausulaNormativaRubro> = {
     normativaAplicable:
       'El diseño de señalética institucional deberá cumplir la Ley N°20.422 y su reglamento de Accesibilidad Universal (D.S. N°50/2015 del MINVU), incluyendo el uso correcto del Símbolo Internacional de Accesibilidad conforme a NCh3180. Las demarcaciones de pavimentos y señalización de tránsito dentro de los campus deberán ajustarse al Manual de Señalización de Tránsito (Decreto N°78/2012 del MTT) en lo que resulte aplicable a vialidad interior.',
   },
+  'Obras Exteriores, Pavimentos y Paisajismo': {
+    requisitosOferentesAdicionales:
+      'Adicionalmente, por tratarse de obras exteriores: el oferente debe acreditar experiencia en pavimentación, obras de urbanización o paisajismo según corresponda al alcance, y designar un profesional o técnico a cargo (Constructor Civil, Ingeniero Constructor, Técnico en Construcción o Paisajista para obras de áreas verdes).',
+    normativaAplicable:
+      'Los pavimentos, veredas, estacionamientos y circulaciones exteriores deberán cumplir las exigencias de accesibilidad universal de la OGUC (Art. 2.2.8, rutas accesibles, rebajes y pendientes) conforme a la Ley N°20.422 y el D.S. N°50/2015 del MINVU. Los pavimentos de hormigón y asfalto se ejecutarán según el Código de Normas y Especificaciones Técnicas de Obras de Pavimentación del MINVU vigente, y la evacuación de aguas lluvia según el proyecto de drenaje y la normativa sanitaria aplicable. Las áreas verdes y sistemas de riego privilegiarán especies de bajo consumo hídrico y riego eficiente. Aplica el D.S. N°594/2000 del MINSAL y el retiro de excedentes a botadero autorizado.',
+  },
+  'Cubiertas e Impermeabilización': {
+    requisitosOferentesAdicionales:
+      'Adicionalmente, por tratarse de trabajos en altura: el oferente debe presentar su procedimiento de trabajo en altura y acreditar que el personal cuenta con capacitación y equipos de protección contra caídas certificados; y ofrecer una garantía escrita de estanqueidad de la cubierta o impermeabilización.',
+    normativaAplicable:
+      'Las cubiertas deberán cumplir las condiciones de seguridad contra incendio de la OGUC (Art. 4.3) y, cuando integren la envolvente térmica del edificio, la Reglamentación Térmica de la OGUC (Art. 4.1.10) vigente. Los trabajos en altura se regirán por la Ley N°16.744, el D.S. N°594/2000 del MINSAL y la NCh1258 (sistemas de protección contra caídas). La instalación de cubiertas metálicas, canaletas y bajadas de agua seguirá las especificaciones del fabricante del sistema, y las impermeabilizaciones deberán someterse a prueba de estanqueidad antes de su recepción por la ITO.',
+  },
 };
 
 /** Obtiene la cláusula normativa de un rubro (si existe una entrada exacta en el catálogo). */
