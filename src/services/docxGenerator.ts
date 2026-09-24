@@ -393,11 +393,11 @@ export async function generarDocumentoCuadroComparativoActa(
   saveAs(blob, fileName);
 }
 
-const FUENTE_DOCUMENTO_LEGAL = 'Georgia';
+export const FUENTE_DOCUMENTO_LEGAL = 'Georgia';
 
 /** Trae el isotipo institucional para el membrete de los documentos Word. Si no está disponible
  * (fetch falla, entorno sin red), retorna null y el documento se genera sin logo, sin bloquear. */
-async function obtenerLogoUCTBuffer(): Promise<ArrayBuffer | null> {
+export async function obtenerLogoUCTBuffer(): Promise<ArrayBuffer | null> {
   try {
     const resp = await fetch(`${import.meta.env.BASE_URL}logo-uct.png`);
     if (!resp.ok) return null;

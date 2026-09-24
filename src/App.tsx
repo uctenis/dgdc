@@ -19,6 +19,7 @@ import { BandejaOPPage } from './components/BandejaOPPage';
 import { BandejaOPDemo } from './pages/BandejaOPDemo';
 import { EVENTO_CONFIG_ACTUALIZADA } from './services/configCompartida';
 import { reloadResponsables } from './data/responsablesData';
+import { EETTDemo } from './pages/EETTDemo';
 import { InternalLoginPage } from './pages/InternalLoginPage';
 import { PortalBloqueoProveedor } from './pages/PortalBloqueoProveedor';
 import { PortalInvitacionPage } from './pages/PortalInvitacionPage';
@@ -442,6 +443,7 @@ export function App() {
           <Route path="/portal/login" element={<PortalAccesoRestringido />} />
           {import.meta.env.DEV && <Route path="/portal/demo" element={<PortalDemo />} />}
           {import.meta.env.DEV && <Route path="/demo/bandeja-op" element={<BandejaOPDemo />} />}
+          {import.meta.env.DEV && <Route path="/demo/eett" element={<EETTDemo />} />}
           {/* Único punto de entrada: el enlace de la invitación. Exige sesión y verifica la invitación. */}
           <Route path="/portal/licitacion/:id" element={<PortalInvitacionPage />} />
           {/* Cualquier otra ruta del portal: sin dashboard ni listados, solo la pantalla neutra */}

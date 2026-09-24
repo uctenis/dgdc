@@ -7,7 +7,8 @@ import {
   generarEspecificacionesPartidasConIA,
   isAIConfigured,
   type ContextoProyectoEETT, mensajeErrorIA } from '../services/aiService';
-import { generarDocumentoSeccionesWord } from '../services/docxGenerator';
+import { generarEETTWord } from '../services/eettDocxGenerator';
+import { storageService } from '../services/storageService';
 import { agruparPorFase } from '../utils/itemizadoOrganizer';
 import { obtenerCampusPorSigla, descripcionEdificioParaIA } from '../data/campusData';
 import { useAuth } from '../context/AuthContext';
@@ -175,24 +176,14 @@ export function EETTProyectoPanel({ proyecto }: Props) {
   const exportarWord = async () => {
     setExportando(true);
     try {
-      const secciones: { titulo: string; contenido: string }[] = [];
-      if (generalidades.trim()) secciones.push({ titulo: '1. Generalidades', contenido: generalidades.trim() });
-      grupos.forEach((g, gi) => {
-        const n = gi + 2;
-        secciones.push({ titulo: `${n}. ${g.fase}`, contenido: `Partidas de la fase ${g.fase}.` });
-        g.items.forEach(p => {
-          secciones.push({
-            titulo: `${p.item}  ${p.descripcion} (${p.unidad})`,
-            contenido: especs[p.id]?.especificacion || 'Especificación pendiente.',
-          });
-        });
-      });
-      await generarDocumentoSeccionesWord({
-        tituloDocumento: 'Especificaciones Técnicas',
-        subtitulo: proyecto.nombre,
-        lineaCodigos: `${proyecto.codigoProyecto} · CP ${proyecto.codigoCP}${estado === 'Aprobada' ? ' · Aprobadas' : ' · Borrador'}`,
-        secciones,
-        nombreArchivo: `EETT_${proyecto.codigoProyecto || proyecto.id}.docx`,
+      await generarEETTWord({
+        proyecto,
+        partidas,
+        especificaciones: Object.fromEntries(Object.entries(especs).map(([id, e]) => [id, e.especificacion])),
+        generalidades,
+        estado,
+        version: proyecto.eett?.version || 1,
+        configFirmas: storageService.getConfigFirmas(),
       });
     } catch (err) {
       console.error('Error exportando EETT a Word:', err);
