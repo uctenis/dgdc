@@ -37,8 +37,6 @@ jobs:
           # dominio del sitio. Al lanzar se reemplaza el secret por la clave de la Dirección.
           VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
           VITE_GEMINI_MODEL: gemini-3.6-flash
-          # La clave actual es de Vertex AI (modo express, creada en Google Cloud), no de AI Studio.
-          VITE_GEMINI_PROVEEDOR: vertex
         run: npm run build
 
       - name: Configure Pages
