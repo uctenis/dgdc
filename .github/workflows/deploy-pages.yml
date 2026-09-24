@@ -33,6 +33,10 @@ jobs:
       - name: Build site
         env:
           VITE_BASE_PATH: /dgdc/
+          # Clave de IA (secret del repo). Queda visible en el bundle: usar una clave restringida al
+          # dominio del sitio. Al lanzar se reemplaza el secret por la clave de la Dirección.
+          VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
+          VITE_GEMINI_MODEL: gemini-3.6-flash
         run: npm run build
 
       - name: Configure Pages
