@@ -349,10 +349,15 @@ export function obtenerCampusPorSigla(sigla: string): CampusInfo | undefined {
   return getCampusList().find(c => c.sigla === sigla.toUpperCase());
 }
 
+/** Orden natural por sigla: CML2 antes que CML10. */
+export function ordenarSiglasEdificio(siglas: string[]): string[] {
+  return [...siglas].sort((a, b) => a.localeCompare(b, 'es', { numeric: true, sensitivity: 'base' }));
+}
+
 export function obtenerEdificiosDeCampus(siglaCampus: string): string[] {
   if (!siglaCampus) return [];
   const c = getCampusList().find(camp => camp.sigla === siglaCampus.toUpperCase());
-  return c ? c.edificios : [];
+  return c ? ordenarSiglasEdificio(c.edificios) : [];
 }
 
 /** Ficha de un edificio por su sigla (ej. "CML01"), buscando en todos los campus. */

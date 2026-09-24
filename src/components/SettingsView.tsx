@@ -28,7 +28,7 @@ import {
   type RubroProveedor,
 } from '../data/rubrosData';
 import { obtenerEstadoConfigCompartida } from '../services/configCompartida';
-import { getCampusList, saveCampusList, type CampusInfo, type EdificioInfo } from '../data/campusData';
+import { getCampusList, saveCampusList, ordenarSiglasEdificio, type CampusInfo, type EdificioInfo } from '../data/campusData';
 import {
   Settings,
   Save,
@@ -216,6 +216,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [busquedaCampus, setBusquedaCampus] = useState('');
   const [isEditingCampus, setIsEditingCampus] = useState(false);
   const [campusEditando, setCampusEditando] = useState<CampusInfo>(CAMPUS_VACIO);
+  /** Campus desplegado para ver sus edificios (sin entrar a editar). */
+  const [campusAbierto, setCampusAbierto] = useState<string | null>(null);
   const [nuevoEdificioInput, setNuevoEdificioInput] = useState('');
 
   // Cargar datos iniciales
@@ -2400,7 +2402,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                              {campusEditando.edificios.map(ed => {
+                              {ordenarSiglasEdificio(campusEditando.edificios).map(ed => {
                                 const info = campusEditando.edificiosInfo?.[ed] || {};
                                 const celda = 'w-full px-2 py-1 border border-slate-200 rounded-md outline-none focus:ring-1 focus:ring-sky-500';
                                 return (
@@ -2460,17 +2462,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <p className="col-span-full text-center text-slate-400 py-6">No se encontraron campus registrados.</p>
                   ) : (
                     campusFiltrados.map(c => (
-                      <div key={c.sigla} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-2 hover:border-sky-300 transition">
+                      <div
+                        key={c.sigla}
+                        onClick={() => setCampusAbierto(abierto => (abierto === c.sigla ? null : c.sigla))}
+                        title={campusAbierto === c.sigla ? 'Clic para cerrar' : 'Clic para ver sus edificios'}
+                        className={`bg-white p-4 rounded-2xl border shadow-xs space-y-2 transition cursor-pointer ${
+                          campusAbierto === c.sigla ? 'md:col-span-3 border-sky-400 ring-2 ring-sky-100' : 'border-slate-200 hover:border-sky-300'
+                        }`}
+                      >
                         <div className="flex items-center justify-between">
                           <span className="font-mono font-extrabold text-xs bg-slate-900 text-white px-2 py-0.5 rounded">
                             {c.sigla}
                           </span>
                           <div className="flex items-center gap-1">
                             <span className="text-[10px] text-slate-500 font-medium">{c.ciudad}</span>
-                            <button type="button" title="Editar" onClick={() => { setCampusEditando(c); setIsEditingCampus(true); }} className="p-1 text-sky-700 hover:bg-sky-100 rounded-lg transition">
+                            <button type="button" title="Editar" onClick={e => { e.stopPropagation(); setCampusEditando(c); setIsEditingCampus(true); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="p-1 text-sky-700 hover:bg-sky-100 rounded-lg transition">
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
-                            <button type="button" title="Eliminar" onClick={() => handleEliminarCampus(c.sigla)} className="p-1 text-rose-600 hover:bg-rose-100 rounded-lg transition">
+                            <button type="button" title="Eliminar" onClick={e => { e.stopPropagation(); handleEliminarCampus(c.sigla); }} className="p-1 text-rose-600 hover:bg-rose-100 rounded-lg transition">
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
@@ -2486,6 +2495,52 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             <span className="text-slate-400 font-sans font-medium"> · {c.edificios.filter(e => c.edificiosInfo?.[e]?.nombre).length} con nombre</span>
                           </strong>
                         </div>
+                        {campusAbierto === c.sigla && (
+                          <div className="pt-2" onClick={e => e.stopPropagation()}>
+                            {c.edificios.length === 0 ? (
+                              <p className="text-[11px] text-slate-400 italic">Este campus no tiene edificios registrados. Use el lápiz para agregarlos.</p>
+                            ) : (
+                              <div className="border border-slate-200 rounded-xl overflow-x-auto">
+                                <table className="w-full text-left text-[11px] min-w-[640px]">
+                                  <thead className="bg-slate-100 text-slate-600">
+                                    <tr>
+                                      <th className="p-2">Edificio</th>
+                                      <th className="p-2">Nombre</th>
+                                      <th className="p-2">Facultad / Unidad</th>
+                                      <th className="p-2 text-right">Superficie</th>
+                                      <th className="p-2">Uso</th>
+                                      <th className="p-2">Drive</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100">
+                                    {ordenarSiglasEdificio(c.edificios).map(ed => {
+                                      const info = c.edificiosInfo?.[ed] || {};
+                                      return (
+                                        <tr key={ed} className="hover:bg-slate-50">
+                                          <td className="p-2 font-mono font-bold text-slate-700">{ed}</td>
+                                          <td className="p-2 text-slate-800">{info.nombre || <span className="text-slate-300">—</span>}</td>
+                                          <td className="p-2 text-slate-600">{info.facultad || <span className="text-slate-300">—</span>}</td>
+                                          <td className="p-2 text-right text-slate-600">{info.superficieM2 ? `${info.superficieM2.toLocaleString('es-CL')} m²` : <span className="text-slate-300">—</span>}</td>
+                                          <td className="p-2 text-slate-600">{info.uso || <span className="text-slate-300">—</span>}</td>
+                                          <td className="p-2">{info.driveUrl ? <a href={info.driveUrl} target="_blank" rel="noreferrer" className="text-sky-700 underline">📁 Abrir</a> : <span className="text-slate-300">—</span>}</td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                  {c.edificios.some(ed => c.edificiosInfo?.[ed]?.superficieM2) && (
+                                    <tfoot className="bg-slate-50 font-bold text-slate-700">
+                                      <tr>
+                                        <td className="p-2" colSpan={3}>Total superficie registrada</td>
+                                        <td className="p-2 text-right">{c.edificios.reduce((t, ed) => t + (c.edificiosInfo?.[ed]?.superficieM2 || 0), 0).toLocaleString('es-CL')} m²</td>
+                                        <td colSpan={2}></td>
+                                      </tr>
+                                    </tfoot>
+                                  )}
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ))
                   )}
