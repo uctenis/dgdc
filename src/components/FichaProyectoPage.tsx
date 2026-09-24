@@ -9,13 +9,13 @@ import {
   ScrollText,
   FileCheck2,
 } from 'lucide-react';
-import type { AumentoObra, Cotizacion, LicitacionProyecto, ProyectoMaestro, Proveedor, ConfiguracionFirmas } from '../types';
+import type { AumentoObra, Cotizacion, EstadoPago, LicitacionProyecto, ProyectoMaestro, Proveedor, ConfiguracionFirmas } from '../types';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { normalizarNombreProyecto, corregirOrtografiaEspanol, corregirTextoAvanzado } from '../utils/spellCorrector';
 import { rewriteTextWithAI, isAIConfigured } from '../services/aiService';
-import { updateLicitacion, updateProyectoMaestro, deleteLicitacion, deleteProyectoMaestro, syncOCToProyectoMaestro } from '../services/firestoreService';
+import { updateLicitacion, updateProyectoMaestro, deleteLicitacion, deleteProyectoMaestro, syncOCToProyectoMaestro, subscribeToEstadosPago } from '../services/firestoreService';
 import { uploadProyectoDocumento } from '../services/storageService';
-import { getCampusList, obtenerEdificiosDeCampus, etiquetaEdificio, obtenerInfoEdificio } from '../data/campusData';
+import { getCampusList, obtenerEdificiosDeCampus, etiquetaEdificio, obtenerInfoEdificio, obtenerCampusPorSigla } from '../data/campusData';
 import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
 import { agruparPorFase } from '../utils/itemizadoOrganizer';
@@ -223,6 +223,13 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
   // El proyecto maestro (suscrito en vivo) es la fuente del presupuesto estimado; la licitación es respaldo.
   const montoEstimado = proyectoMaestroEfectivo?.valorAprox || licitacionEfectiva?.montoEstimado || 0;
   const montoAdjudicado = licitacionEfectiva?.montoAdjudicadoTotal ?? proyectoMaestroEfectivo?.montoAdjudicado;
+
+  // Estados de pago de la licitación (en vivo), para la carátula: avance físico/financiero y pagos.
+  const [estadosPagoFicha, setEstadosPagoFicha] = useState<EstadoPago[]>([]);
+  useEffect(() => {
+    if (!licitacionEfectiva?.id) { setEstadosPagoFicha([]); return; }
+    return subscribeToEstadosPago(licitacionEfectiva.id, setEstadosPagoFicha);
+  }, [licitacionEfectiva?.id]);
 
   const estaAdjudicado = Boolean(
     licitacionEfectiva?.estado === 'Adjudicado'
@@ -1707,7 +1714,37 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
           const superficie = esLicitacion(proyecto) ? (proyecto as LicitacionProyecto).superficieM2 : undefined;
           const riesgo = esLicitacion(proyecto) ? (proyecto as LicitacionProyecto).nivelRiesgo : undefined;
           const etiquetaMonto = montoAumentosAprobados > 0 ? 'Contrato vigente' : tieneMontoAdjudicado ? 'Monto adjudicado' : 'Presupuesto estimado';
-          const estadoTxt = estaAdjudicado ? 'Adjudicado' : (licitacionEfectiva?.estado || 'En preparación');
+
+          // ── Etapas del ciclo del proyecto (estado real al momento de exportar) ──
+          const lic = licitacionEfectiva;
+          const pm = proyectoMaestroEfectivo;
+          const fechasActa = (lic?.actaFirmaDigital?.firmas || []).map(f => f.fecha).filter(Boolean).sort();
+          const actaFirmadaFecha = lic?.actaFirmaDigital?.estado === 'Firmada' ? (fechasActa[fechasActa.length - 1] || lic.actaFirmaDigital.fechaActualizacion) : undefined;
+          const numeroOP = mainData.codigoOP || lic?.codigoOP || lic?.ordenPedidoNumero || pm?.codigoOP || '';
+          const numeroOC = mainData.codigoOC || lic?.ordenCompraNumero || pm?.ordenCompraNumero || '';
+          const epValidos = estadosPagoFicha.filter(e => e.estado !== 'Borrador').sort((a, b) => a.numero - b.numero);
+          const ultimoEP = epValidos[epValidos.length - 1];
+          const montoAprobadoEP = epValidos.filter(e => e.estado === 'Aprobado' || e.estado === 'Pagado').reduce((s, e) => s + (e.montoTotal || 0), 0);
+          const montoPagadoEP = epValidos.filter(e => e.estado === 'Pagado').reduce((s, e) => s + (e.montoTotal || 0), 0);
+          const avanceFisico = ultimoEP?.porcentajeAvanceGlobal || 0;
+          const avanceFinanciero = montoVigente > 0 ? Math.min(100, Math.round((montoPagadoEP / montoVigente) * 100)) : 0;
+          const recepcion = lic?.recepcionConforme;
+          const etapas: { nombre: string; hecha: boolean; detalle?: string }[] = [
+            { nombre: 'Definición', hecha: true, detalle: pm?.fechaCreacion ? fmtFecha(pm.fechaCreacion) : undefined },
+            { nombre: 'Bases y EETT', hecha: Boolean(pm?.bases || lic), detalle: pm?.bases ? `Bases ${pm.bases.estado.toLowerCase()}` : undefined },
+            { nombre: 'Licitación', hecha: Boolean(lic), detalle: lic?.fechaCreacion ? fmtFecha(lic.fechaCreacion) : undefined },
+            { nombre: 'Adjudicación', hecha: estaAdjudicado, detalle: estaAdjudicado ? (proveedorAdjudicadoNombre || undefined) : undefined },
+            { nombre: 'Acta firmada', hecha: Boolean(actaFirmadaFecha), detalle: actaFirmadaFecha ? fmtFecha(actaFirmadaFecha) : lic?.actaFirmaDigital ? 'en firma' : undefined },
+            { nombre: 'Orden de pedido', hecha: Boolean(numeroOP), detalle: numeroOP || undefined },
+            { nombre: 'Orden de compra', hecha: Boolean(numeroOC), detalle: numeroOC || undefined },
+            { nombre: 'Ejecución', hecha: epValidos.length > 0 || Boolean(recepcion?.aprobada), detalle: epValidos.length ? `${epValidos.length} EP · ${avanceFisico}%` : undefined },
+            { nombre: 'Recepción', hecha: Boolean(recepcion?.aprobada), detalle: recepcion?.aprobada ? fmtFecha(recepcion.fechaAprobacion) : recepcion?.solicitada ? 'solicitada' : undefined },
+          ];
+          const etapaActual = etapas.findIndex(e => !e.hecha);
+          const estadoTxt = etapaActual === -1 ? 'Finalizado' : etapaActual <= 1 ? 'En preparación' : `Etapa: ${etapas[etapaActual].nombre}`;
+          const campusInfo = obtenerCampusPorSigla(campusSigla || '');
+          const edificioInfo = obtenerInfoEdificio(edificioSigla);
+          const superficieRef = superficie || edificioInfo?.superficieM2;
           return (
             <div className="portada-root">
               <div className="portada">
@@ -1721,7 +1758,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
                   </div>
                   <div className="portada-meta">
                     <div>PS-FOR-DGDC 0003</div>
-                    <div>Emitida el {new Intl.DateTimeFormat('es-CL', { dateStyle: 'long' }).format(new Date())}</div>
+                    <div>Estado al {new Intl.DateTimeFormat('es-CL', { dateStyle: 'long', timeStyle: 'short' }).format(new Date())}</div>
                   </div>
                 </header>
 
@@ -1738,33 +1775,62 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
                   {descripcionLocal && <p className="portada-desc">{descripcionLocal}</p>}
                 </section>
 
+                <section className="portada-etapas">
+                  {etapas.map((e, i) => (
+                    <div key={e.nombre} className={e.hecha ? 'hecha' : i === etapaActual ? 'actual' : 'pendiente'}>
+                      <i>{e.hecha ? '✓' : i + 1}</i>
+                      <b>{e.nombre}</b>
+                      {e.detalle && <small>{e.detalle}</small>}
+                    </div>
+                  ))}
+                </section>
+
                 <section className="portada-kpis">
                   <div><label>{etiquetaMonto}</label><strong>{formatoMonedaCLP(montoVigente)}</strong>{tieneMontoAdjudicado && <small>Estimado inicial {formatoMonedaCLP(montoEstimado)}</small>}</div>
                   <div><label>Plazo</label><strong>{plazoVigenteDias ? `${plazoVigenteDias} días` : 'Por definir'}</strong>{diasAumentoAprobados > 0 && <small>Incluye {diasAumentoAprobados} d de aumento</small>}</div>
                   <div><label>Inicio → Término</label><strong className="portada-kpi-sm">{fmtFecha(fechaInicioObra)} → {fmtFecha(fechaTerminoVigente)}</strong></div>
-                  <div><label>Superficie</label><strong>{superficie ? `${superficie} m²` : '—'}</strong>{superficie && tieneMontoAdjudicado && <small>{formatoMonedaCLP(Math.round(montoVigente / superficie))}/m²</small>}</div>
+                  <div><label>{superficie ? 'Superficie intervenida' : 'Superficie edificio'}</label><strong>{superficieRef ? `${superficieRef.toLocaleString('es-CL')} m²` : '—'}</strong>{superficie && tieneMontoAdjudicado && <small>{formatoMonedaCLP(Math.round(montoVigente / superficie))}/m²</small>}</div>
                 </section>
 
                 <section className="portada-cols">
                   <div>
                     <h2>Antecedentes</h2>
                     <dl>
-                      <dt>Ubicación</dt><dd>Campus {campusSigla}{edificioSigla ? ` · Edificio ${edificioSigla}` : ''}</dd>
+                      <dt>Ubicación</dt><dd>{campusInfo?.nombre || `Campus ${campusSigla}`}{edificioSigla ? ` · ${edificioSigla}${edificioInfo?.nombre ? ` ${edificioInfo.nombre}` : ''}` : ''}</dd>
+                      {edificioInfo?.facultad && (<><dt>Facultad / Unidad</dt><dd>{edificioInfo.facultad}</dd></>)}
                       <dt>Responsable UCT</dt><dd>{responsableNombre}{responsableEmail ? ` · ${responsableEmail}` : ''}</dd>
                       <dt>Uso solicitante</dt><dd>{uso}</dd>
-                      {proyectoMaestroEfectivo?.tipoObra && (<><dt>Tipo de obra</dt><dd>{proyectoMaestroEfectivo.tipoObra}</dd></>)}
+                      {proyectoMaestroEfectivo?.tipoObra && (<><dt>Tipo de obra</dt><dd>{proyectoMaestroEfectivo.tipoObra}{pm?.rubro ? ` · ${pm.rubro}` : ''}</dd></>)}
                       {riesgo && (<><dt>Nivel de riesgo</dt><dd>{riesgo}</dd></>)}
+                      <dt>Documentos</dt>
+                      <dd>
+                        Bases: {pm?.bases ? pm.bases.estado : 'pendientes'} · EETT: {pm?.eett ? `${pm.eett.estado} v${pm.eett.version}` : 'pendientes'}
+                        {pm?.contrato ? ` · Contrato: ${pm.contrato.estado}` : ''}
+                      </dd>
                     </dl>
                   </div>
                   <div>
-                    <h2>Adjudicación</h2>
+                    <h2>Adjudicación y ejecución</h2>
                     {estaAdjudicado ? (
-                      <dl>
-                        <dt>Contratista</dt><dd>{proveedorAdjudicadoNombre || 'Por identificar'}</dd>
-                        {proveedorAdjudicadoRut && (<><dt>RUT</dt><dd>{proveedorAdjudicadoRut}</dd></>)}
-                        <dt>Orden de compra</dt><dd>{mainData.codigoOC || ordenCompraNumero || 'Pendiente'}</dd>
-                        {montoAumentosAprobados > 0 && (<><dt>Aumentos aprobados</dt><dd>{formatoMonedaCLP(montoAumentosAprobados)}</dd></>)}
-                      </dl>
+                      <>
+                        <dl>
+                          <dt>Contratista</dt><dd>{proveedorAdjudicadoNombre || 'Por identificar'}{proveedorAdjudicadoRut ? ` · ${proveedorAdjudicadoRut}` : ''}</dd>
+                          <dt>OP / OC</dt><dd>{numeroOP || 'OP pendiente'} · {numeroOC || 'OC pendiente'}</dd>
+                          {montoAumentosAprobados > 0 && (<><dt>Aumentos</dt><dd>{formatoMonedaCLP(montoAumentosAprobados)}{diasAumentoAprobados > 0 ? ` · +${diasAumentoAprobados} días` : ''}</dd></>)}
+                          <dt>Estados de pago</dt>
+                          <dd>{epValidos.length === 0 ? 'Sin estados de pago' : `${epValidos.length} · último N°${ultimoEP!.numero} (${ultimoEP!.estado.toLowerCase()}, ${fmtFecha(ultimoEP!.fecha)})`}</dd>
+                          {epValidos.length > 0 && (<>
+                            <dt>Aprobado / pagado</dt><dd>{formatoMonedaCLP(montoAprobadoEP)} / {formatoMonedaCLP(montoPagadoEP)}</dd>
+                            <dt>Saldo por pagar</dt><dd>{formatoMonedaCLP(Math.max(0, montoVigente - montoPagadoEP))}</dd>
+                          </>)}
+                        </dl>
+                        {epValidos.length > 0 && (
+                          <div className="portada-avances">
+                            <div><span>Avance físico</span><div className="portada-bar"><i style={{ width: `${avanceFisico}%` }} /></div><b>{avanceFisico}%</b></div>
+                            <div><span>Avance financiero</span><div className="portada-bar"><i style={{ width: `${avanceFinanciero}%`, background: '#047857' }} /></div><b>{avanceFinanciero}%</b></div>
+                          </div>
+                        )}
+                      </>
                     ) : (
                       <p className="portada-muted">Proyecto aún no adjudicado.</p>
                     )}
@@ -1774,7 +1840,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
                 {fasesPortada.length > 0 && (
                   <section className="portada-fases">
                     <h2>Presupuesto por fase</h2>
-                    {fasesPortada.slice(0, 6).map(f => {
+                    {fasesPortada.slice(0, 4).map(f => {
                       const pct = totalFases > 0 ? (f.monto / totalFases) * 100 : 0;
                       return (
                         <div key={f.fase} className="portada-fase">
@@ -1785,7 +1851,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
                         </div>
                       );
                     })}
-                    {fasesPortada.length > 6 && <p className="portada-muted">+ {fasesPortada.length - 6} fase(s) adicionales</p>}
+                    {fasesPortada.length > 4 && <p className="portada-muted">+ {fasesPortada.length - 4} fase(s) adicionales</p>}
                   </section>
                 )}
 

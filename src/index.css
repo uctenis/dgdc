@@ -370,6 +370,21 @@
 .portada-bar { height: 3mm; background: #e2e8f0; border-radius: 99px; overflow: hidden; }
 .portada-bar i { display: block; height: 100%; background: #0f172a; }
 .portada-bar-lg { height: 3.5mm; margin-bottom: 2.5mm; }
+.portada-etapas { display: grid; grid-template-columns: repeat(9, 1fr); gap: 1.2mm; }
+.portada-etapas > div { position: relative; text-align: center; font-size: 6.8pt; line-height: 1.25; padding-top: 1mm; }
+.portada-etapas > div::before { content: ''; position: absolute; top: 4.2mm; left: -50%; width: 100%; height: .6mm; background: #cbd5e1; z-index: 0; }
+.portada-etapas > div:first-child::before { display: none; }
+.portada-etapas > div.hecha::before, .portada-etapas > div.actual::before { background: #0f172a; }
+.portada-etapas i { position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; width: 6.5mm; height: 6.5mm; margin: 0 auto 1mm; border-radius: 99px; font-style: normal; font-weight: 900; font-size: 7.5pt; background: #fff; border: .6mm solid #cbd5e1; color: #94a3b8; }
+.portada-etapas .hecha i { background: #0f172a; border-color: #0f172a; color: #fff; }
+.portada-etapas .actual i { background: #f59e0b; border-color: #b45309; color: #fff; }
+.portada-etapas b { display: block; font-weight: 800; color: #0f172a; }
+.portada-etapas .pendiente b { color: #94a3b8; font-weight: 600; }
+.portada-etapas .actual b { color: #b45309; }
+.portada-etapas small { display: block; color: #64748b; font-size: 6.3pt; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.portada-avances { margin-top: 2mm; display: grid; gap: 1.2mm; }
+.portada-avances > div { display: grid; grid-template-columns: 26mm 1fr 10mm; align-items: center; gap: 2mm; font-size: 8pt; font-weight: 700; }
+.portada-avances b { text-align: right; }
 .portada-exp ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 1mm 6mm; font-size: 8.5pt; }
 .portada-exp li span { font-size: 10pt; }
 .portada-firmas { margin-top: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 20mm; padding-top: 6mm; }
@@ -381,5 +396,6 @@
   body.imprimiendo-portada #root { display: none !important; }
   body.imprimiendo-portada .portada-root, body.imprimiendo-portada .portada-root * { visibility: visible !important; }
   body.imprimiendo-portada .portada-root { display: block; }
+  body.imprimiendo-portada, body.imprimiendo-portada .portada-root, body.imprimiendo-portada .portada { background: #fff !important; }
   .portada, .portada * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
