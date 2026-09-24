@@ -8,6 +8,7 @@ import {
   ShieldCheck, CheckSquare, Square, Printer, FolderCheck, Edit3, Cloud, AlertCircle, CalendarDays,
   ScrollText,
   FileCheck2,
+  MoreVertical,
 } from 'lucide-react';
 import type { AumentoObra, Cotizacion, EstadoPago, LicitacionProyecto, ProyectoMaestro, Proveedor, ConfiguracionFirmas } from '../types';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
@@ -773,9 +774,22 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
     validateChecklistFromDocuments(documentos);
   }, [documentos, proyectoMaestroEfectivo?.itemizado, proyectoMaestroEfectivo?.bases, proyectoMaestroEfectivo?.eett]);
 
+  const [menuMasAbierto, setMenuMasAbierto] = useState(false);
+
   const handleDeleteProyectoFromFicha = async () => {
     const nombreProy = nombreProyecto || 'este proyecto';
-    if (!confirm(`¿Confirma que desea eliminar el proyecto "${nombreProy}" de forma definitiva del sistema?`)) {
+    // Confirmación reforzada: hay que escribir el código del proyecto (un clic en "Aceptar" no basta).
+    const codigoConfirmacion = (codigoProyecto || id || '').trim();
+    const escrito = prompt(
+      `ELIMINAR DEFINITIVAMENTE "${nombreProy}"
+
+Se borrarán el proyecto y su licitación, y no se puede deshacer.
+
+Para confirmar, escriba el código del proyecto: ${codigoConfirmacion}`
+    );
+    if (escrito === null) return;
+    if (escrito.trim().toUpperCase() !== codigoConfirmacion.toUpperCase()) {
+      alert('El código no coincide. El proyecto NO se eliminó.');
       return;
     }
 
@@ -865,14 +879,33 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
             <span>Contrato</span>
           </button>
         )}
-        <button
-          onClick={handleDeleteProyectoFromFicha}
-          className="px-4 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-xl text-sm transition flex items-center gap-2 border border-rose-200 shadow-sm"
-          title="Eliminar este proyecto de la Cartera"
-        >
-          <Trash2 className="w-4 h-4 text-rose-600" />
-          <span>Eliminar Proyecto</span>
-        </button>
+        {/* Eliminar va escondido en un menú (y pide escribir el código) para evitar borrados accidentales. */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setMenuMasAbierto(v => !v)}
+            className="px-2.5 py-2.5 bg-white hover:bg-slate-50 text-slate-500 rounded-xl text-sm transition border border-slate-200 shadow-sm"
+            title="Más opciones"
+            aria-label="Más opciones"
+          >
+            <MoreVertical className="w-4 h-4" />
+          </button>
+          {menuMasAbierto && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setMenuMasAbierto(false)} />
+              <div className="absolute right-0 mt-1 z-40 w-60 bg-white border border-slate-200 rounded-xl shadow-lg p-1.5">
+                <button
+                  type="button"
+                  onClick={() => { setMenuMasAbierto(false); void handleDeleteProyectoFromFicha(); }}
+                  className="w-full text-left px-3 py-2 rounded-lg text-xs font-bold text-rose-700 hover:bg-rose-50 flex items-center gap-2"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Eliminar proyecto…
+                </button>
+                <p className="px-3 pb-1 text-[10px] text-slate-400">Borra el proyecto y su licitación de forma definitiva.</p>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* SECCIÓN DE ENCABEZADO PROMINENTE DEL PROYECTO (COMPACTA) */}
