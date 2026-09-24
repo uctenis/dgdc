@@ -1,3 +1,4 @@
+import { guardarConfigCompartida } from '../services/configCompartida';
 export interface ResponsableInfraestructura {
   codigo: string;
   nombre: string;
@@ -67,7 +68,7 @@ export function saveResponsablesList(list: ResponsableInfraestructura[]): void {
       }
       return r;
     });
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+    guardarConfigCompartida(STORAGE_KEY, normalized);
   } catch (e) {
     console.error('Error al guardar responsables:', e);
   }

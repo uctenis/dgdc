@@ -15,6 +15,8 @@ import { auth } from '../lib/firebase';
 import { createUserProfile, getUserProfile, verificarInvitacionLicitacion } from '../services/firestoreService';
 import type { UserProfile } from '../types';
 import { getInternalAccess, SYSTEM_ADMIN_EMAIL } from '../services/internalAccessService';
+import { cargarConfigCompartida, suscribirConfigCompartida } from '../services/configCompartida';
+import { reloadResponsables } from '../data/responsablesData';
 
 interface AuthContextType {
   user: User | null;
@@ -66,12 +68,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const proveedorLoginEnCurso = useRef(false);
 
   useEffect(() => {
+    let dejarDeEscucharConfig: (() => void) | null = null;
     const unsubscribe = onAuthStateChanged(auth, async firebaseUser => {
       try {
+        dejarDeEscucharConfig?.();
+        dejarDeEscucharConfig = null;
         if (!firebaseUser) {
           setUser(null);
           setProfile(null);
           return;
+        }
+
+        // Personal UCT: primero se descarga la configuración compartida (nómina, campus, catálogos)
+        // desde Firebase, para validar el acceso con la nómina VIGENTE y no con la copia del navegador.
+        if ((firebaseUser.email || '').toLowerCase().endsWith('@uct.cl')) {
+          await Promise.race([cargarConfigCompartida(), new Promise(r => setTimeout(r, 8000))]);
+          reloadResponsables();
+          dejarDeEscucharConfig = suscribirConfigCompartida();
         }
 
         const access = getInternalAccess(firebaseUser.email);
@@ -120,7 +133,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
       }
     });
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      dejarDeEscucharConfig?.();
+    };
   }, []);
 
   const effectiveUser = devBypass

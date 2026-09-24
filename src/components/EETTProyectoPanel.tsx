@@ -9,7 +9,7 @@ import {
   type ContextoProyectoEETT, mensajeErrorIA } from '../services/aiService';
 import { generarDocumentoSeccionesWord } from '../services/docxGenerator';
 import { agruparPorFase } from '../utils/itemizadoOrganizer';
-import { obtenerCampusPorSigla } from '../data/campusData';
+import { obtenerCampusPorSigla, descripcionEdificioParaIA } from '../data/campusData';
 import { useAuth } from '../context/AuthContext';
 
 interface Props {
@@ -30,7 +30,7 @@ function contextoDesdeProyecto(p: ProyectoMaestro): ContextoProyectoEETT {
     rubro: p.rubro,
     uso: p.uso,
     ubicacion: campus
-      ? [p.edificioSigla ? `edificio ${p.edificioSigla}` : '', campus.nombre, campus.direccion || '', campus.ciudad].filter(Boolean).join(', ')
+      ? [p.edificioSigla ? descripcionEdificioParaIA(p.edificioSigla) : '', campus.nombre, campus.direccion || '', campus.ciudad].filter(Boolean).join(', ')
       : undefined,
   };
 }

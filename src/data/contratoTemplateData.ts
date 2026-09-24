@@ -1,3 +1,4 @@
+import { guardarConfigCompartida } from '../services/configCompartida';
 import type { SeccionBases, PoliticaGarantias } from './basesTemplateData';
 import { sugerirPoliticaGarantias } from './basesTemplateData';
 
@@ -295,7 +296,7 @@ export function getPlantillaContratoObraCivil(): SeccionContrato[] {
 
 export function guardarPlantillaContratoObraCivil(secciones: SeccionContrato[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY_CONTRATO_OBRA_CIVIL, JSON.stringify(secciones));
+    guardarConfigCompartida(STORAGE_KEY_CONTRATO_OBRA_CIVIL, secciones);
   } catch (e) {
     console.error('Error al guardar la plantilla de contrato:', e);
   }

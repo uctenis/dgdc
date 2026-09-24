@@ -2,7 +2,8 @@ import { INITIAL_CONFIG_FIRMAS } from '../data/initialData';
 import { getResponsablesList, ALIAS_CORREOS_INSTITUCIONALES } from '../data/responsablesData';
 import { storageService } from './storageService';
 
-export const SYSTEM_ADMIN_EMAIL = 'dsilva@uct.cl';
+export { SYSTEM_ADMIN_EMAIL } from '../lib/adminSistema';
+import { SYSTEM_ADMIN_EMAIL } from '../lib/adminSistema';
 
 export type InternalRole = 'admin' | 'director' | 'subdirector' | 'responsable' | 'secretaria';
 

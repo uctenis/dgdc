@@ -15,7 +15,7 @@ import { normalizarNombreProyecto, corregirOrtografiaEspanol, corregirTextoAvanz
 import { rewriteTextWithAI, isAIConfigured } from '../services/aiService';
 import { updateLicitacion, updateProyectoMaestro, deleteLicitacion, deleteProyectoMaestro, syncOCToProyectoMaestro } from '../services/firestoreService';
 import { uploadProyectoDocumento } from '../services/storageService';
-import { getCampusList, obtenerEdificiosDeCampus } from '../data/campusData';
+import { getCampusList, obtenerEdificiosDeCampus, etiquetaEdificio, obtenerInfoEdificio } from '../data/campusData';
 import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
 import { agruparPorFase } from '../utils/itemizadoOrganizer';
@@ -988,9 +988,21 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
               >
                 <option value="">Edificio (Todos)</option>
                 {mainData.campusSigla && obtenerEdificiosDeCampus(mainData.campusSigla).map(ed => (
-                  <option key={ed} value={ed}>Edificio {ed}</option>
+                  <option key={ed} value={ed}>{etiquetaEdificio(ed)}</option>
                 ))}
               </select>
+              {(() => {
+                const info = obtenerInfoEdificio(mainData.edificioSigla);
+                if (!info || !(info.nombre || info.facultad || info.superficieM2 || info.driveUrl)) return null;
+                return (
+                  <div className="text-[10px] text-slate-300 space-y-0.5 pt-1">
+                    {info.facultad && <p><span className="text-slate-400">Facultad/Unidad:</span> {info.facultad}</p>}
+                    {info.superficieM2 ? <p><span className="text-slate-400">Superficie edificio:</span> {info.superficieM2.toLocaleString('es-CL')} m²</p> : null}
+                    {info.uso && <p><span className="text-slate-400">Uso:</span> {info.uso}</p>}
+                    {info.driveUrl && <a href={info.driveUrl} target="_blank" rel="noreferrer" className="text-sky-300 underline">📁 Carpeta del edificio en Drive</a>}
+                  </div>
+                );
+              })()}
             </div>
             
             <div className="bg-slate-700/50 p-2.5 rounded-xl border border-slate-600/80 space-y-1">

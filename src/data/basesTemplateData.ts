@@ -1,3 +1,4 @@
+import { guardarConfigCompartida } from '../services/configCompartida';
 export interface SeccionBases {
   id: string;
   titulo: string;
@@ -377,7 +378,7 @@ export function getPlantillaBasesPorFamilia(familia: FamiliaBases): SeccionBases
 /** Guarda cambios a la plantilla maestra de una familia de bases (afecta a todos los proyectos nuevos de ese tipo). */
 export function guardarPlantillaBasesPorFamilia(familia: FamiliaBases, secciones: SeccionBases[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY_POR_FAMILIA[familia], JSON.stringify(secciones));
+    guardarConfigCompartida(STORAGE_KEY_POR_FAMILIA[familia], secciones);
   } catch (e) {
     console.error(`Error al guardar la plantilla de bases (${familia}):`, e);
   }

@@ -1,9 +1,26 @@
+import { guardarConfigCompartida } from '../services/configCompartida';
 export interface CampusInfo {
   sigla: string;
   nombre: string;
   ciudad: string;
   direccion?: string;
   edificios: string[];
+  /** Datos de cada edificio, por sigla (ej. "CML01"). Opcional: un edificio puede no tener ficha aún. */
+  edificiosInfo?: Record<string, EdificioInfo>;
+}
+
+/** Ficha de un edificio (editable en Configuración → Sedes & Campus). */
+export interface EdificioInfo {
+  /** Nombre con que se conoce el edificio (ej. "Edificio Central", "Biblioteca"). */
+  nombre?: string;
+  /** Facultad, escuela o unidad que lo ocupa principalmente. */
+  facultad?: string;
+  superficieM2?: number;
+  /** Uso principal (docencia, laboratorios, administración, deportivo…). */
+  uso?: string;
+  /** Enlace a la carpeta del edificio en Google Drive. */
+  driveUrl?: string;
+  notas?: string;
 }
 
 const STORAGE_KEY = 'infra_app_campus_v1';
@@ -319,7 +336,7 @@ export function getCampusList(): CampusInfo[] {
 
 export function saveCampusList(list: CampusInfo[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    guardarConfigCompartida(STORAGE_KEY, list);
   } catch (e) {
     console.error('Error guardando catálogo de campus:', e);
   }
@@ -336,6 +353,36 @@ export function obtenerEdificiosDeCampus(siglaCampus: string): string[] {
   if (!siglaCampus) return [];
   const c = getCampusList().find(camp => camp.sigla === siglaCampus.toUpperCase());
   return c ? c.edificios : [];
+}
+
+/** Ficha de un edificio por su sigla (ej. "CML01"), buscando en todos los campus. */
+export function obtenerInfoEdificio(siglaEdificio?: string): (EdificioInfo & { sigla: string; campus: CampusInfo }) | undefined {
+  if (!siglaEdificio) return undefined;
+  const sigla = siglaEdificio.trim().toUpperCase();
+  for (const campus of getCampusList()) {
+    if (campus.edificios.includes(sigla) || campus.edificiosInfo?.[sigla]) {
+      return { ...(campus.edificiosInfo?.[sigla] || {}), sigla, campus };
+    }
+  }
+  return undefined;
+}
+
+/** Etiqueta para mostrar un edificio: "CML01 · Edificio Central" (o solo la sigla si no tiene nombre). */
+export function etiquetaEdificio(siglaEdificio: string): string {
+  const nombre = obtenerInfoEdificio(siglaEdificio)?.nombre;
+  return nombre ? `${siglaEdificio} · ${nombre}` : siglaEdificio;
+}
+
+/** Texto del edificio para dar contexto a la IA: "edificio CML01 (Biblioteca, Fac. de Educación, 2.450 m², uso docencia)". */
+export function descripcionEdificioParaIA(siglaEdificio: string): string {
+  const info = obtenerInfoEdificio(siglaEdificio);
+  const datos = [
+    info?.nombre,
+    info?.facultad,
+    info?.superficieM2 ? `${info.superficieM2.toLocaleString('es-CL')} m² construidos` : '',
+    info?.uso ? `uso ${info.uso}` : '',
+  ].filter(Boolean);
+  return datos.length ? `edificio ${siglaEdificio} (${datos.join(', ')})` : `edificio ${siglaEdificio}`;
 }
 
 export function buscarCampusYEdificioPorTexto(texto: string): { campus?: CampusInfo; edificio?: string } {

@@ -1,3 +1,4 @@
+import { guardarConfigCompartida } from './configCompartida';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { storage } from '../lib/firebase';
 import type { Proveedor, LicitacionProyecto, Cotizacion, ConfiguracionFirmas } from '../types';
@@ -70,7 +71,7 @@ export const storageService = {
   },
 
   saveConfigFirmas(config: ConfiguracionFirmas): void {
-    localStorage.setItem(KEYS.CONFIG_FIRMAS, JSON.stringify(config));
+    guardarConfigCompartida(KEYS.CONFIG_FIRMAS, config);
   },
 
   resetAllData(): void {

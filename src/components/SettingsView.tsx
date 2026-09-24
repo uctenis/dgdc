@@ -27,7 +27,8 @@ import {
   saveRubrosList,
   type RubroProveedor,
 } from '../data/rubrosData';
-import { getCampusList, saveCampusList, type CampusInfo } from '../data/campusData';
+import { obtenerEstadoConfigCompartida } from '../services/configCompartida';
+import { getCampusList, saveCampusList, type CampusInfo, type EdificioInfo } from '../data/campusData';
 import {
   Settings,
   Save,
@@ -369,6 +370,42 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setNuevoEdificioInput('');
   };
 
+  const actualizarInfoEdificio = (sigla: string, cambios: Partial<EdificioInfo>) => {
+    const actual = campusEditando.edificiosInfo?.[sigla] || {};
+    setCampusEditando({
+      ...campusEditando,
+      edificiosInfo: { ...(campusEditando.edificiosInfo || {}), [sigla]: { ...actual, ...cambios } },
+    });
+  };
+
+  // Pegar filas copiadas desde Excel/Sheets: Sigla | Nombre | Facultad/Unidad | Superficie m² | Uso
+  // (separadas por tabulación). Agrega los edificios que falten y completa/actualiza su ficha.
+  const [textoPegarEdificios, setTextoPegarEdificios] = useState('');
+  const handlePegarEdificios = () => {
+    const filas = textoPegarEdificios.split(/\r?\n/).map(l => l.split('\t').map(c => c.trim())).filter(c => c[0]);
+    if (filas.length === 0) return;
+    const edificios = [...campusEditando.edificios];
+    const info = { ...(campusEditando.edificiosInfo || {}) };
+    let n = 0;
+    for (const [siglaRaw, nombre, facultad, superficie, uso] of filas) {
+      const sigla = siglaRaw.toUpperCase();
+      if (!/^[A-Z0-9-]{2,12}$/.test(sigla) || !/\d/.test(sigla)) continue; // omite encabezados ("Sigla") u otras filas
+      if (!edificios.includes(sigla)) edificios.push(sigla);
+      const m2 = Number(String(superficie || '').replace(/\./g, '').replace(',', '.'));
+      info[sigla] = {
+        ...(info[sigla] || {}),
+        ...(nombre ? { nombre } : {}),
+        ...(facultad ? { facultad } : {}),
+        ...(m2 > 0 ? { superficieM2: m2 } : {}),
+        ...(uso ? { uso } : {}),
+      };
+      n++;
+    }
+    setCampusEditando({ ...campusEditando, edificios, edificiosInfo: info });
+    setTextoPegarEdificios('');
+    alert(`${n} edificio(s) cargados. Revise la tabla y presione "Actualizar Campus" para guardar.`);
+  };
+
   const handleQuitarEdificio = (edificio: string) => {
     setCampusEditando({ ...campusEditando, edificios: campusEditando.edificios.filter(e => e !== edificio) });
   };
@@ -678,6 +715,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <p className="text-xs text-slate-500 mt-0.5">
               Administración centralizada de parámetros de licitación, centros de costo, tipos de obra, estados de proyectos, responsables, firmantes y sedes.
             </p>
+            {(() => {
+              const est = obtenerEstadoConfigCompartida();
+              return est.sincronizado ? (
+                <p className="text-[10px] font-bold text-emerald-700 mt-1">✓ Compartida en Firebase: lo que guarde aquí lo ven todos los usuarios.</p>
+              ) : (
+                <p className="text-[10px] font-bold text-amber-700 mt-1" title={est.error}>
+                  ⚠ Sin conexión con la configuración compartida: los cambios quedan solo en este navegador{est.error ? ` (${est.error.slice(0, 80)})` : ''}.
+                </p>
+              );
+            })()}
           </div>
         </div>
 
@@ -2336,20 +2383,56 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           <span>Agregar</span>
                         </button>
                       </div>
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {campusEditando.edificios.length === 0 ? (
-                          <span className="text-[11px] text-slate-400 italic">Sin edificios agregados aún.</span>
-                        ) : (
-                          campusEditando.edificios.map(ed => (
-                            <span key={ed} className="flex items-center gap-1 bg-white border border-slate-300 rounded-lg px-2 py-1 font-mono font-bold text-[11px] text-slate-700">
-                              {ed}
-                              <button type="button" onClick={() => handleQuitarEdificio(ed)} className="text-slate-400 hover:text-rose-600">
-                                <X className="w-3 h-3" />
-                              </button>
-                            </span>
-                          ))
-                        )}
-                      </div>
+                      {campusEditando.edificios.length === 0 ? (
+                        <p className="text-[11px] text-slate-400 italic mt-2">Sin edificios agregados aún.</p>
+                      ) : (
+                        <div className="mt-2 border border-slate-200 rounded-xl overflow-x-auto bg-white">
+                          <table className="w-full text-left text-[11px] min-w-[760px]">
+                            <thead className="bg-slate-100 text-slate-600">
+                              <tr>
+                                <th className="p-2">Sigla</th>
+                                <th className="p-2">Nombre del edificio</th>
+                                <th className="p-2">Facultad / Unidad</th>
+                                <th className="p-2 w-24">Superficie m²</th>
+                                <th className="p-2">Uso principal</th>
+                                <th className="p-2">Carpeta Drive</th>
+                                <th className="p-2 w-8"></th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {campusEditando.edificios.map(ed => {
+                                const info = campusEditando.edificiosInfo?.[ed] || {};
+                                const celda = 'w-full px-2 py-1 border border-slate-200 rounded-md outline-none focus:ring-1 focus:ring-sky-500';
+                                return (
+                                  <tr key={ed}>
+                                    <td className="p-1.5 font-mono font-bold text-slate-700">{ed}</td>
+                                    <td className="p-1.5"><input value={info.nombre || ''} onChange={e => actualizarInfoEdificio(ed, { nombre: e.target.value })} placeholder="Ej: Edificio Central" className={celda} /></td>
+                                    <td className="p-1.5"><input value={info.facultad || ''} onChange={e => actualizarInfoEdificio(ed, { facultad: e.target.value })} placeholder="Ej: Fac. de Ingeniería" className={celda} /></td>
+                                    <td className="p-1.5"><input value={info.superficieM2 ? String(info.superficieM2) : ''} onChange={e => { const n = Number(e.target.value.replace(/[^0-9.,]/g, '').replace(',', '.')); actualizarInfoEdificio(ed, { superficieM2: n > 0 ? n : undefined }); }} inputMode="decimal" placeholder="0" className={`${celda} text-right`} /></td>
+                                    <td className="p-1.5"><input value={info.uso || ''} onChange={e => actualizarInfoEdificio(ed, { uso: e.target.value })} placeholder="Docencia, laboratorios…" className={celda} /></td>
+                                    <td className="p-1.5"><input value={info.driveUrl || ''} onChange={e => actualizarInfoEdificio(ed, { driveUrl: e.target.value.trim() })} placeholder="https://drive.google.com/…" className={celda} /></td>
+                                    <td className="p-1.5 text-center">
+                                      <button type="button" title="Quitar edificio" onClick={() => handleQuitarEdificio(ed)} className="text-slate-400 hover:text-rose-600"><X className="w-3.5 h-3.5" /></button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                      <details className="mt-2">
+                        <summary className="cursor-pointer text-[11px] font-bold text-sky-700">Cargar varios edificios pegando desde Excel</summary>
+                        <p className="text-[10px] text-slate-500 mt-1">Copie columnas en este orden: <strong>Sigla · Nombre · Facultad/Unidad · Superficie m² · Uso</strong> (las últimas son opcionales) y péguelas aquí.</p>
+                        <textarea
+                          value={textoPegarEdificios}
+                          onChange={e => setTextoPegarEdificios(e.target.value)}
+                          rows={4}
+                          placeholder={'CML01\tEdificio Central\tRectoría\t2450\tAdministración'}
+                          className="w-full mt-1 px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none font-mono text-[11px]"
+                        />
+                        <button type="button" onClick={handlePegarEdificios} disabled={!textoPegarEdificios.trim()} className="mt-1 px-3 py-1.5 bg-sky-700 hover:bg-sky-800 disabled:opacity-40 text-white font-bold rounded-lg">Cargar filas</button>
+                      </details>
                     </div>
 
                     <div className="flex items-center justify-end gap-2 pt-2">
@@ -2398,7 +2481,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         )}
                         <div className="pt-1 flex items-center justify-between text-[11px] text-slate-600 border-t border-slate-100">
                           <span>Edificios asociados:</span>
-                          <strong className="text-sky-700 font-mono">{c.edificios.length}</strong>
+                          <strong className="text-sky-700 font-mono">
+                            {c.edificios.length}
+                            <span className="text-slate-400 font-sans font-medium"> · {c.edificios.filter(e => c.edificiosInfo?.[e]?.nombre).length} con nombre</span>
+                          </strong>
                         </div>
                       </div>
                     ))

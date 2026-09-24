@@ -36,6 +36,14 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/licitaciones/$(licId)/invitados/$(miProveedorId()));
     }
 
+    // ── Configuración compartida (campus/edificios, nómina, catálogos, plantillas) ──
+    // La lee todo el personal UCT (se necesita para validar la nómina al entrar); solo el
+    // administrador del sistema la modifica.
+    match /configuracion/{clave} {
+      allow read: if esInterno();
+      allow write: if esInterno() && request.auth.token.email.lower() == 'dsilva@uct.cl';
+    }
+
     // ── Perfiles ───────────────────────────────────────────────────────────
     match /usuarios/{uid} {
       allow read: if esInterno() || (autenticado() && request.auth.uid == uid);

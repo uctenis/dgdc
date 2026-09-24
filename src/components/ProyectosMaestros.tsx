@@ -16,7 +16,7 @@ import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
 import { corregirOrtografiaEspanol, corregirTextoAvanzado, normalizarNombreProyecto, ATRIBUTOS_ORTOGRAFIA_ES } from '../utils/spellCorrector';
 import { mejorarDescripcionProyectoConIA, isAIConfigured, mensajeErrorIA } from '../services/aiService';
-import { getCampusList, obtenerEdificiosDeCampus, obtenerCampusPorSigla } from '../data/campusData';
+import { getCampusList, obtenerEdificiosDeCampus, obtenerCampusPorSigla, etiquetaEdificio, descripcionEdificioParaIA } from '../data/campusData';
 import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
 import { getCentrosCostoList } from '../data/centrosCostoData';
 import { getRubrosList } from '../data/rubrosData';
@@ -127,7 +127,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
         uso: form.uso,
         ubicacion: campus
           ? [
-              form.edificioSigla ? `edificio ${form.edificioSigla}` : '',
+              form.edificioSigla ? descripcionEdificioParaIA(form.edificioSigla) : '',
               `${campus.nombre} (sigla ${campus.sigla})`,
               campus.direccion || '',
               `${campus.ciudad}, ${campus.ciudad === 'Santiago' ? 'Región Metropolitana' : 'Región de La Araucanía'}, Chile`,
@@ -808,7 +808,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                             <option value="">-- Edificio --</option>
                             {obtenerEdificiosDeCampus(p.campusSigla).map(ed => (
                               <option key={ed} value={ed}>
-                                Ed. {ed}
+                                {etiquetaEdificio(ed)}
                               </option>
                             ))}
                           </select>
@@ -1197,7 +1197,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                         ) : (
                           obtenerEdificiosDeCampus(form.campusSigla).map(ed => (
                             <option key={ed} value={ed}>
-                              Edificio {ed}
+                              {etiquetaEdificio(ed)}
                             </option>
                           ))
                         )}

@@ -17,6 +17,8 @@ import { LicitacionWorkspacePage, type TabId } from './components/LicitacionWork
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { BandejaOPPage } from './components/BandejaOPPage';
 import { BandejaOPDemo } from './pages/BandejaOPDemo';
+import { EVENTO_CONFIG_ACTUALIZADA } from './services/configCompartida';
+import { reloadResponsables } from './data/responsablesData';
 import { InternalLoginPage } from './pages/InternalLoginPage';
 import { PortalBloqueoProveedor } from './pages/PortalBloqueoProveedor';
 import { PortalInvitacionPage } from './pages/PortalInvitacionPage';
@@ -44,6 +46,18 @@ import { esProcesoSimplificado } from './data/contratoTemplateData';
 import { isProjectResponsible } from './services/internalAccessService';
 
 function AdminApp() {
+  // Cuando llega configuración nueva desde Firebase (ej. el administrador editó campus o la nómina en
+  // otro equipo) se vuelve a dibujar todo para que los catálogos se lean de nuevo.
+  const [, setVersionConfig] = useState(0);
+  useEffect(() => {
+    const alActualizar = () => {
+      reloadResponsables();
+      setConfigFirmas(storageService.getConfigFirmas());
+      setVersionConfig(v => v + 1);
+    };
+    window.addEventListener(EVENTO_CONFIG_ACTUALIZADA, alActualizar);
+    return () => window.removeEventListener(EVENTO_CONFIG_ACTUALIZADA, alActualizar);
+  }, []);
   const { user, isAdmin, isSecretaria } = useAuth();
   const soloBandejaOP = isSecretaria && !isAdmin;
   const [activeTab, setActiveTab] = useState<string>(soloBandejaOP ? 'bandeja-op' : 'proyectos-maestros');

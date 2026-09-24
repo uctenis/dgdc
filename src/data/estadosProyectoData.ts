@@ -1,3 +1,4 @@
+import { guardarConfigCompartida } from '../services/configCompartida';
 export interface EstadoProyectoInfo {
   id: string;
   nombre: string;
@@ -34,7 +35,7 @@ export function getEstadosProyectoList(): EstadoProyectoInfo[] {
 
 export function saveEstadosProyectoList(list: EstadoProyectoInfo[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    guardarConfigCompartida(STORAGE_KEY, list);
   } catch (e) {
     console.error('Error al guardar estados de proyecto:', e);
   }

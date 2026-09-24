@@ -1,3 +1,4 @@
+import { guardarConfigCompartida } from '../services/configCompartida';
 export interface TipoObraInfo {
   id: string;
   nombre: string;
@@ -91,7 +92,7 @@ export function getTiposObraList(): TipoObraInfo[] {
     }
     const lista: TipoObraInfo[] = JSON.parse(raw);
     const completa = completarConCatalogo(lista);
-    if (completa !== lista) localStorage.setItem(STORAGE_KEY, JSON.stringify(completa));
+    if (completa !== lista) guardarConfigCompartida(STORAGE_KEY, completa);
     return completa;
   } catch {
     return INITIAL_TIPOS_OBRA;
@@ -100,7 +101,7 @@ export function getTiposObraList(): TipoObraInfo[] {
 
 export function saveTiposObraList(list: TipoObraInfo[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    guardarConfigCompartida(STORAGE_KEY, list);
   } catch (e) {
     console.error('Error al guardar tipos de obra:', e);
   }

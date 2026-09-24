@@ -1,3 +1,4 @@
+import { guardarConfigCompartida } from '../services/configCompartida';
 export interface CentroCosto {
   codigoCP: string;
   nombre: string;
@@ -30,7 +31,7 @@ export function getCentrosCostoList(): CentroCosto[] {
 
 export function saveCentrosCostoList(list: CentroCosto[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    guardarConfigCompartida(STORAGE_KEY, list);
   } catch (e) {
     console.error('Error al guardar centros de costo:', e);
   }

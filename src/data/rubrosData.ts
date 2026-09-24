@@ -1,3 +1,4 @@
+import { guardarConfigCompartida } from '../services/configCompartida';
 // Gestión de Rubros de Proveedores con Persistencia en LocalStorage
 
 export interface RubroProveedor {
@@ -45,7 +46,7 @@ export function getRubrosList(): RubroProveedor[] {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
       const completa = agregarRubrosNuevosDelCatalogo(parsed);
-      if (completa !== parsed) localStorage.setItem(STORAGE_KEY, JSON.stringify(completa));
+      if (completa !== parsed) guardarConfigCompartida(STORAGE_KEY, completa);
       return completa;
     }
     return INITIAL_RUBROS;
@@ -57,7 +58,7 @@ export function getRubrosList(): RubroProveedor[] {
 
 export function saveRubrosList(list: RubroProveedor[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    guardarConfigCompartida(STORAGE_KEY, list);
   } catch (e) {
     console.error('Error guardando rubros de proveedores:', e);
   }
