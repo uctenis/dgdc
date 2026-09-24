@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileCheck2, Sparkles, Loader2, AlertTriangle, Download, CheckCircle2, RotateCcw } from 'lucide-react';
 import type { ProyectoMaestro, EspecificacionPartida, EspecificacionesTecnicasProyecto } from '../types';
-import { updateProyectoMaestro } from '../services/firestoreService';
+import { updateProyectoMaestro, setAprobacionPresupuesto } from '../services/firestoreService';
 import {
   generarGeneralidadesEETTConIA,
   generarEspecificacionesPartidasConIA,
@@ -37,7 +37,7 @@ function contextoDesdeProyecto(p: ProyectoMaestro): ContextoProyectoEETT {
 }
 
 export function EETTProyectoPanel({ proyecto }: Props) {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const partidas = useMemo(() => proyecto.itemizado || [], [proyecto.itemizado]);
   const grupos = useMemo(() => agruparPorFase(partidas), [partidas]);
 
@@ -251,10 +251,26 @@ export function EETTProyectoPanel({ proyecto }: Props) {
         </div>
       </div>
 
+      {/* Aviso informativo (no bloquea): el itemizado está guardado, pero el proyecto aún no fue
+          aprobado por el administrador para el Presupuesto Anual ("Aprobar Ppto" en la Cartera). */}
       {!proyecto.presupuesto?.aprobado && (
-        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-[11px] text-amber-900">
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          <span>El Presupuesto Estimativo de este proyecto aún no está aprobado. Puede generar las EETT igual, pero si cambian las partidas tendrá que completarlas o regenerarlas.</span>
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-sky-50 border border-sky-200 rounded-lg p-2.5 text-[11px] text-sky-900">
+          <span className="flex items-start gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>
+              El presupuesto está guardado ({partidas.length} partidas), pero el proyecto aún <strong>no está aprobado en el Presupuesto Anual</strong>
+              {isAdmin ? '.' : ' (lo aprueba el administrador con "Aprobar Ppto" en la Cartera).'} Puede generar las EETT igual; si después cambian las partidas, use "Completar partidas faltantes".
+            </span>
+          </span>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setAprobacionPresupuesto(proyecto.id, true, { nombre: user?.displayName, email: user?.email })}
+              className="px-3 py-1 bg-sky-700 hover:bg-sky-800 text-white rounded-lg font-bold shrink-0"
+            >
+              Aprobar presupuesto
+            </button>
+          )}
         </div>
       )}
 

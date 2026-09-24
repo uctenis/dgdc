@@ -1,6 +1,7 @@
 import type { ProyectoMaestro, ItemItemizadoProyecto } from '../types';
 import { generarEETTWord } from '../services/eettDocxGenerator';
 import { INITIAL_CONFIG_FIRMAS } from '../data/initialData';
+import { ItemizadoProyectoPanel } from '../components/ItemizadoProyectoPanel';
 
 // SOLO servidor local (ruta /demo/eett): genera un Word de EETT con datos de ejemplo para revisar
 // el formato de exportación sin sesión de Firebase.
@@ -38,6 +39,9 @@ export function EETTDemo() {
       >
         Exportar EETT de ejemplo
       </button>
+      {new URLSearchParams(window.location.search).has('presupuesto') && (
+        <div className="mt-6"><ItemizadoProyectoPanel proyecto={{ ...proyecto, itemizado: partidas }} /></div>
+      )}
     </main>
   );
 }

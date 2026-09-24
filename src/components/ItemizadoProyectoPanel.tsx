@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { Plus, Trash2, Sparkles, Loader2, ListChecks, AlertTriangle, Download, Calculator, FileSpreadsheet, Upload } from 'lucide-react';
+import { Plus, Trash2, Sparkles, Loader2, ListChecks, AlertTriangle, Download, Calculator, FileSpreadsheet, Upload, Pencil, Lock } from 'lucide-react';
 import { FASES_ITEMIZADO } from '../types';
 import type { ItemItemizadoProyecto, ProyectoMaestro, ConfiguracionFirmas } from '../types';
 import { updateProyectoMaestro } from '../services/firestoreService';
@@ -54,6 +54,12 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
   // decimal desaparecería apenas se escribe (12, -> 12) y nunca se podría ingresar el decimal.
   const [textoCantidad, setTextoCantidad] = useState<Record<string, string>>({});
   const [errorAutoguardado, setErrorAutoguardado] = useState(false);
+  // Modo lectura por defecto para evitar modificaciones accidentales: la tabla se ve bloqueada y hay
+  // que presionar "Editar presupuesto" para cambiar algo. Un itemizado vacío se abre ya en edición.
+  const [modoEdicion, setModoEdicion] = useState<boolean>(() => (proyecto.itemizado || []).length === 0);
+  useEffect(() => {
+    if (items.length === 0) setModoEdicion(true);
+  }, [items.length]);
 
   // Autoguardado: antes, cargar un Excel, borrar o editar partidas quedaba solo en pantalla hasta
   // apretar "Guardar Itemizado" (al final de la lista) — al recargar o salir de la ficha se perdía
@@ -117,6 +123,7 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
   useEffect(() => {
     guardarPendienteAhora();
     idCargadoRef.current = proyecto.id;
+    setModoEdicion((proyecto.itemizado || []).length === 0);
     setItems(proyecto.itemizado || []);
     setGastosGeneralesPct(proyecto.itemizadoMarkup?.gastosGeneralesPct || 0);
     setUtilidadPct(proyecto.itemizadoMarkup?.utilidadPct || 0);
@@ -333,8 +340,26 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
             Desglose progresivo del Presupuesto Estimado — se puede ir completando a medida que se detalla el alcance del proyecto.
           </p>
         </div>
-        {items.length > 0 && (
-          <div className="flex items-center gap-2">
+        {items.length > 0 && !modoEdicion && (
+          <button
+            type="button"
+            onClick={() => setModoEdicion(true)}
+            className="flex items-center gap-1.5 bg-white hover:bg-indigo-50 border border-indigo-300 text-indigo-800 font-bold px-3 py-1.5 rounded-lg text-[11px] shadow-sm"
+            title="Desbloquear el presupuesto para modificar partidas, cantidades o precios"
+          >
+            <Pencil className="w-3.5 h-3.5" /> Editar presupuesto
+          </button>
+        )}
+        {items.length > 0 && modoEdicion && (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setModoEdicion(false)}
+              className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg text-[11px] shadow-sm"
+              title="Bloquear de nuevo el presupuesto (los cambios ya se guardan solos)"
+            >
+              <Lock className="w-3.5 h-3.5" /> Terminar edición
+            </button>
             <button
               type="button"
               onClick={() => setMostrarPresupuestoPreciso(true)}
@@ -455,8 +480,16 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
         {UNIDADES_CONSTRUCCION.map(u => <option key={u} value={u} />)}
       </datalist>
 
-      <div className="overflow-x-auto border border-slate-200 rounded-xl">
-        <table className="w-full text-[11px] min-w-[760px]">
+      {!modoEdicion && (
+        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[11px] text-slate-600">
+          <Lock className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+          <span>Presupuesto en <strong>modo lectura</strong>. Para modificar partidas, cantidades o precios presione <strong>Editar presupuesto</strong>.</span>
+        </div>
+      )}
+
+      <fieldset disabled={!modoEdicion} className="min-w-0 border-0 p-0 m-0">
+      <div className={`overflow-x-auto border rounded-xl ${modoEdicion ? 'border-indigo-300 ring-2 ring-indigo-100' : 'border-slate-200'}`}>
+        <table className={`w-full text-[11px] min-w-[760px] ${modoEdicion ? '' : '[&_input]:bg-transparent [&_input]:border-transparent [&_select]:bg-transparent [&_select]:border-transparent [&_select]:appearance-none'}`}>
           <thead className="bg-slate-900 text-white">
             <tr>
               <th className="p-2 text-left w-14">Item</th>
@@ -478,13 +511,15 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
                     <td colSpan={8} className="p-1.5 text-[10px] font-extrabold uppercase text-indigo-900 tracking-wide">
                       <div className="flex items-center justify-between">
                         <span>{grupo.fase}</span>
-                        <button
-                          type="button"
-                          onClick={() => agregarPartida(grupo.fase === SIN_FASE ? undefined : grupo.fase)}
-                          className="text-indigo-600 hover:text-indigo-900 font-bold normal-case flex items-center gap-1"
-                        >
-                          <Plus className="w-3 h-3" /> Agregar a esta fase
-                        </button>
+                        {modoEdicion && (
+                          <button
+                            type="button"
+                            onClick={() => agregarPartida(grupo.fase === SIN_FASE ? undefined : grupo.fase)}
+                            className="text-indigo-600 hover:text-indigo-900 font-bold normal-case flex items-center gap-1"
+                          >
+                            <Plus className="w-3 h-3" /> Agregar a esta fase
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -556,9 +591,11 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
                       </td>
                       <td className="p-2 text-right font-bold text-slate-700">{formatoMonedaCLP(item.precioTotal)}</td>
                       <td className="p-1 text-center">
-                        <button type="button" onClick={() => eliminarPartida(item.id)} className="p-1 text-rose-500 hover:text-rose-700">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {modoEdicion && (
+                          <button type="button" onClick={() => eliminarPartida(item.id)} className="p-1 text-rose-500 hover:text-rose-700" title="Eliminar partida">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -640,6 +677,7 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
           )}
         </table>
       </div>
+      </fieldset>
       </>
       )}
 
@@ -670,7 +708,8 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
                 setAplicandoPresupuesto(false);
               }
             }}
-            disabled={aplicandoPresupuesto}
+            disabled={aplicandoPresupuesto || !modoEdicion}
+            title={modoEdicion ? undefined : 'Presione "Editar presupuesto" para aplicar este monto'}
             className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-lg font-bold shrink-0 flex items-center gap-1.5"
           >
             {aplicandoPresupuesto ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
@@ -703,7 +742,7 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
         <button
           type="button"
           onClick={guardar}
-          disabled={!hayCambios || guardando}
+          disabled={!hayCambios || guardando || !modoEdicion}
           className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-xs font-bold shadow-sm flex items-center gap-2"
         >
           {guardando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
