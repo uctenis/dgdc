@@ -36,7 +36,7 @@ export function InternalLoginPage() {
         </div>
 
         <div className="mt-7 rounded-2xl border border-sky-300/20 bg-sky-300/10 p-4 text-xs text-sky-100">
-          <div className="flex gap-2"><ShieldCheck className="h-5 w-5 shrink-0 text-sky-300" /><p>Use su cuenta institucional de Google <strong>@uct.cl</strong>. El correo debe estar incluido en la nómina autorizada.</p></div>
+          <div className="flex gap-2"><ShieldCheck className="h-5 w-5 shrink-0 text-sky-300" /><p>Use su cuenta institucional de Google <strong>@uct.cl</strong>. El correo debe estar incluido en la nómina autorizada. Si su navegador tiene abierta otra cuenta (por ejemplo un Gmail personal), Google le preguntará con cuál entrar: elija la @uct.cl o use "Usar otra cuenta".</p></div>
         </div>
 
         {error && <div role="alert" className="mt-4 flex gap-2 rounded-xl border border-red-300/30 bg-red-400/10 p-3 text-xs text-red-100"><AlertCircle className="h-4 w-4 shrink-0" />{error}</div>}

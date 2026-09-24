@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import {
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
   GoogleAuthProvider,
   signOut,
   onAuthStateChanged,
@@ -41,6 +42,15 @@ const EMAIL_ENLACE_STORAGE_KEY = 'dgdc.portal.emailEnlaceIngreso';
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+/** Mensaje cuando se entra con una cuenta que no está en la nómina: dice CON QUÉ cuenta se intentó,
+ * porque lo típico es que el navegador tenga abierta otra cuenta (un Gmail personal). */
+function mensajeCuentaNoAutorizada(email?: string | null): string {
+  const cuenta = email || 'esa cuenta';
+  return (email || '').toLowerCase().endsWith('@uct.cl')
+    ? `La cuenta ${cuenta} no está en la nómina autorizada del sistema. Pida al administrador (${SYSTEM_ADMIN_EMAIL}) que la agregue.`
+    : `Intentó ingresar con ${cuenta}, que no es una cuenta institucional. Vuelva a hacer clic en "Continuar con Google" y elija su cuenta @uct.cl (si no aparece en la lista, use "Usar otra cuenta").`;
+}
+
 // Email del administrador (sin login propio — acceso directo si no hay user)
 // Si quieres proteger también al admin, agrega su email aquí:
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -68,7 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Un proveedor con perfil ya vinculado sí puede tener sesión Google (portal de proveedores).
           const perfilPrevio = await getUserProfile(firebaseUser.uid).catch(() => null);
           if (perfilPrevio?.role !== 'proveedor') {
-            setError('Este correo Google no está autorizado para ingresar al sistema interno.');
+            setError(mensajeCuentaNoAutorizada(firebaseUser.email));
             await signOut(auth);
             setUser(null);
             setProfile(null);
@@ -139,21 +149,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loginInternalWithGoogle = async () => {
     setError(null);
     const provider = new GoogleAuthProvider();
+    // select_account: Google SIEMPRE pregunta con qué cuenta entrar, aunque el navegador ya tenga
+    // otra sesión abierta (ej. un Gmail personal). hd: sugiere las cuentas @uct.cl primero.
     provider.setCustomParameters({ hd: 'uct.cl', prompt: 'select_account' });
     try {
       const credential = await signInWithPopup(auth, provider);
       if (!getInternalAccess(credential.user.email)) {
         await signOut(auth);
-        setError('Acceso denegado: el correo no pertenece a la nómina autorizada del sistema.');
+        setError(mensajeCuentaNoAutorizada(credential.user.email));
         throw new Error('INTERNAL_ACCESS_DENIED');
       }
     } catch (loginError) {
-      if ((loginError as Error).message !== 'INTERNAL_ACCESS_DENIED') {
-        const code = (loginError as { code?: string }).code;
-        setError(code === 'auth/popup-closed-by-user'
-          ? 'El inicio de sesión fue cancelado.'
-          : `Error (${code || 'Desconocido'}): Verifique que Google esté habilitado en Firebase.`);
+      if ((loginError as Error).message === 'INTERNAL_ACCESS_DENIED') throw loginError;
+      const code = (loginError as { code?: string }).code;
+      // Si el navegador bloquea la ventana emergente, se hace el mismo ingreso en la misma pestaña
+      // (redirección a Google y vuelta); al volver, onAuthStateChanged valida la nómina igual.
+      if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
+        await signInWithRedirect(auth, provider);
+        return;
       }
+      setError(
+        code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request'
+          ? 'Se cerró la ventana de Google antes de elegir la cuenta. Vuelva a intentarlo.'
+          : code === 'auth/unauthorized-domain'
+          ? `Este sitio (${window.location.hostname}) aún no está habilitado para iniciar sesión. Avise al administrador del sistema (${SYSTEM_ADMIN_EMAIL}).`
+          : code === 'auth/network-request-failed'
+          ? 'No hay conexión con Google. Revise su conexión a internet e intente nuevamente.'
+          : `No se pudo iniciar sesión con Google (${code || 'error desconocido'}). Intente nuevamente o avise a ${SYSTEM_ADMIN_EMAIL}.`
+      );
       throw loginError;
     }
   };
