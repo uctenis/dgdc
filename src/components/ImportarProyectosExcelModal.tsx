@@ -4,6 +4,7 @@ import { generarPlantillaProyectosExcel, parseProyectosExcel, type FilaProyectoI
 import { addProyectoMaestro } from '../services/firestoreService';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { obtenerCampusPorSigla } from '../data/campusData';
+import { useAuth } from '../context/AuthContext';
 
 interface ImportarProyectosExcelModalProps {
   onClose: () => void;
@@ -11,6 +12,8 @@ interface ImportarProyectosExcelModalProps {
 }
 
 export function ImportarProyectosExcelModal({ onClose, onImportado }: ImportarProyectosExcelModalProps) {
+  // Solo el administrador puede aprobar presupuestos: si importa otro usuario, la columna se ignora.
+  const { isAdmin } = useAuth();
   const [filas, setFilas] = useState<FilaProyectoImportada[]>([]);
   const [erroresGenerales, setErroresGenerales] = useState<string[]>([]);
   const [analizando, setAnalizando] = useState(false);
@@ -69,7 +72,7 @@ export function ImportarProyectosExcelModal({ onClose, onImportado }: ImportarPr
           modalidadContrato: f.datos.modalidadContrato,
           fechaInicio: f.datos.fechaInicio,
           fechaTermino: f.datos.fechaTermino,
-          presupuesto: f.datos.presupuestoAprobado
+          presupuesto: isAdmin && f.datos.presupuestoAprobado
             ? { aprobado: true, fecha: new Date().toISOString(), aprobadoPorNombre: 'Importación Excel' }
             : { aprobado: false },
           documentosAntecedentes: [],
@@ -167,7 +170,7 @@ export function ImportarProyectosExcelModal({ onClose, onImportado }: ImportarPr
                               {f.datos.fechaTermino ? new Date(f.datos.fechaTermino).toLocaleDateString('es-CL') : '—'}
                             </td>
                             <td className="p-2 text-center">
-                              {f.datos.presupuestoAprobado ? <span className="text-indigo-700 font-bold">✓</span> : <span className="text-slate-300">-</span>}
+                              {isAdmin && f.datos.presupuestoAprobado ? <span className="text-indigo-700 font-bold">✓</span> : <span className="text-slate-300">-</span>}
                             </td>
                             <td className="p-2">
                               {f.errores.length ? (

@@ -364,7 +364,9 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
     : 0;
   const presupuestoColor = pctPresupuestoUsado > 100 ? 'text-rose-700' : pctPresupuestoUsado >= 85 ? 'text-amber-700' : 'text-indigo-700';
 
+  // Aprobar o retirar un proyecto del Presupuesto Anual es exclusivo del administrador (dsilva@uct.cl).
   const handleToggleAprobacionPresupuesto = async (p: ProyectoMaestro) => {
+    if (!isAdmin) return;
     const yaAprobado = Boolean(p.presupuesto?.aprobado);
     await setAprobacionPresupuesto(p.id, !yaAprobado, {
       nombre: profile?.displayName || user?.displayName,
@@ -840,16 +842,18 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                           <button
                             type="button"
                             onClick={() => handleToggleAprobacionPresupuesto(p)}
-                            title={p.presupuesto?.aprobado
-                              ? `Aprobado para Presupuesto Anual por ${p.presupuesto.aprobadoPorNombre || p.presupuesto.aprobadoPorEmail || '—'} el ${p.presupuesto.fecha ? new Date(p.presupuesto.fecha).toLocaleDateString('es-CL') : '—'}. Clic para retirar.`
-                              : 'Fuera del Presupuesto Anual Proyectado. Clic para aprobar.'}
-                            className={`text-[9px] font-extrabold rounded-full px-2 py-0.5 border transition whitespace-nowrap ${
+                            disabled={!isAdmin}
+                            title={(p.presupuesto?.aprobado
+                              ? `Aprobado para Presupuesto Anual por ${p.presupuesto.aprobadoPorNombre || p.presupuesto.aprobadoPorEmail || '—'} el ${p.presupuesto.fecha ? new Date(p.presupuesto.fecha).toLocaleDateString('es-CL') : '—'}.`
+                              : 'Fuera del Presupuesto Anual Proyectado.')
+                              + (isAdmin ? (p.presupuesto?.aprobado ? ' Clic para retirar.' : ' Clic para aprobar.') : ' Solo el administrador puede aprobar presupuestos.')}
+                            className={`text-[9px] font-extrabold rounded-full px-2 py-0.5 border transition whitespace-nowrap disabled:cursor-default ${
                               p.presupuesto?.aprobado
-                                ? 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700'
-                                : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50 hover:text-slate-600'
+                                ? `bg-indigo-600 text-white border-indigo-600 ${isAdmin ? 'hover:bg-indigo-700' : ''}`
+                                : `bg-white text-slate-400 border-slate-200 ${isAdmin ? 'hover:bg-slate-50 hover:text-slate-600' : ''}`
                             }`}
                           >
-                            {p.presupuesto?.aprobado ? '✓ Aprob. Ppto' : 'Aprobar Ppto'}
+                            {p.presupuesto?.aprobado ? '✓ Aprob. Ppto' : isAdmin ? 'Aprobar Ppto' : 'Sin aprobar'}
                           </button>
                         </div>
                       </td>
