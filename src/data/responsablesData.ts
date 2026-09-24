@@ -24,6 +24,15 @@ export const INITIAL_RESPONSABLES: ResponsableInfraestructura[] = [
 
 const STORAGE_KEY = 'infra_app_responsables_v3';
 
+/**
+ * Correo real de la cuenta Google → correo con el que la persona figura en la nómina (y al que están
+ * asociados sus proyectos). Para cuando la cuenta institucional no coincide con el correo registrado,
+ * sin tener que cambiarlo y desvincular sus proyectos.
+ */
+export const ALIAS_CORREOS_INSTITUCIONALES: Record<string, string> = {
+  'jsolisdeovando@uct.cl': 'jsolis@uct.cl',
+};
+
 export function getResponsablesList(): ResponsableInfraestructura[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
