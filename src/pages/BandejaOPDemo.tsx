@@ -36,7 +36,7 @@ const COTIZACIONES: Cotizacion[] = [];
 export function BandejaOPDemo() {
   return (
     <main className="min-h-screen bg-slate-100/70 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <BandejaOPPage licitaciones={LICITACIONES} cotizaciones={COTIZACIONES} proveedores={[]} configFirmas={INITIAL_CONFIG_FIRMAS} />
+      <BandejaOPPage licitaciones={LICITACIONES} cotizaciones={COTIZACIONES} proveedores={[]} configFirmas={INITIAL_CONFIG_FIRMAS} simularSecretaria={new URLSearchParams(window.location.search).has('secretaria')} />
     </main>
   );
 }

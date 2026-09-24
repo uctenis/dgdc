@@ -24,6 +24,8 @@ interface Props {
   cotizaciones: Cotizacion[];
   proveedores: Proveedor[];
   configFirmas: ConfiguracionFirmas;
+  /** Solo para la demo local: mostrar la vista de Secretaría sin iniciar sesión con su cuenta. */
+  simularSecretaria?: boolean;
 }
 
 interface DocumentoPaquete {
@@ -80,8 +82,12 @@ function documentosParaKellun(l: LicitacionProyecto, oferta?: Cotizacion): Docum
   return docs;
 }
 
-export function BandejaOPPage({ licitaciones, cotizaciones, proveedores, configFirmas }: Props) {
-  const { isAdmin } = useAuth();
+export function BandejaOPPage({ licitaciones, cotizaciones, proveedores, configFirmas, simularSecretaria }: Props) {
+  const { isAdmin, isSecretaria } = useAuth();
+  // La tarea de Secretaría termina al registrar la OP: la OC la emite Finanzas/Adquisiciones y la
+  // sigue la Dirección. Por eso Secretaría no ve el seguimiento de OC, solo sus OP ya registradas.
+  const vistaSecretaria = (isSecretaria && !isAdmin) || Boolean(simularSecretaria);
+  const [ultimaRegistrada, setUltimaRegistrada] = useState<{ nombre: string; op: string } | null>(null);
   const [actaAbierta, setActaAbierta] = useState<LicitacionProyecto | null>(null);
   const [verEnFirma, setVerEnFirma] = useState(false);
   const [verConOC, setVerConOC] = useState(false);
@@ -98,6 +104,7 @@ export function BandejaOPPage({ licitaciones, cotizaciones, proveedores, configF
       enFirma: adjudicadas.filter(l => !actaFirmada(l) && !tieneOP(l) && l.estado === 'Adjudicado'),
       esperandoOC: adjudicadas.filter(l => tieneOP(l) && !tieneOC(l)).sort((a, b) => (a.opRegistro?.fecha || '').localeCompare(b.opRegistro?.fecha || '')),
       conOC: adjudicadas.filter(l => tieneOP(l) && tieneOC(l)).sort((a, b) => (b.fechaCargaOC || '').localeCompare(a.fechaCargaOC || '')).slice(0, 15),
+      registradas: adjudicadas.filter(l => tieneOP(l)).sort((a, b) => (b.opRegistro?.fecha || '').localeCompare(a.opRegistro?.fecha || '')).slice(0, 15),
     };
   }, [licitaciones]);
 
@@ -110,7 +117,9 @@ export function BandejaOPPage({ licitaciones, cotizaciones, proveedores, configF
           </h1>
           <p className="text-xs text-slate-500 mt-1 max-w-2xl">
             Actas de adjudicación firmadas que deben ingresarse en <strong>Kellun</strong>. Descargue el paquete de documentos,
-            súbalo en Kellun y registre aquí el N° de OP que le entregue. Cuando llegue la Orden de Compra, la licitación avanza sola.
+            súbalo en Kellun y registre aquí el N° de OP que le entregue. {vistaSecretaria
+              ? <strong>Al registrar la OP, su tarea con esa licitación queda completa.</strong>
+              : 'Cuando llegue la Orden de Compra, la licitación avanza sola.'}
           </p>
         </div>
         <a
@@ -125,9 +134,21 @@ export function BandejaOPPage({ licitaciones, cotizaciones, proveedores, configF
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Resumen etiqueta="Pendientes de OP" valor={grupos.pendientes.length} color="amber" />
-        <Resumen etiqueta="Con OP · esperando OC" valor={grupos.esperandoOC.length} color="indigo" />
+        {vistaSecretaria
+          ? <Resumen etiqueta="OP registradas" valor={grupos.registradas.length} color="indigo" />
+          : <Resumen etiqueta="Con OP · esperando OC" valor={grupos.esperandoOC.length} color="indigo" />}
         <Resumen etiqueta="Acta aún en firma" valor={grupos.enFirma.length} color="slate" />
       </div>
+
+      {ultimaRegistrada && (
+        <div className="flex items-start justify-between gap-3 bg-emerald-50 border border-emerald-300 rounded-xl p-3 text-xs text-emerald-900">
+          <p className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>OP <strong className="font-mono">{ultimaRegistrada.op}</strong> registrada para <strong>{ultimaRegistrada.nombre}</strong>. Tarea completa ✓</span>
+          </p>
+          <button onClick={() => setUltimaRegistrada(null)} className="text-emerald-700 font-bold">Cerrar</button>
+        </div>
+      )}
 
       <section className="space-y-3">
         <h2 className="text-sm font-extrabold text-slate-800 flex items-center gap-2">
@@ -136,10 +157,31 @@ export function BandejaOPPage({ licitaciones, cotizaciones, proveedores, configF
         {grupos.pendientes.length === 0 ? (
           <p className="text-xs text-slate-500 bg-white border border-slate-200 rounded-xl p-4">No hay actas firmadas pendientes de OP. 🎉</p>
         ) : (
-          grupos.pendientes.map(l => <TarjetaPendiente key={l.id} licitacion={l} oferta={ofertaDe(l)} onVerActa={() => setActaAbierta(l)} />)
+          grupos.pendientes.map(l => (
+            <TarjetaPendiente
+              key={l.id}
+              licitacion={l}
+              oferta={ofertaDe(l)}
+              onVerActa={() => setActaAbierta(l)}
+              onRegistrada={op => setUltimaRegistrada({ nombre: l.nombreProyecto, op })}
+            />
+          ))
         )}
       </section>
 
+      {vistaSecretaria ? (
+        <Plegable titulo={`OP ya registradas (últimas ${grupos.registradas.length})`} abierto={verConOC} onToggle={() => setVerConOC(v => !v)}>
+          <div className="bg-white border border-slate-200 rounded-2xl divide-y divide-slate-100">
+            {grupos.registradas.length === 0
+              ? <p className="text-xs text-slate-500 p-4">Aún no hay OP registradas.</p>
+              : grupos.registradas.map(l => (
+                <FilaSeguimiento key={l.id} licitacion={l} oferta={ofertaDe(l)} detalle={
+                  <>OP <strong className="font-mono">{l.codigoOP || l.ordenPedidoNumero}</strong> · registrada {formatearFecha(l.opRegistro?.fecha)}</>
+                } />
+              ))}
+          </div>
+        </Plegable>
+      ) : (<>
       <section className="space-y-3">
         <h2 className="text-sm font-extrabold text-slate-800 flex items-center gap-2">
           <Hourglass className="w-4 h-4 text-indigo-600" /> OP registrada · esperando Orden de Compra ({grupos.esperandoOC.length})
@@ -184,6 +226,7 @@ export function BandejaOPPage({ licitaciones, cotizaciones, proveedores, configF
             ))}
         </div>
       </Plegable>
+      </>)}
 
       {actaAbierta && (
         <ActaEvaluacionModal
@@ -255,7 +298,7 @@ function FilaSeguimiento({ licitacion, oferta, detalle }: { licitacion: Licitaci
   );
 }
 
-function TarjetaPendiente({ licitacion: l, oferta, onVerActa }: { licitacion: LicitacionProyecto; oferta?: Cotizacion; onVerActa: () => void }) {
+function TarjetaPendiente({ licitacion: l, oferta, onVerActa, onRegistrada }: { licitacion: LicitacionProyecto; oferta?: Cotizacion; onVerActa: () => void; onRegistrada: (op: string) => void }) {
   const { user } = useAuth();
   const docs = useMemo(() => documentosParaKellun(l, oferta), [l, oferta]);
   const [descargando, setDescargando] = useState(false);
@@ -316,6 +359,7 @@ function TarjetaPendiente({ licitacion: l, oferta, onVerActa }: { licitacion: Li
         await updateProyectoMaestro(l.proyectoMaestroId, { codigoOP: op }).catch(err =>
           console.warn('No se pudo reflejar la OP en la Cartera:', err));
       }
+      onRegistrada(op);
     } catch (err) {
       console.error('Error registrando OP:', err);
       setError('No se pudo registrar la OP. Revise su conexión e intente nuevamente.');
