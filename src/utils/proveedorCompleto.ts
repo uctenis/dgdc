@@ -10,7 +10,7 @@ export function datosEsencialesFaltantes(p: Proveedor): string[] {
   const faltan: string[] = [];
   const rut = (p.rut || '').replace(/[^0-9kK]/g, '');
   if (rut.length < 7) faltan.push('RUT');
-  else if (!validarRUT(p.rut)) faltan.push('RUT válido (dígito verificador incorrecto)');
+  else if (!validarRUT(p.rut).esValido) faltan.push('RUT válido (dígito verificador incorrecto)');
   if (!(p.razonSocial || '').trim()) faltan.push('razón social');
   if (!(p.email || '').includes('@')) faltan.push('correo');
   if (!(p.rubro || '').trim()) faltan.push('rubro');
