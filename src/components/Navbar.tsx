@@ -11,6 +11,7 @@ import {
   UserCircle2,
   BarChart3,
   TrendingUp,
+  ClipboardList,
 } from 'lucide-react';
 import { generarPlantillaCotizacionExcel } from '../services/templateGenerator';
 import { useAuth } from '../context/AuthContext';
@@ -21,11 +22,12 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
-  const { user, profile, isAdmin, logout } = useAuth();
+  const { user, profile, isAdmin, isSecretaria, logout } = useAuth();
   const allTabs = [
     { id: 'proyectos-maestros', label: 'Cartera de Proyectos 2026', icon: FileText },
     { id: 'avance-financiero', label: 'Avance Financiero', icon: TrendingUp },
     { id: 'licitaciones', label: 'Licitaciones', icon: FolderKanban },
+    { id: 'bandeja-op', label: 'Solicitudes OP', icon: ClipboardList, adminOnly: true },
     { id: 'proveedores',  label: 'Proveedores', icon: Building2, adminOnly: true },
     { id: 'cotizaciones', label: 'Cotizaciones', icon: FileSpreadsheet, contextual: true, adminOnly: true },
     { id: 'ficha-proyecto', label: 'Ficha del Proyecto', icon: FileText, contextual: true },
@@ -36,7 +38,10 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
     { id: 'configuracion', label: 'Configuración', icon: Settings, adminOnly: true },
   ];
 
-  const tabs = allTabs.filter(t => (!t.contextual || activeTab === t.id) && (!t.adminOnly || isAdmin));
+  // Secretaría (mbustos@uct.cl) solo trabaja en la bandeja de Solicitudes de OP.
+  const tabs = isSecretaria && !isAdmin
+    ? allTabs.filter(t => t.id === 'bandeja-op')
+    : allTabs.filter(t => (!t.contextual || activeTab === t.id) && (!t.adminOnly || isAdmin));
 
   return (
     <header

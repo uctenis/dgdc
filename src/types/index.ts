@@ -496,6 +496,13 @@ export interface LicitacionProyecto {
   // Traza Documental Legafos & Flujo Administrativo (OT → OP → OC)
   ordenTrabajoNumero?: string;      // ej: OT-2026-099 (Generada al adjudicar)
   ordenPedidoNumero?: string;       // ej: OP-2026-099 (Revisada por administración)
+  /** Registro de la OP obtenida en Kellun por Secretaría (bandeja Solicitudes de OP). */
+  opRegistro?: {
+    fecha: string;
+    registradoPor?: string;
+    archivoNombre?: string;
+    archivoURL?: string;
+  };
   ordenCompraNumero?: string;       // ej: OC-450012890 (Emitida por Finanzas)
   numeroContrato?: string;          // Contrato formal, cuando corresponda
   archivoOCNombre?: string;         // Nombre del archivo PDF/Excel de la OC subida

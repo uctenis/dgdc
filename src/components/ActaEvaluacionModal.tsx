@@ -15,6 +15,8 @@ interface ActaEvaluacionModalProps {
   configFirmas: ConfiguracionFirmas;
   onClose: () => void;
   onAdjudicar: (proveedorId: string, justificacion: string) => Promise<void>;
+  /** Solo ver e imprimir/exportar el acta (bandeja de Solicitudes de OP): sin editar, guardar ni adjudicar. */
+  soloLectura?: boolean;
 }
 
 export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
@@ -24,6 +26,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
   configFirmas,
   onClose,
   onAdjudicar,
+  soloLectura = false,
 }) => {
   const cotizacionesLicitacion = cotizaciones.filter(c => c.licitacionId === licitacion.id);
   const evaluaciones = evaluarCotizaciones(cotizacionesLicitacion);
@@ -559,14 +562,14 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
               <div className="p-3.5 bg-slate-50 border border-slate-900 rounded-xl space-y-2">
                 <div className="flex items-center justify-between no-print">
                   <label className="font-bold text-slate-900 text-xs">Texto Oficial del Acta de Adjudicación:</label>
-                  <button
+                  {!soloLectura && <button
                     type="button"
                     onClick={() => setModoEdicion(!modoEdicion)}
                     className="text-[10px] text-indigo-700 font-bold hover:underline flex items-center gap-1"
                   >
                     <Edit3 className="w-3 h-3" />
                     {modoEdicion ? 'Bloquear Edición' : 'Editar Texto del Acta'}
-                  </button>
+                  </button>}
                 </div>
                 <textarea
                   rows={3}
@@ -729,7 +732,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
             <span>Imprimir / Exportar PDF (2 Hojas)</span>
           </button>
 
-          <div className="flex items-center gap-3">
+          {!soloLectura && <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={handleGuardarActa}
@@ -763,7 +766,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
                 <span>{isGeneratingEmail ? 'Generando...' : 'Generar Solicitud OP (Enviar a Marioly)'}</span>
               </button>
             )}
-          </div>
+          </div>}
         </div>
 
       </div>

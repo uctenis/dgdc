@@ -23,6 +23,8 @@ interface AuthContextType {
   isAdmin: boolean;
   isInternalUser: boolean;
   isProveedor: boolean;
+  /** Secretaría (mbustos@uct.cl): solo gestiona la bandeja de Solicitudes de OP. */
+  isSecretaria: boolean;
   loginInternalWithGoogle: () => Promise<void>;
   loginDevBypass?: () => void;
   /** SOLO servidor local (import.meta.env.DEV): ver el portal como un proveedor, sin invitación real. */
@@ -134,6 +136,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isInternalUser = Boolean(effectiveUser && internalAccess);
   const isAdmin = Boolean(effectiveUser && effectiveUser.email?.toLowerCase() === SYSTEM_ADMIN_EMAIL);
   const isProveedor = !!effectiveUser && effectiveProfile?.role === 'proveedor';
+  const isSecretaria = internalAccess?.role === 'secretaria';
 
   const loginPortalDevBypass = (datos: { proveedorId: string; email: string; nombre: string }) => {
     if (!import.meta.env.DEV) return;
@@ -358,6 +361,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isAdmin,
         isInternalUser,
         isProveedor,
+        isSecretaria,
         loginInternalWithGoogle,
         loginDevBypass,
         loginPortalDevBypass: import.meta.env.DEV ? loginPortalDevBypass : undefined,

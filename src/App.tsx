@@ -15,6 +15,8 @@ import { FichaProyectoPage } from './components/FichaProyectoPage';
 import { LicitacionWorkspacePage, type TabId } from './components/LicitacionWorkspacePage';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { BandejaOPPage } from './components/BandejaOPPage';
+import { BandejaOPDemo } from './pages/BandejaOPDemo';
 import { InternalLoginPage } from './pages/InternalLoginPage';
 import { PortalBloqueoProveedor } from './pages/PortalBloqueoProveedor';
 import { PortalInvitacionPage } from './pages/PortalInvitacionPage';
@@ -42,8 +44,9 @@ import { esProcesoSimplificado } from './data/contratoTemplateData';
 import { isProjectResponsible } from './services/internalAccessService';
 
 function AdminApp() {
-  const { user, isAdmin } = useAuth();
-  const [activeTab, setActiveTab] = useState<string>('proyectos-maestros');
+  const { user, isAdmin, isSecretaria } = useAuth();
+  const soloBandejaOP = isSecretaria && !isAdmin;
+  const [activeTab, setActiveTab] = useState<string>(soloBandejaOP ? 'bandeja-op' : 'proyectos-maestros');
 
   // Core App State
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
@@ -260,7 +263,11 @@ function AdminApp() {
             </button>
           </div>
         )}
-        {activeTab === 'licitaciones' && (
+        {activeTab === 'bandeja-op' && (isAdmin || isSecretaria) && (
+          <BandejaOPPage licitaciones={licitaciones} cotizaciones={cotizaciones} proveedores={proveedores} configFirmas={configFirmas} />
+        )}
+
+        {!soloBandejaOP && activeTab === 'licitaciones' && (
           <ProjectManager
             licitaciones={licitaciones}
             proveedores={proveedores}
@@ -420,6 +427,7 @@ export function App() {
           {/* Provider routes */}
           <Route path="/portal/login" element={<PortalAccesoRestringido />} />
           {import.meta.env.DEV && <Route path="/portal/demo" element={<PortalDemo />} />}
+          {import.meta.env.DEV && <Route path="/demo/bandeja-op" element={<BandejaOPDemo />} />}
           {/* Único punto de entrada: el enlace de la invitación. Exige sesión y verifica la invitación. */}
           <Route path="/portal/licitacion/:id" element={<PortalInvitacionPage />} />
           {/* Cualquier otra ruta del portal: sin dashboard ni listados, solo la pantalla neutra */}

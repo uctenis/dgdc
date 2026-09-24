@@ -4,7 +4,18 @@ import { storageService } from './storageService';
 
 export const SYSTEM_ADMIN_EMAIL = 'dsilva@uct.cl';
 
-export type InternalRole = 'admin' | 'director' | 'subdirector' | 'responsable';
+export type InternalRole = 'admin' | 'director' | 'subdirector' | 'responsable' | 'secretaria';
+
+/**
+ * Secretaría de la Dirección: toma las actas de adjudicación firmadas, las ingresa en Kellun
+ * (sistema institucional, fuera de este) y registra aquí el N° de Orden de Pedido (OP) que Kellun
+ * le entrega. Solo ve la bandeja de Solicitudes de OP; no tiene permisos de administración.
+ */
+export const SECRETARIA_OP = {
+  email: 'mbustos@uct.cl',
+  nombre: 'Marioly Bustos',
+  cargo: 'Secretaria · Dirección de Gestión y Desarrollo de Campus',
+};
 
 export interface InternalAccess {
   email: string;
@@ -31,6 +42,10 @@ export function getInternalAccess(email?: string | null): InternalAccess | null 
       cargo: 'Administrador del sistema',
       role: 'admin',
     };
+  }
+
+  if (normalized === SECRETARIA_OP.email) {
+    return { email: normalized, nombre: SECRETARIA_OP.nombre, cargo: SECRETARIA_OP.cargo, role: 'secretaria' };
   }
 
   const director = configured.directorGestionCampus;
