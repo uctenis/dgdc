@@ -174,14 +174,14 @@ export function InscripcionProveedorPage() {
       </header>
 
       <main className="max-w-3xl mx-auto px-3 sm:px-4 py-5 space-y-4">
-        {inscripcion.estado === 'Enviada' && (
-          <Aviso tono="ok" titulo="Inscripción enviada">La UCT revisará sus antecedentes y se comunicará con usted al correo {datos.email}.</Aviso>
+        {(inscripcion.estado === 'Enviada' || inscripcion.estado === 'Solicitada a Adquisiciones' || inscripcion.estado === 'Aprobada') && (
+          <Aviso tono="ok" titulo="Inscripción enviada">Sus antecedentes están en revisión por la Unidad de Adquisiciones de la UCT. Le avisaremos al correo {datos.email} cuando su empresa quede registrada o si falta algún antecedente.</Aviso>
         )}
         {inscripcion.estado === 'Observada' && (
           <Aviso tono="alerta" titulo="La UCT solicita correcciones">{inscripcion.observaciones} Corrija lo indicado y vuelva a enviar.</Aviso>
         )}
-        {(inscripcion.estado === 'Aprobada' || inscripcion.estado === 'Solicitada a Adquisiciones' || inscripcion.estado === 'Registrada') && (
-          <Aviso tono="ok" titulo="Inscripción aprobada">Sus antecedentes fueron aprobados{inscripcion.estado === 'Registrada' ? ' y su empresa ya figura en el registro oficial de proveedores de la UCT' : '; la Unidad de Adquisiciones completará su registro oficial'}.</Aviso>
+        {inscripcion.estado === 'Registrada' && (
+          <Aviso tono="ok" titulo="Empresa registrada">Su empresa ya figura en el registro oficial de proveedores de la Universidad Católica de Temuco.</Aviso>
         )}
         {inscripcion.estado === 'Rechazada' && (
           <Aviso tono="error" titulo="Inscripción no aprobada">{inscripcion.observaciones}</Aviso>

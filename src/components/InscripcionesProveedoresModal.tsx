@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Copy, Leaf, Loader2, Mail, Send, UserPlus, X } from 'lucide-react';
 import {
-  aprobarInscripcion, crearInvitacionInscripcion, marcarRegistradaUCT, marcarSolicitadaAdquisiciones,
+  aprobarInscripcion, crearInvitacionInscripcion, marcarSolicitadaAdquisiciones,
   observarInscripcion, rechazarInscripcion, subscribeToInscripciones,
 } from '../services/firestoreService';
 import { useAuth } from '../context/AuthContext';
@@ -17,7 +17,13 @@ const ESTILO_ESTADO: Record<EstadoInscripcion, string> = {
   Registrada: 'bg-emerald-600 text-white',
   Rechazada: 'bg-red-100 text-red-800',
 };
-const ORDEN: EstadoInscripcion[] = ['Enviada', 'Aprobada', 'Solicitada a Adquisiciones', 'Observada', 'Invitada', 'Registrada', 'Rechazada'];
+const ORDEN: EstadoInscripcion[] = ['Enviada', 'Solicitada a Adquisiciones', 'Aprobada', 'Observada', 'Invitada', 'Registrada', 'Rechazada'];
+const ETIQUETA_ESTADO: Partial<Record<EstadoInscripcion, string>> = {
+  Enviada: 'Por enviar a Adquisiciones',
+  'Solicitada a Adquisiciones': 'En Adquisiciones',
+  Observada: 'Con correcciones pendientes',
+  Rechazada: 'No aprobada',
+};
 const fecha = (iso?: string) => (iso ? new Date(iso).toLocaleDateString('es-CL') : '—');
 const normalizarRut = (r = '') => r.replace(/[^0-9kK]/g, '').toUpperCase();
 const enlace = (codigo: string) => `${window.location.origin}${import.meta.env.BASE_URL}proveedores/inscripcion?t=${codigo}`;
@@ -30,7 +36,7 @@ function textoSolicitudAdquisiciones(ins: InscripcionProveedor): { asunto: strin
     .join('\n');
   return {
     asunto: `Solicitud de registro de proveedor — ${d?.razonSocial} (${d?.rut})`,
-    cuerpo: `Estimado Miguel:\n\nJunto con saludar, la Subdirección de Infraestructura solicita agregar al registro oficial de proveedores de la UCT a la siguiente empresa, cuyos antecedentes fueron revisados y aprobados:\n\n`
+    cuerpo: `Estimado Miguel:\n\nJunto con saludar, la Subdirección de Infraestructura invitó a la siguiente empresa a inscribirse como proveedor y solicita revisar sus antecedentes y agregarla al registro oficial de proveedores de la UCT. Le agradeceremos avisarnos cuando esté registrada o si falta algún antecedente:\n\n`
       + `Razón social: ${d?.razonSocial}\nRUT: ${d?.rut}\nGiro: ${d?.giro}\nRubro: ${d?.rubro}\nRepresentante legal: ${d?.representanteLegal} (${d?.rutRepresentante})\n`
       + `Contacto: ${d?.nombreContacto} · ${d?.email} · ${d?.telefono}\nDirección: ${d?.direccion}, ${d?.ciudad}\n`
       + `Cuenta bancaria: ${d?.datosBancarios.banco}, ${d?.datosBancarios.tipoCuenta} N° ${d?.datosBancarios.numeroCuenta}, titular ${d?.datosBancarios.titular} (${d?.datosBancarios.rutTitular})\n`
@@ -92,23 +98,14 @@ export function InscripcionesProveedoresModal({ proveedores, onClose }: { provee
     window.location.href = `mailto:${ins.emailInvitado}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
   };
 
-  const accion = async (ins: InscripcionProveedor, tipo: 'aprobar' | 'observar' | 'rechazar' | 'solicitar' | 'registrar') => {
+  const accion = async (ins: InscripcionProveedor, tipo: 'observar' | 'rechazar' | 'solicitar' | 'registrar') => {
     setAviso('');
     try {
       if (tipo === 'observar' || tipo === 'rechazar') {
-        const motivo = (prompt(tipo === 'observar' ? '¿Qué debe corregir la empresa? (lo verá en su enlace)' : '¿Por qué no se aprueba? (lo verá la empresa)') || '').trim();
+        const motivo = (prompt(tipo === 'observar' ? '¿Qué debe corregir o completar la empresa? (lo verá en su enlace)' : '¿Por qué no se aprueba? (lo verá la empresa)') || '').trim();
         if (!motivo) return;
         setProcesando(ins.id);
         await (tipo === 'observar' ? observarInscripcion(ins, motivo, por) : rechazarInscripcion(ins, motivo, por));
-      } else if (tipo === 'aprobar') {
-        const existente = proveedores.find(p => normalizarRut(p.rut) === normalizarRut(ins.datos?.rut));
-        const msg = existente
-          ? `Ya existe un proveedor con el RUT ${ins.datos?.rut} (${existente.razonSocial}). ¿Aprobar y completar esa ficha con los datos y documentos de la inscripción?`
-          : `¿Aprobar la inscripción de ${ins.datos?.razonSocial}? Quedará como proveedor activo en el sistema, con sus documentos.`;
-        if (!confirm(msg)) return;
-        setProcesando(ins.id);
-        await aprobarInscripcion(ins, por, existente?.id);
-        setAviso('Inscripción aprobada. Ahora solicite el registro oficial a Adquisiciones.');
       } else if (tipo === 'solicitar') {
         const { asunto, cuerpo } = textoSolicitudAdquisiciones(ins);
         window.location.href = `mailto:${CORREO_ADQUISICIONES_REGISTRO}?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
@@ -116,9 +113,15 @@ export function InscripcionesProveedoresModal({ proveedores, onClose }: { provee
         setProcesando(ins.id);
         await marcarSolicitadaAdquisiciones(ins, por);
       } else {
-        if (!confirm(`¿Adquisiciones confirmó que ${ins.datos?.razonSocial} ya está en el registro oficial de proveedores de la UCT?`)) return;
+        const existente = proveedores.find(p => normalizarRut(p.rut) === normalizarRut(ins.datos?.rut));
+        const msg = `¿Adquisiciones confirmó que ${ins.datos?.razonSocial} ya está en el registro oficial de proveedores de la UCT?\n\n`
+          + (existente
+            ? `Ya existe en el sistema con el RUT ${ins.datos?.rut} (${existente.razonSocial}): se completará esa ficha con los datos y documentos de la inscripción.`
+            : 'Quedará como proveedor activo en el sistema, con sus datos, cuenta bancaria y documentos.');
+        if (!confirm(msg)) return;
         setProcesando(ins.id);
-        await marcarRegistradaUCT(ins);
+        await aprobarInscripcion(ins, por, existente?.id);
+        setAviso(`${ins.datos?.razonSocial} quedó registrada como proveedor.`);
       }
     } catch (err) {
       console.error('Error procesando la inscripción:', err);
@@ -137,7 +140,7 @@ export function InscripcionesProveedoresModal({ proveedores, onClose }: { provee
         <div className="px-5 py-4 border-b border-slate-200 flex items-start justify-between gap-3">
           <div>
             <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2"><UserPlus className="w-4 h-4 text-sky-600" /> Inscripción de proveedores</h3>
-            <p className="text-[11px] text-slate-500">Solo por invitación: cada empresa recibe un enlace personal, sube los requisitos y la UCT aprueba y solicita el registro a Adquisiciones ({CORREO_ADQUISICIONES_REGISTRO}).</p>
+            <p className="text-[11px] text-slate-500">Solo por invitación: la empresa recibe un enlace personal y sube los requisitos; sus antecedentes se envían a Adquisiciones ({CORREO_ADQUISICIONES_REGISTRO}), que avisa cuando queda registrada.</p>
           </div>
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-700" title="Cerrar (Esc)"><X className="w-5 h-5" /></button>
         </div>
@@ -170,7 +173,7 @@ export function InscripcionesProveedoresModal({ proveedores, onClose }: { provee
                           {d?.rut ? `${d.rut} · ` : ''}{ins.emailInvitado} · invitada el {fecha(ins.fechaInvitacion)}{ins.fechaEnvio ? ` · enviada el ${fecha(ins.fechaEnvio)}` : ''}
                         </span>
                       </span>
-                      <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold ${ESTILO_ESTADO[ins.estado]}`}>{ins.estado}</span>
+                      <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold ${ESTILO_ESTADO[ins.estado]}`}>{ETIQUETA_ESTADO[ins.estado] || ins.estado}</span>
                     </button>
 
                     {esAbierta && (
@@ -227,17 +230,10 @@ export function InscripcionesProveedoresModal({ proveedores, onClose }: { provee
 
                         <div className="flex flex-wrap gap-2 pt-1">
                           {procesando === ins.id && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
-                          {ins.estado === 'Enviada' && (
-                            <>
-                              <button type="button" onClick={() => void accion(ins, 'aprobar')} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold">Aprobar</button>
-                              <button type="button" onClick={() => void accion(ins, 'observar')} className="px-3 py-1.5 rounded-lg border border-amber-400 text-amber-900 font-bold">Pedir correcciones</button>
-                              <button type="button" onClick={() => void accion(ins, 'rechazar')} className="px-3 py-1.5 rounded-lg border border-red-300 text-red-700 font-bold">Rechazar</button>
-                            </>
-                          )}
-                          {(ins.estado === 'Aprobada' || ins.estado === 'Solicitada a Adquisiciones') && (
+                          {(ins.estado === 'Enviada' || ins.estado === 'Solicitada a Adquisiciones' || ins.estado === 'Aprobada') && (
                             <>
                               <button type="button" onClick={() => void accion(ins, 'solicitar')} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-bold">
-                                <Send className="w-3 h-3" /> {ins.estado === 'Aprobada' ? 'Solicitar registro a Adquisiciones' : 'Reenviar solicitud'}
+                                <Send className="w-3 h-3" /> {ins.estado === 'Solicitada a Adquisiciones' ? 'Reenviar a Adquisiciones' : 'Enviar a Adquisiciones'}
                               </button>
                               <button type="button" onClick={() => { const t = textoSolicitudAdquisiciones(ins); void copiar(`${t.asunto}\n\n${t.cuerpo}`, 'Texto de la solicitud'); }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-300 font-bold">
                                 <Copy className="w-3 h-3" /> Copiar solicitud
@@ -245,7 +241,13 @@ export function InscripcionesProveedoresModal({ proveedores, onClose }: { provee
                             </>
                           )}
                           {ins.estado === 'Solicitada a Adquisiciones' && (
-                            <button type="button" onClick={() => void accion(ins, 'registrar')} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold">Marcar registrada en la UCT</button>
+                            <button type="button" onClick={() => void accion(ins, 'registrar')} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold">Adquisiciones confirmó: registrar</button>
+                          )}
+                          {(ins.estado === 'Enviada' || ins.estado === 'Solicitada a Adquisiciones') && (
+                            <>
+                              <button type="button" onClick={() => void accion(ins, 'observar')} className="px-3 py-1.5 rounded-lg border border-amber-400 text-amber-900 font-bold">Pedir correcciones</button>
+                              <button type="button" onClick={() => void accion(ins, 'rechazar')} className="px-3 py-1.5 rounded-lg border border-red-300 text-red-700 font-bold">No aprobar</button>
+                            </>
                           )}
                         </div>
                       </div>

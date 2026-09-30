@@ -1913,8 +1913,8 @@ export const marcarRegistradaUCT = (ins: InscripcionProveedor) =>
 const REQUISITOS_CON_VIGENCIA = new Set(REQUISITOS_INSCRIPCION.filter(r => r.vigenciaDias).map(r => r.id));
 
 /**
- * Aprueba la inscripción: crea el proveedor en el sistema (o completa el existente con el mismo RUT) con sus
- * datos, cuenta bancaria y documentos con vencimiento.
+ * Adquisiciones confirmó el registro oficial: crea el proveedor en el sistema (o completa el existente con el mismo
+ * RUT) con sus datos, cuenta bancaria y documentos con vencimiento, y deja la inscripción como Registrada.
  */
 export async function aprobarInscripcion(ins: InscripcionProveedor, por: string, proveedorExistenteId?: string): Promise<string> {
   const d = ins.datos;
@@ -1954,6 +1954,6 @@ export async function aprobarInscripcion(ins: InscripcionProveedor, por: string,
   let proveedorId = proveedorExistenteId;
   if (proveedorId) await updateProveedor(proveedorId, datosProveedor);
   else proveedorId = await addProveedor({ ...datosProveedor, estado: 'Activo' });
-  await cambiarEstadoInscripcion(ins, { estado: 'Aprobada', proveedorId, revisadaPor: por, fechaRevision: hoy }, 'Inscripción aprobada; proveedor agregado al sistema');
+  await cambiarEstadoInscripcion(ins, { estado: 'Registrada', proveedorId, revisadaPor: por, fechaRevision: hoy, fechaRegistroOficial: hoy.slice(0, 10) }, 'Adquisiciones confirmó el registro; proveedor agregado al sistema');
   return proveedorId;
 }
