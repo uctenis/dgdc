@@ -196,7 +196,19 @@ service cloud.firestore {
     // (Las licitaciones y sus subcolecciones tienen sus propias reglas arriba: un comodín aquí abriría las
     // ofertas selladas, porque en Firebase basta que UNA regla permita el acceso.)
     match /{coleccion}/{document=**} {
-      allow read, write: if esInterno() && coleccion != 'licitaciones' && coleccion != 'auditoria';
+      allow read, write: if esInterno() && coleccion != 'licitaciones' && coleccion != 'auditoria' && coleccion != 'inscripcionesProveedores';
+    }
+
+    // Inscripción de proveedores por invitación: el id del documento es el código secreto del enlace personal.
+    // Con el enlace se lee y completa SOLO esa inscripción (get, nunca list), y solo puede quedar en borrador o
+    // enviarse a revisión; aprobar, observar o rechazar es del personal interno.
+    match /inscripcionesProveedores/{codigo} {
+      allow get: if true;
+      allow list, create, delete: if esInterno();
+      allow update: if esInterno()
+        || (resource.data.estado in ['Invitada', 'Observada']
+            && request.resource.data.estado in [resource.data.estado, 'Enviada']
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['datos', 'documentos', 'sustentabilidad', 'estado', 'fechaEnvio']));
     }
 
     // Registro de cambios: cada entrada queda a nombre de quien la escribe y nadie la edita ni la borra.

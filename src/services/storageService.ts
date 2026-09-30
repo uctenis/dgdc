@@ -180,6 +180,20 @@ export function uploadDocumentoProveedor(proveedorId: string, file: File, onProg
   });
 }
 
+/** Requisitos de la inscripción de un proveedor: inscripciones/{código}/{requisito}_... (se suben sin sesión). */
+export function uploadDocumentoInscripcion(codigo: string, requisito: string, file: File, onProgress?: (pct: number) => void): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const nombreSeguro = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const task = uploadBytesResumable(ref(storage, `inscripciones/${codigo}/${requisito}_${Date.now()}_${nombreSeguro}`), file);
+    task.on(
+      'state_changed',
+      snapshot => onProgress?.(Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)),
+      reject,
+      async () => resolve(await getDownloadURL(task.snapshot.ref))
+    );
+  });
+}
+
 /**
  * Elimina un archivo de Storage dado su URL completa.
  */

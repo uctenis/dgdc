@@ -18,8 +18,9 @@ const app = initializeApp(firebaseConfig);
 // (p. ej. una propuesta sin observaciones). Si el módulo se vuelve a evaluar (recarga en caliente), se reutiliza la instancia.
 // Copia local de los datos (IndexedDB) para el sistema interno: las pantallas abren al instante con lo último
 // descargado y se sincronizan después; sirve varias pestañas a la vez. En el portal de proveedores (equipos
-// ajenos, a veces compartidos) no se deja copia en el equipo: solo memoria.
-const esPortalProveedores = typeof window !== 'undefined' && window.location.pathname.includes('/portal/');
+// ajenos, a veces compartidos) ni en la inscripción de proveedores se deja copia en el equipo: solo memoria.
+const esPortalProveedores = typeof window !== 'undefined'
+  && (window.location.pathname.includes('/portal/') || window.location.pathname.includes('/proveedores/inscripcion'));
 export const db = (() => {
   try {
     return initializeFirestore(app, {

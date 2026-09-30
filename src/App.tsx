@@ -58,6 +58,7 @@ const LicitacionDemo = lazy(() => import('./pages/LicitacionDemo').then(m => ({ 
 const IndicadoresDemo = lazy(() => import('./pages/IndicadoresDemo').then(m => ({ default: m.IndicadoresDemo })));
 const PreciosUnitariosPage = lazy(() => import('./components/PreciosUnitariosPage').then(m => ({ default: m.PreciosUnitariosPage })));
 const PreciosDemo = lazy(() => import('./pages/PreciosDemo').then(m => ({ default: m.PreciosDemo })));
+const InscripcionProveedorPage = lazy(() => import('./pages/InscripcionProveedorPage').then(m => ({ default: m.InscripcionProveedorPage })));
 const PortalDemo = lazy(() => import('./pages/PortalDemo').then(m => ({ default: m.PortalDemo })));
 const LicitacionWorkspacePage = lazy(() => import('./components/LicitacionWorkspacePage').then(m => ({ default: m.LicitacionWorkspacePage })));
 
@@ -543,6 +544,8 @@ export function App() {
           <Route path="/libro-obra/:id" element={<BloqueaProveedor><ProtectedInternalRoute><LibroObraMovilPage /></ProtectedInternalRoute></BloqueaProveedor>} />
 
           {/* Provider routes */}
+          {/* Inscripción de proveedores: solo con el enlace personal que envía la UCT (sin cuenta). */}
+          <Route path="/proveedores/inscripcion" element={<InscripcionProveedorPage />} />
           <Route path="/portal/login" element={<PortalAccesoRestringido />} />
           {import.meta.env.DEV && <Route path="/portal/demo" element={<PortalDemo />} />}
           {import.meta.env.DEV && <Route path="/demo/bandeja-op" element={<BandejaOPDemo />} />}

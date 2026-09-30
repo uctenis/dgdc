@@ -38,6 +38,40 @@ export interface Proveedor {
   fechaRegistro: string;
 }
 
+// ─── INSCRIPCIÓN DE PROVEEDORES POR INVITACIÓN ────────────────────────────
+// `inscripcionesProveedores/{código}`: la UCT invita a una empresa con un enlace personal (el código es el id del
+// documento); la empresa completa sus datos y sube los requisitos; la UCT revisa, aprueba y solicita a
+// Adquisiciones el registro oficial.
+export type EstadoInscripcion = 'Invitada' | 'Enviada' | 'Observada' | 'Aprobada' | 'Rechazada' | 'Solicitada a Adquisiciones' | 'Registrada';
+
+export interface DocumentoInscripcion { nombre: string; url: string; fechaEmision?: string; fechaCarga: string }
+
+export interface InscripcionProveedor {
+  id: string;
+  razonSocialInvitada: string;
+  emailInvitado: string;
+  invitadaPor: string;
+  fechaInvitacion: string;
+  estado: EstadoInscripcion;
+  datos?: {
+    rut: string; razonSocial: string; giro: string; rubro: string;
+    nombreContacto: string; email: string; telefono: string; direccion: string; ciudad: string;
+    representanteLegal: string; rutRepresentante: string;
+    datosBancarios: { banco: string; tipoCuenta: string; numeroCuenta: string; titular: string; rutTitular: string };
+  };
+  /** Requisito (id de REQUISITOS_INSCRIPCION) → archivo subido. */
+  documentos?: Record<string, DocumentoInscripcion>;
+  sustentabilidad?: { declara: boolean; descripcion?: string };
+  fechaEnvio?: string;
+  /** Observaciones de la UCT (al pedir correcciones o rechazar). */
+  observaciones?: string;
+  revisadaPor?: string;
+  fechaRevision?: string;
+  proveedorId?: string;
+  solicitudAdquisiciones?: { fecha: string; por: string };
+  fechaRegistroOficial?: string;
+}
+
 // ─── DOCUMENTOS DEL PROVEEDOR CON VENCIMIENTO ─────────────────────────────
 export const TIPOS_DOCUMENTO_PROVEEDOR = [
   'Certificado F30 (Antecedentes Laborales y Previsionales)',

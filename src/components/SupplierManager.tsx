@@ -3,9 +3,10 @@ import { DatosContratistaForm } from './DatosContratistaForm';
 import { datosContratistaVacios } from '../utils/datosContratista';
 import type { DatosContratista } from '../types';
 import type { Proveedor } from '../types';
-import { Building2, Search, Plus, Leaf, Edit3, Trash2, Phone, Mail, MapPin, Wifi, History, CheckCircle2, AlertCircle, Upload, Loader2, FileText, X, Trophy, FolderOpen } from 'lucide-react';
+import { Building2, Search, Plus, Leaf, Edit3, Trash2, Phone, Mail, MapPin, Wifi, History, CheckCircle2, AlertCircle, Upload, Loader2, FileText, X, Trophy, FolderOpen, UserPlus } from 'lucide-react';
 import { HistorialObrasModal } from './HistorialObrasModal';
 import { DocumentosProveedorModal } from './DocumentosProveedorModal';
+import { InscripcionesProveedoresModal } from './InscripcionesProveedoresModal';
 import { documentosConAviso } from '../utils/vencimientos';
 import { RankingDesempenoModal } from './RankingDesempenoModal';
 import { formatearRUT, validarRUT } from '../utils/rutUtils';
@@ -14,7 +15,7 @@ import { parseProveedorDesdeCotizacion } from '../utils/providerDocumentParser';
 import { getRubrosList } from '../data/rubrosData';
 import { ReclasificarRubrosModal } from './ReclasificarRubrosModal';
 import { datosEsencialesFaltantes } from '../utils/proveedorCompleto';
-import { getLicitacionesConInvitados, getEvaluacionesDesempenoDeProveedores, calcularPromedioDesempeno } from '../services/firestoreService';
+import { getLicitacionesConInvitados, getEvaluacionesDesempenoDeProveedores, calcularPromedioDesempeno, subscribeToInscripciones } from '../services/firestoreService';
 import { calcularCargaProveedores, cargaVacia, MESES_ROTACION, type CargaProveedor } from '../utils/cargaProveedores';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 
@@ -56,6 +57,10 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
   const [selectedHistorialProv, setSelectedHistorialProv] = useState<Proveedor | null>(null);
   // Por id: así la carpeta se actualiza en vivo al guardar un documento.
   const [documentosProvId, setDocumentosProvId] = useState<string | null>(null);
+  // Inscripciones por invitación: el número muestra las que esperan revisión.
+  const [inscripcionesAbierto, setInscripcionesAbierto] = useState(false);
+  const [inscripcionesPorRevisar, setInscripcionesPorRevisar] = useState(0);
+  useEffect(() => subscribeToInscripciones(lista => setInscripcionesPorRevisar(lista.filter(i => i.estado === 'Enviada').length)), []);
   const documentosProv = documentosProvId ? proveedores.find(p => p.id === documentosProvId) : undefined;
   const [rankingAbierto, setRankingAbierto] = useState(false);
   const [reclasificarAbierto, setReclasificarAbierto] = useState(false);
@@ -284,6 +289,17 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+          <button
+            onClick={() => setInscripcionesAbierto(true)}
+            className="relative flex items-center justify-center gap-2 bg-sky-50 hover:bg-sky-100 border border-sky-300 text-sky-800 font-semibold px-4 py-2.5 rounded-xl shadow-sm transition text-xs"
+            title="Invitar empresas a inscribirse como proveedores y revisar sus antecedentes"
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>Inscripciones</span>
+            {inscripcionesPorRevisar > 0 && (
+              <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-sky-600 text-white text-[10px] font-black flex items-center justify-center">{inscripcionesPorRevisar}</span>
+            )}
+          </button>
           <button
             onClick={() => setReclasificarAbierto(true)}
             className="flex items-center justify-center gap-2 bg-violet-50 hover:bg-violet-100 border border-violet-300 text-violet-800 font-semibold px-4 py-2.5 rounded-xl shadow-sm transition text-xs"
@@ -524,6 +540,10 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
           </div>
         ))}
       </div>
+
+      {inscripcionesAbierto && (
+        <InscripcionesProveedoresModal proveedores={proveedores} onClose={() => setInscripcionesAbierto(false)} />
+      )}
 
       {documentosProv && (
         <DocumentosProveedorModal

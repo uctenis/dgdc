@@ -35,12 +35,23 @@ service firebase.storage {
 
     // Todo lo demás: solo personal interno. Los documentos de antecedentes se entregan al proveedor mediante
     // los enlaces de descarga que ya guarda la licitación.
+    // Requisitos de la inscripción de proveedores: se suben con el enlace personal mientras la inscripción está
+    // abierta (PDF o imagen, hasta 15 MB). Se descargan con el enlace de descarga que guarda la inscripción.
+    match /inscripciones/{codigo}/{archivo} {
+      allow create: if firestore.get(/databases/(default)/documents/inscripcionesProveedores/$(codigo)).data.estado in ['Invitada', 'Observada']
+        && request.resource.size < 15 * 1024 * 1024
+        && request.resource.contentType.matches('application/pdf|image/.*');
+      allow get: if esInterno()
+        || firestore.get(/databases/(default)/documents/inscripcionesProveedores/$(codigo)).data.estado in ['Invitada', 'Observada'];
+      allow list, update, delete: if esInterno();
+    }
+
     // (Sin comodín sobre las ofertas: en Firebase basta que UNA regla permita, y abriría las ofertas selladas.)
     match /licitaciones/{licId}/{categoria}/{archivo=**} {
       allow read, write: if esInterno() && categoria != 'ofertas';
     }
     match /{carpeta}/{todo=**} {
-      allow read, write: if esInterno() && carpeta != 'licitaciones';
+      allow read, write: if esInterno() && carpeta != 'licitaciones' && carpeta != 'inscripciones';
     }
   }
 }
