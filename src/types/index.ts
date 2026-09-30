@@ -483,6 +483,27 @@ export interface Propuesta {
 }
 
 // ─── LICITACIÓN / PROYECTO ─────────────────────────────────────────────────
+// ─── MULTAS POR ATRASO ────────────────────────────────────────────────────
+// licitaciones/{id}/multas. Se calculan con PARAMETROS_CONTRATO (multa diaria sobre el contrato, con tope) y se
+// descuentan en el siguiente estado de pago. No aplican si el atraso es imputable a la UCT o por fuerza mayor.
+export interface MultaObra {
+  id: string;
+  /** Período de atraso que cubre (YYYY-MM-DD, ambos incluidos). */
+  desde: string;
+  hasta: string;
+  dias: number;
+  monto: number;
+  motivo: string;
+  estado: 'Aplicada' | 'Exenta' | 'Anulada';
+  /** Obligatoria si es Exenta o Anulada (ej. atraso por causa de la UCT o fuerza mayor). */
+  justificacion?: string;
+  /** Estado de pago en que se descontó. */
+  estadoPagoId?: string;
+  estadoPagoNumero?: number;
+  fechaRegistro: string;
+  registradaPor: string;
+}
+
 // ─── LIBRO DE OBRA DIGITAL ────────────────────────────────────────────────
 // licitaciones/{id}/libroObra/{entradaId} y sus fotos en libroObra/{entradaId}/fotos/{n}. Las anotaciones no se
 // editan ni se borran (como el libro en papel): un error se corrige con una nueva anotación que la referencia.
@@ -550,6 +571,8 @@ export interface LicitacionProyecto {
   estado: 'Borrador' | 'En Evaluacion' | 'Adjudicado' | 'Cerrado';
   proveedorAdjudicadoId?: string;
   aperturaOfertas?: RegistroAperturaOfertas;
+  /** Devolución de las retenciones de garantía al contratista (tras el acta de recepción). */
+  devolucionRetenciones?: { fecha: string; monto: number; registradaPor: string; observacion?: string };
   proveedorGanadorId?: string;
   justificacionAdjudicacion?: string;
   proveedorAdjudicadoNombre?: string;
@@ -810,6 +833,14 @@ export interface EstadoPago {
     fecha: string;
     sha256: string;
   };
+  /** Retención de garantía aplicada a este estado (según la política de garantías del contrato). */
+  retencionPct?: number;
+  montoRetencion?: number;
+  /** Multas por atraso descontadas en este estado (ids en licitaciones/{id}/multas). */
+  montoMultas?: number;
+  multasIds?: string[];
+  /** Monto a pagar: total del estado menos retención y multas. */
+  montoLiquido?: number;
   factura?: {
     numeroFactura: string;
     montoFactura: number;

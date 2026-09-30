@@ -19,12 +19,14 @@ const VISIBLES = 5;
 
 /**
  * Alerta general de vencimientos: garantías vigentes vencidas o por vencer (de las licitaciones de las que el
- * usuario es responsable; el administrador ve todas) y, para el administrador, documentos de proveedores activos.
+ * usuario es responsable; el administrador ve todas), obras fuera de plazo y, para el administrador, documentos de
+ * proveedores activos.
  */
-export function VencimientosAlerta({ licitaciones, proveedores, onAbrirGarantias, onAbrirProveedores }: {
+export function VencimientosAlerta({ licitaciones, proveedores, onAbrirGarantias, onAbrirPagos, onAbrirProveedores }: {
   licitaciones: LicitacionProyecto[];
   proveedores: Proveedor[];
   onAbrirGarantias: (licitacionId: string) => void;
+  onAbrirPagos: (licitacionId: string) => void;
   onAbrirProveedores: () => void;
 }) {
   const { user, isAdmin } = useAuth();
@@ -46,6 +48,23 @@ export function VencimientosAlerta({ licitaciones, proveedores, onAbrirGarantias
       estado,
       accion: () => onAbrirGarantias(lic.id),
       textoAccion: 'Ver garantía',
+    });
+  }
+  // Obras que pasaron su término contractual sin entregarse: corresponde revisar multas por atraso.
+  for (const lic of licitaciones) {
+    if (!(isAdmin || isProjectResponsible(user?.email, lic.responsableEmail))) continue;
+    const enEjecucion = Boolean(lic.proveedorAdjudicadoId || lic.proveedorGanadorId) && lic.estado !== 'Cerrado'
+      && lic.estadoLifecycle !== 'Finalizado' && !lic.recepcionConforme?.solicitada && !lic.recepcionConforme?.aprobada;
+    if (!enEjecucion || !lic.fechaTerminoProgramada) continue;
+    const estado = estadoVencimiento(lic.fechaTerminoProgramada);
+    if (estado.nivel !== 'vencido') continue;
+    avisos.push({
+      clave: `o-${lic.id}`,
+      titulo: 'Obra fuera de plazo',
+      detalle: `${lic.codigoProyecto || lic.codigoCP} ${lic.nombreProyecto}${lic.proveedorAdjudicadoNombre ? ` · ${lic.proveedorAdjudicadoNombre}` : ''}`,
+      estado: { ...estado, texto: `Plazo ${estado.texto.charAt(0).toLowerCase()}${estado.texto.slice(1)}` },
+      accion: () => onAbrirPagos(lic.id),
+      textoAccion: 'Ver multas',
     });
   }
   if (isAdmin) {

@@ -32,7 +32,7 @@ const licitacion = {
   montoEstimado: 6500000, fechaEvaluacion: enDias(-35), estado: 'Adjudicado', estadoLifecycle: 'En_Ejecucion',
   proveedorAdjudicadoId: proveedor.id, proveedorGanadorId: proveedor.id, proveedorAdjudicadoNombre: proveedor.razonSocial,
   cotizacionAdjudicadaId: cotizacion.id, montoAdjudicadoNeto: neto, montoAdjudicadoTotal: cotizacion.montoTotal,
-  plazoAdjudicadoDias: 60, fechaInicioObra: enDias(-25), fechaTerminoProgramada: enDias(35),
+  plazoAdjudicadoDias: 60, fechaInicioObra: enDias(-70), fechaTerminoProgramada: enDias(-11),
   proveedoresInvitadosIds: [proveedor.id], responsableEmail: 'dsilva@uct.cl', responsableNombre: 'David Silva Roco',
 } as unknown as LicitacionProyecto;
 

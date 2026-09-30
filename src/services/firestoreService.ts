@@ -39,7 +39,7 @@ import type {
   HitoDesarrolloProyecto,
   UserProfile,
   EvaluacionDesempeno, EnvioInvitacion, InvitacionAcceso, ConsultaLicitacion, ConsultaPublicada, GarantiaLicitacion, RegistroAperturaOfertas,
-  EntradaLibroObra, FotoLibroObra,
+  EntradaLibroObra, FotoLibroObra, MultaObra,
 } from '../types';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1596,4 +1596,40 @@ export function addEntradaLibroObra(
   batch.set(entradaRef, { ...entrada, _createdAt: serverTimestamp() });
   fotos.forEach((f, i) => batch.set(doc(entradaRef, 'fotos', String(i + 1)), f));
   return { id: entradaRef.id, sincronizado: batch.commit() };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MULTAS POR ATRASO (licitaciones/{id}/multas)
+// ═══════════════════════════════════════════════════════════════════
+
+export function subscribeToMultas(licitacionId: string, callback: (multas: MultaObra[]) => void): Unsubscribe {
+  return onSnapshot(collection(db, 'licitaciones', licitacionId, 'multas'), snap => {
+    callback(snap.docs
+      .map(d => ({ id: d.id, ...(d.data() as Omit<MultaObra, 'id'>) }))
+      .sort((a, b) => a.desde.localeCompare(b.desde)));
+  }, err => console.warn('No se pudieron leer las multas:', err));
+}
+
+export async function addMulta(licitacionId: string, data: Omit<MultaObra, 'id'>): Promise<string> {
+  const ref = await addDoc(collection(db, 'licitaciones', licitacionId, 'multas'), { ...data, _createdAt: serverTimestamp() });
+  return ref.id;
+}
+
+export async function updateMulta(licitacionId: string, multaId: string, data: Partial<MultaObra>): Promise<void> {
+  await updateDoc(doc(db, 'licitaciones', licitacionId, 'multas', multaId), { ...data, _updatedAt: serverTimestamp() });
+}
+
+/** Marca las multas como descontadas en un estado de pago. */
+export async function marcarMultasDescontadas(licitacionId: string, multasIds: string[], estadoPagoId: string, estadoPagoNumero: number): Promise<void> {
+  if (!multasIds.length) return;
+  const batch = writeBatch(db);
+  multasIds.forEach(id => batch.update(doc(db, 'licitaciones', licitacionId, 'multas', id), { estadoPagoId, estadoPagoNumero, _updatedAt: serverTimestamp() }));
+  await batch.commit();
+}
+
+/** Política de garantías definida en el proyecto de la Cartera (si la licitación está vinculada a uno). */
+export async function getPoliticaGarantiasProyecto(proyectoMaestroId?: string): Promise<ProyectoMaestro['politicaGarantias']> {
+  if (!proyectoMaestroId) return undefined;
+  const snap = await getDoc(doc(db, 'proyectos', proyectoMaestroId));
+  return snap.exists() ? (snap.data() as ProyectoMaestro).politicaGarantias : undefined;
 }

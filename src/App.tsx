@@ -316,6 +316,12 @@ function AdminApp() {
               setLicitacionWorkspaceTab('garantias');
               setActiveTab('ficha-licitacion');
             }}
+            onAbrirPagos={id => {
+              setLicitacionSeleccionadaId(id);
+              setLicitacionWorkspaceId(id);
+              setLicitacionWorkspaceTab('pagos');
+              setActiveTab('ficha-licitacion');
+            }}
             onAbrirProveedores={() => setActiveTab('proveedores')}
           />
         )}

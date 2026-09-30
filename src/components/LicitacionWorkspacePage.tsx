@@ -9,7 +9,7 @@ import {
 
 import type {
   AumentoObra, ConfiguracionFirmas, Cotizacion, EstadoPago, ItemEstadoPago,
-  InvitadoLicitacion, LicitacionProyecto, Propuesta, Proveedor,
+  InvitadoLicitacion, LicitacionProyecto, MultaObra, Propuesta, Proveedor,
 } from '../types';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { QuotationIngestion } from './QuotationIngestion';
@@ -25,6 +25,8 @@ import { AntecedentesManager } from './AntecedentesManager';
 import { ConsultasManager } from './ConsultasManager';
 import { GarantiasManager } from './GarantiasManager';
 import { LibroObraPanel } from './LibroObraPanel';
+import { MultasRetencionesPanel } from './MultasRetencionesPanel';
+import { retencionPctSegunPolitica } from '../utils/multasRetenciones';
 import { estadoVencimiento, requiereAviso } from '../utils/vencimientos';
 import { useOfertasSelladas } from '../hooks/useOfertasSelladas';
 import { fechaLimiteOfertas, textoLimiteOfertas } from '../utils/plazoOfertas';
@@ -35,6 +37,7 @@ import { uploadLicitacionDocument } from '../services/storageService';
 import {
   addEstadoPago, subscribeToAumentosObra, subscribeToEstadosPago, updateLicitacion, syncOCToProyectoMaestro,
   subscribeToConsultas, subscribeToPropuestas, subscribeToGarantias, subscribeToInvitados, registrarAperturaOfertas,
+  subscribeToMultas, marcarMultasDescontadas, getPoliticaGarantiasProyecto,
 } from '../services/firestoreService';
 import { useAuth } from '../context/AuthContext';
 import { isProjectResponsible } from '../services/internalAccessService';
@@ -685,7 +688,13 @@ async function calcularHashEstadoPago(estado: EstadoPago): Promise<string> {
 }
 
 function EstadosPagoTab({ licitacion, oferta, configFirmas }: { licitacion: LicitacionProyecto; oferta?: Cotizacion; configFirmas: ConfiguracionFirmas }) {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
+  const [multas, setMultas] = useState<MultaObra[]>([]);
+  const [politicaGarantias, setPoliticaGarantias] = useState<Awaited<ReturnType<typeof getPoliticaGarantiasProyecto>>>();
+  useEffect(() => subscribeToMultas(licitacion.id, setMultas), [licitacion.id]);
+  useEffect(() => {
+    getPoliticaGarantiasProyecto(licitacion.proyectoMaestroId).then(setPoliticaGarantias).catch(() => setPoliticaGarantias(undefined));
+  }, [licitacion.proyectoMaestroId]);
   const [estados, setEstados] = useState<EstadoPago[]>([]);
   const [aumentos, setAumentos] = useState<AumentoObra[]>([]);
   const [avances, setAvances] = useState<Record<string, number | undefined>>({});
@@ -837,6 +846,15 @@ function EstadosPagoTab({ licitacion, oferta, configFirmas }: { licitacion: Lici
   const montoNeto = itemsPago.reduce((sum, item) => sum + item.montoPeriodo, 0);
   const montoIva = Math.round(montoNeto * .19);
   const montoTotal = montoNeto + montoIva;
+  // Retención de garantía y multas pendientes que se descuentan de este estado (cláusulas 6.3 y 9.1 del contrato).
+  const retencionPct = retencionPctSegunPolitica(politicaGarantias, licitacion.montoAdjudicadoTotal || oferta?.montoTotal || 0);
+  const montoRetencion = Math.round(montoTotal * retencionPct / 100);
+  const multasADescontar = multas
+    .filter(m => m.estado === 'Aplicada' && !m.estadoPagoId)
+    .reduce<{ ids: string[]; monto: number }>((acc, m) => (
+      acc.monto + m.monto <= montoTotal - montoRetencion ? { ids: [...acc.ids, m.id], monto: acc.monto + m.monto } : acc
+    ), { ids: [], monto: 0 });
+  const montoLiquido = montoTotal - montoRetencion - multasADescontar.monto;
   const totalItemizadoOriginalNeto = (oferta?.itemizado || []).reduce((sum, item) => sum + item.precioTotal, 0);
   const totalItemizadoNeto = items.reduce((sum, item) => sum + item.precioTotal, 0);
   const totalContratoOriginal = oferta?.montoTotal || licitacion.montoAdjudicadoTotal || Math.round(totalItemizadoOriginalNeto * 1.19);
@@ -926,6 +944,9 @@ function EstadosPagoTab({ licitacion, oferta, configFirmas }: { licitacion: Lici
         montoIva,
         montoTotal,
         porcentajeAvanceGlobal: porcentajeGlobal,
+        ...(retencionPct > 0 ? { retencionPct, montoRetencion } : {}),
+        ...(multasADescontar.ids.length ? { montoMultas: multasADescontar.monto, multasIds: multasADescontar.ids } : {}),
+        montoLiquido,
         observaciones,
         ...(file && archivoUrl ? { archivoNombre: file.name, archivoURL: archivoUrl } : {}),
         fotos: fotosData,
@@ -936,6 +957,7 @@ function EstadosPagoTab({ licitacion, oferta, configFirmas }: { licitacion: Lici
         estado: 'Ingresado',
       };
       const { id: estadoPagoId, numero } = await addEstadoPago(licitacion.id, nuevoEstado);
+      await marcarMultasDescontadas(licitacion.id, multasADescontar.ids, estadoPagoId, numero);
       await updateLicitacion(licitacion.id, { estadoLifecycle: 'En_Ejecucion' });
       setEstadoDocumento({ id: estadoPagoId, licitacionId: licitacion.id, numero, ...nuevoEstado });
       setAvances({});
@@ -974,6 +996,16 @@ function EstadosPagoTab({ licitacion, oferta, configFirmas }: { licitacion: Lici
         <IndicadorProyecto icon={TrendingUp} label="Avance físico" value={`${porcentajeFisicoRegistrado}%`} detail={`Programado a hoy: ${avanceProgramado}%`} color={desviacionFisica < 0 ? 'amber' : 'emerald'} progress={porcentajeFisicoRegistrado} />
         <IndicadorProyecto icon={Clock3} label="Saldo contractual" value={formatoMonedaCLP(saldoContrato)} detail={desviacionFisica < 0 ? `${Math.abs(desviacionFisica)} pts bajo programa` : `${desviacionFisica} pts sobre programa`} color={desviacionFisica < 0 ? 'amber' : 'slate'} />
       </section>
+
+      <MultasRetencionesPanel
+        licitacion={licitacion}
+        montoContrato={totalContrato}
+        fechaTermino={fechaTermino}
+        estados={estados}
+        multas={multas}
+        retencionPct={retencionPct}
+        puedeGestionar={esResponsableActual || isAdmin}
+      />
 
       {/* Panel de alerta de desvío + costo/m² */}
       <div className="flex flex-wrap gap-3">
@@ -1234,7 +1266,7 @@ function EstadosPagoTab({ licitacion, oferta, configFirmas }: { licitacion: Lici
 
         <div className="p-5 bg-slate-50 grid sm:grid-cols-3 gap-4">
           <div className="sm:col-span-2 space-y-3"><textarea value={observaciones} onChange={e => setObservaciones(e.target.value)} rows={2} placeholder="Observaciones generales del avance (opcional)..." className="w-full p-3 border rounded-xl text-xs" /><input type="file" accept=".pdf,.xlsx,.xls,.doc,.docx" onChange={e => setFile(e.target.files?.[0] || null)} className="text-xs" /></div>
-          <div className="text-right text-xs space-y-1"><p>Neto: <strong>{formatoMonedaCLP(montoNeto)}</strong></p><p>IVA: <strong>{formatoMonedaCLP(montoIva)}</strong></p><p className="text-base text-emerald-700">Total: <strong>{formatoMonedaCLP(montoTotal)}</strong></p><p>Avance físico resultante: <strong>{porcentajeGlobal}%</strong></p><button onClick={save} disabled={saving || Object.keys(erroresAvance).length > 0} className="mt-2 px-4 py-2 bg-emerald-700 text-white rounded-xl font-bold disabled:opacity-50">{saving ? 'Guardando...' : 'Ingresar estado de pago'}</button></div>
+          <div className="text-right text-xs space-y-1"><p>Neto: <strong>{formatoMonedaCLP(montoNeto)}</strong></p><p>IVA: <strong>{formatoMonedaCLP(montoIva)}</strong></p><p className={montoRetencion || multasADescontar.monto ? '' : 'text-base text-emerald-700'}>Total: <strong>{formatoMonedaCLP(montoTotal)}</strong></p>{montoRetencion > 0 && <p className="text-indigo-700">Retención {retencionPct}%: <strong>−{formatoMonedaCLP(montoRetencion)}</strong></p>}{multasADescontar.monto > 0 && <p className="text-rose-700">Multas: <strong>−{formatoMonedaCLP(multasADescontar.monto)}</strong></p>}{(montoRetencion > 0 || multasADescontar.monto > 0) && <p className="text-base text-emerald-700">Líquido a pagar: <strong>{formatoMonedaCLP(montoLiquido)}</strong></p>}<p>Avance físico resultante: <strong>{porcentajeGlobal}%</strong></p><button onClick={save} disabled={saving || Object.keys(erroresAvance).length > 0} className="mt-2 px-4 py-2 bg-emerald-700 text-white rounded-xl font-bold disabled:opacity-50">{saving ? 'Guardando...' : 'Ingresar estado de pago'}</button></div>
         </div>
       </section>
 
