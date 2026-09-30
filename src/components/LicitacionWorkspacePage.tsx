@@ -233,7 +233,7 @@ export function LicitacionWorkspacePage({
         })}
       </nav>
 
-      <nav className="hidden sm:flex gap-1 overflow-x-auto bg-white border border-slate-200 rounded-2xl p-1.5 shadow-sm">
+      <nav className="hidden sm:flex flex-wrap gap-1 bg-white border border-slate-200 rounded-2xl p-1.5 shadow-sm">
         {tabs.map(tab => {
           const Icon = tab.icon;
           return (

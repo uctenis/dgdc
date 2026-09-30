@@ -74,13 +74,13 @@ export function IndicadoresGestion({ licitaciones, proyectos }: { licitaciones: 
           icon={Timer}
           label="Duración de licitación"
           valor={ind.proceso.promedioDias !== null ? `${ind.proceso.promedioDias} días` : '—'}
-          detalle={ind.proceso.n ? `Promedio desde la creación hasta la adjudicación (${ind.proceso.n} licitaciones)` : 'Se medirá desde las próximas adjudicaciones'}
+          detalle={ind.proceso.n ? `Promedio desde la creación hasta la adjudicación (${ind.proceso.n} ${ind.proceso.n === 1 ? 'licitación' : 'licitaciones'})` : 'Se medirá desde las próximas adjudicaciones'}
         />
         <Indicador
           icon={TrendingDown}
           label="Ahorro vs. estimado"
           valor={ind.ahorro.pct !== null ? pctTexto(ind.ahorro.pct) : '—'}
-          detalle={ind.ahorro.n ? `${formatoMonedaCLP(ind.ahorro.ahorro)} en ${ind.ahorro.n} adjudicaciones` : 'Sin adjudicaciones comparables'}
+          detalle={ind.ahorro.n ? `${formatoMonedaCLP(ind.ahorro.ahorro)} en ${ind.ahorro.n} ${ind.ahorro.n === 1 ? 'adjudicación' : 'adjudicaciones'}` : 'Sin adjudicaciones comparables'}
         />
         <Indicador
           icon={HardHat}

@@ -6,7 +6,7 @@ import { subscribeToAuditoria, type RegistroAuditoria } from '../services/audito
 const CAMPOS: Record<string, string> = {
   nombreProyecto: 'Nombre del proyecto', nombre: 'Nombre', estado: 'Estado', estadoLifecycle: 'Etapa', descripcion: 'Descripción',
   montoEstimado: 'Monto estimado', valorAprox: 'Valor aproximado', montoAdjudicado: 'Monto adjudicado', montoAdjudicadoTotal: 'Monto adjudicado',
-  fechaEvaluacion: 'Cierre de ofertas', fechaEntregaPropuestas: 'Cierre de ofertas', horaLimiteOfertas: 'Hora de cierre',
+  fechaEvaluacion: 'Cierre de ofertas (evaluación)', fechaEntregaPropuestas: 'Cierre de ofertas', horaLimiteOfertas: 'Hora de cierre',
   fechaVisitaTerreno: 'Visita a terreno', fechaRecepcionConsultas: 'Recepción de consultas', fechaRespuestaConsultas: 'Respuesta de consultas',
   fechaInicioObra: 'Inicio de obra', fechaTerminoProgramada: 'Término programado', responsableNombre: 'Responsable', responsableEmail: 'Correo del responsable',
   proveedoresInvitadosIds: 'Invitados', itemizado: 'Itemizado', presupuesto: 'Aprobación de presupuesto', prioridad: 'Prioridad', bases: 'Bases',
@@ -103,7 +103,7 @@ export function RegistroCambios() {
                   <span className="min-w-0 flex-1">
                     <span className="block text-xs text-slate-800">
                       <strong>{r.accion}</strong> {r.entidad.toLowerCase()} <span className="font-semibold">{r.nombre || r.entidadId}</span>
-                      {expandible && <span className="text-slate-500"> · {cambios.map(([c]) => nombreCampo(c)).join(', ')}</span>}
+                      {expandible && <span className="text-slate-500"> · {[...new Set(cambios.map(([c]) => nombreCampo(c)))].join(', ')}</span>}
                     </span>
                     {r.detalle && <span className="block text-[11px] text-slate-500">{r.detalle}</span>}
                     <span className="block text-[10px] text-slate-400">{fechaHora(r.fecha)} · {r.usuario}</span>

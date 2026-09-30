@@ -139,9 +139,13 @@ async function escribirEnFirebase(clave: string, valor: string): Promise<void> {
 /** Atajo para los módulos de datos: guarda en localStorage y publica. */
 export function guardarConfigCompartida(clave: string, datos: unknown): void {
   const valor = JSON.stringify(datos);
-  // Solo los cambios reales quedan en el registro de cambios.
-  let cambio = true;
-  try { cambio = localStorage.getItem(clave) !== valor; } catch { /* sin almacenamiento */ }
+  // Solo los cambios reales quedan en el registro de cambios: no la primera carga de un catálogo en un navegador
+  // nuevo (no había valor previo) ni un guardado sin diferencias.
+  let cambio = false;
+  try {
+    const previo = localStorage.getItem(clave);
+    cambio = previo !== null && previo !== valor;
+  } catch { /* sin almacenamiento */ }
   localStorage.setItem(clave, valor);
   void publicarConfigCompartida(clave, valor, cambio);
 }

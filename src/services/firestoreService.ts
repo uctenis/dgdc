@@ -1697,6 +1697,7 @@ async function leerDatos(...ruta: [string, ...string[]]): Promise<Record<string,
   }
 }
 const texto = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+const pesos = (v: unknown) => `$${Math.round(Number(v) || 0).toLocaleString('es-CL')}`;
 
 export async function addProveedor(data: Omit<Proveedor, 'id' | 'fechaRegistro'>): Promise<string> {
   const id = await addProveedorSinRegistro(data);
@@ -1773,18 +1774,18 @@ export async function responderConsulta(licitacionId: string, consulta: Consulta
 
 export async function addCotizacion(data: Omit<Cotizacion, 'id' | 'fechaCarga'>): Promise<string> {
   const id = await addCotizacionSinRegistro(data);
-  registrarCambio({ accion: 'Creó', entidad: 'Cotización', entidadId: id, licitacionId: data.licitacionId, nombre: data.proveedorNombre, detalle: `Total ${data.montoTotal} · ${data.plazoDias} días` });
+  registrarCambio({ accion: 'Creó', entidad: 'Cotización', entidadId: id, licitacionId: data.licitacionId, nombre: data.proveedorNombre, detalle: `Total ${pesos(data.montoTotal)} · ${data.plazoDias} días` });
   return id;
 }
 export async function deleteCotizacion(id: string): Promise<void> {
   const antes = await leerDatos('cotizaciones', id);
   await deleteCotizacionSinRegistro(id);
-  registrarCambio({ accion: 'Eliminó', entidad: 'Cotización', entidadId: id, licitacionId: texto(antes?.licitacionId), nombre: texto(antes?.proveedorNombre), detalle: antes ? `Total ${antes.montoTotal}` : undefined });
+  registrarCambio({ accion: 'Eliminó', entidad: 'Cotización', entidadId: id, licitacionId: texto(antes?.licitacionId), nombre: texto(antes?.proveedorNombre), detalle: antes ? `Total ${pesos(antes.montoTotal)}` : undefined });
 }
 
 export async function addEstadoPago(licitacionId: string, data: Omit<EstadoPago, 'id' | 'licitacionId' | 'numero'>): Promise<{ id: string; numero: number }> {
   const res = await addEstadoPagoSinRegistro(licitacionId, data);
-  registrarCambio({ accion: 'Creó', entidad: 'Estado de pago', entidadId: res.id, licitacionId, nombre: `EP N° ${res.numero} · ${data.proveedorNombre}`, detalle: `Total ${data.montoTotal} · avance ${data.porcentajeAvanceGlobal}%` });
+  registrarCambio({ accion: 'Creó', entidad: 'Estado de pago', entidadId: res.id, licitacionId, nombre: `EP N° ${res.numero} · ${data.proveedorNombre}`, detalle: `Total ${pesos(data.montoTotal)} · avance ${data.porcentajeAvanceGlobal}%` });
   return res;
 }
 export async function updateEstadoPago(licitacionId: string, estadoPagoId: string, data: Partial<EstadoPago>): Promise<void> {
@@ -1794,7 +1795,7 @@ export async function updateEstadoPago(licitacionId: string, estadoPagoId: strin
 }
 export async function addAumentoObra(licitacionId: string, data: Omit<AumentoObra, 'id' | 'licitacionId' | 'numero'>): Promise<string> {
   const id = await addAumentoObraSinRegistro(licitacionId, data);
-  registrarCambio({ accion: 'Creó', entidad: 'Aumento de obra', entidadId: id, licitacionId, nombre: data.titulo, detalle: `Total ${data.montoTotal} · +${data.ampliacionPlazoDias} días` });
+  registrarCambio({ accion: 'Creó', entidad: 'Aumento de obra', entidadId: id, licitacionId, nombre: data.titulo, detalle: `Total ${pesos(data.montoTotal)} · +${data.ampliacionPlazoDias} días` });
   return id;
 }
 export async function updateAumentoObraEstado(licitacionId: string, aumentoId: string, estado: AumentoObra['estado'], aprobadoPor?: string): Promise<void> {
@@ -1808,13 +1809,13 @@ export async function adjudicarLicitacion(params: Parameters<typeof adjudicarLic
   const ganadora = params.cotizaciones.find(c => c.proveedorId === params.proveedorGanadorId);
   registrarCambio({
     accion: 'Adjudicó', entidad: 'Licitación', entidadId: params.licitacionId, licitacionId: params.licitacionId, nombre: params.nombreProyecto,
-    detalle: `A ${ganadora?.proveedorNombre || params.proveedorGanadorId}${ganadora ? ` por ${ganadora.montoTotal}` : ''}. Justificación: ${params.justificacion.slice(0, 200)}`,
+    detalle: `A ${ganadora?.proveedorNombre || params.proveedorGanadorId}${ganadora ? ` por ${pesos(ganadora.montoTotal)}` : ''}. Justificación: ${params.justificacion.slice(0, 200)}`,
   });
 }
 
 export async function addGarantia(licitacionId: string, data: Omit<GarantiaLicitacion, 'id'>): Promise<string> {
   const id = await addGarantiaSinRegistro(licitacionId, data);
-  registrarCambio({ accion: 'Creó', entidad: 'Garantía', entidadId: id, licitacionId, nombre: `${data.instrumento} N° ${data.numero}`, detalle: `${data.tipo} · ${data.monto} ${data.moneda} · vence ${data.fechaVencimiento}` });
+  registrarCambio({ accion: 'Creó', entidad: 'Garantía', entidadId: id, licitacionId, nombre: `${data.instrumento} N° ${data.numero}`, detalle: `${data.tipo} · ${data.moneda === 'UF' ? `UF ${data.monto}` : pesos(data.monto)} · vence ${data.fechaVencimiento}` });
   return id;
 }
 export async function updateGarantia(licitacionId: string, garantiaId: string, data: Partial<GarantiaLicitacion>): Promise<void> {
@@ -1825,12 +1826,12 @@ export async function updateGarantia(licitacionId: string, garantiaId: string, d
 export async function deleteGarantia(licitacionId: string, garantiaId: string): Promise<void> {
   const antes = await leerDatos('licitaciones', licitacionId, 'garantias', garantiaId);
   await deleteGarantiaSinRegistro(licitacionId, garantiaId);
-  registrarCambio({ accion: 'Eliminó', entidad: 'Garantía', entidadId: garantiaId, licitacionId, nombre: antes ? `${antes.instrumento} N° ${antes.numero}` : undefined, detalle: antes ? `${antes.monto} ${antes.moneda} · vence ${antes.fechaVencimiento}` : undefined });
+  registrarCambio({ accion: 'Eliminó', entidad: 'Garantía', entidadId: garantiaId, licitacionId, nombre: antes ? `${antes.instrumento} N° ${antes.numero}` : undefined, detalle: antes ? `${antes.moneda === 'UF' ? `UF ${antes.monto}` : pesos(antes.monto)} · vence ${antes.fechaVencimiento}` : undefined });
 }
 
 export async function addMulta(licitacionId: string, data: Omit<MultaObra, 'id'>): Promise<string> {
   const id = await addMultaSinRegistro(licitacionId, data);
-  registrarCambio({ accion: 'Creó', entidad: 'Multa', entidadId: id, licitacionId, nombre: `${data.estado}: ${data.dias} días`, detalle: data.estado === 'Aplicada' ? `Monto ${data.monto}` : data.justificacion });
+  registrarCambio({ accion: 'Creó', entidad: 'Multa', entidadId: id, licitacionId, nombre: `${data.estado}: ${data.dias} días`, detalle: data.estado === 'Aplicada' ? `Monto ${pesos(data.monto)}` : data.justificacion });
   return id;
 }
 export async function updateMulta(licitacionId: string, multaId: string, data: Partial<MultaObra>): Promise<void> {

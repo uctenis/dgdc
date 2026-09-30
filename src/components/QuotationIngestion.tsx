@@ -67,7 +67,9 @@ const OnlinePropuestasList: React.FC<{
   licitacion: LicitacionProyecto;
   onImportPropuesta: (p: Propuesta) => void;
   procesoCerrado?: boolean;
-}> = ({ licitacionId, licitacion, onImportPropuesta, procesoCerrado = false }) => {
+  /** Por qué no se puede convertir la oferta (se muestra en el botón). */
+  motivoBloqueo?: string;
+}> = ({ licitacionId, licitacion, onImportPropuesta, procesoCerrado = false, motivoBloqueo }) => {
   const [propuestas, setPropuestas] = useState<Propuesta[]>([]);
   const [loading, setLoading] = useState(true);
   const sellada = useOfertasSelladas(licitacion);
@@ -167,7 +169,7 @@ const OnlinePropuestasList: React.FC<{
               className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-600 disabled:text-slate-300 disabled:cursor-not-allowed text-white text-xs font-bold px-3 py-2 rounded-lg transition shadow-sm shrink-0"
             >
               <ArrowDownToLine className="w-3.5 h-3.5" />
-              {procesoCerrado ? 'Proceso cerrado' : !validacion.admisible ? 'No admisible' : 'Convertir en Cotización'}
+              {procesoCerrado ? (motivoBloqueo || 'Proceso cerrado') : !validacion.admisible ? 'No admisible' : 'Convertir en Cotización'}
             </button>
           </div>
           );
@@ -620,6 +622,7 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
             licitacionId={licitacion.id}
             licitacion={licitacion}
             procesoCerrado={procesoCerrado || !antecedentesCompletos}
+            motivoBloqueo={procesoCerrado ? 'Proceso cerrado' : !antecedentesCompletos ? 'Complete Bases & Planos' : undefined}
             onImportPropuesta={async p => {
               try {
                 await convertirPropuestaACotizacion(p);
