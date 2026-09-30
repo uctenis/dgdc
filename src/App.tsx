@@ -56,6 +56,8 @@ const LibroObraMovilPage = lazy(() => import('./pages/LibroObraMovilPage').then(
 const MisObrasLista = lazy(() => import('./components/MisObrasLista').then(m => ({ default: m.MisObrasLista })));
 const LicitacionDemo = lazy(() => import('./pages/LicitacionDemo').then(m => ({ default: m.LicitacionDemo })));
 const IndicadoresDemo = lazy(() => import('./pages/IndicadoresDemo').then(m => ({ default: m.IndicadoresDemo })));
+const PreciosUnitariosPage = lazy(() => import('./components/PreciosUnitariosPage').then(m => ({ default: m.PreciosUnitariosPage })));
+const PreciosDemo = lazy(() => import('./pages/PreciosDemo').then(m => ({ default: m.PreciosDemo })));
 const PortalDemo = lazy(() => import('./pages/PortalDemo').then(m => ({ default: m.PortalDemo })));
 const LicitacionWorkspacePage = lazy(() => import('./components/LicitacionWorkspacePage').then(m => ({ default: m.LicitacionWorkspacePage })));
 
@@ -474,6 +476,10 @@ function AdminApp() {
           />
         )}
 
+        {activeTab === 'precios' && (
+          <PreciosUnitariosPage licitaciones={licitaciones} cotizaciones={cotizaciones} />
+        )}
+
         {activeTab === 'reportes' && (
           <ReportesPage licitaciones={licitaciones} cotizaciones={cotizaciones} />
         )}
@@ -545,6 +551,7 @@ export function App() {
           {import.meta.env.DEV && <Route path="/demo/proveedores" element={<ProveedoresDemo />} />}
           {import.meta.env.DEV && <Route path="/demo/licitacion" element={<LicitacionDemo />} />}
           {import.meta.env.DEV && <Route path="/demo/indicadores" element={<IndicadoresDemo />} />}
+          {import.meta.env.DEV && <Route path="/demo/precios" element={<PreciosDemo />} />}
           {/* Único punto de entrada: el enlace de la invitación. Exige sesión y verifica la invitación. */}
           <Route path="/portal/licitacion/:id" element={<PortalInvitacionPage />} />
           {/* Cualquier otra ruta del portal: sin dashboard ni listados, solo la pantalla neutra */}

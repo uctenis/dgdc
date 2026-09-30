@@ -14,6 +14,7 @@ import {
   ClipboardList,
   HardHat,
   Search,
+  Calculator,
   Menu,
   X,
 } from 'lucide-react';
@@ -39,6 +40,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onBusca
     { id: 'ficha-proyecto', label: 'Ficha del Proyecto', icon: FileText, contextual: true },
     { id: 'evaluacion',   label: 'Evaluación', icon: FileCheck2, contextual: true },
     { id: 'documentos',   label: 'Actas', icon: FileText, contextual: true },
+    { id: 'precios', label: 'Precios unitarios', icon: Calculator },
     { id: 'reportes', label: 'Reportes y Auditoría', icon: BarChart3 },
     { id: 'diagrama-sgc', label: 'Flujo 0021', icon: FileCheck2 },
     { id: 'configuracion', label: 'Configuración', icon: Settings, adminOnly: true },
