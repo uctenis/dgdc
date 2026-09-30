@@ -1378,6 +1378,7 @@ export async function adjudicarLicitacion(params: {
       montoAdjudicadoIva: cotGanadora?.montoIva,
       montoAdjudicadoTotal: cotGanadora?.montoTotal,
       plazoAdjudicadoDias: cotGanadora?.plazoDias,
+      fechaAdjudicacion: fecha,
       estadoLifecycle: 'Adjudicado',
       nombreProyecto: normalizarNombreProyecto(licData.nombreProyecto),
       _updatedAt: serverTimestamp(),

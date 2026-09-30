@@ -570,6 +570,8 @@ export interface LicitacionProyecto {
   fechaCreacion?: string;
   estado: 'Borrador' | 'En Evaluacion' | 'Adjudicado' | 'Cerrado';
   proveedorAdjudicadoId?: string;
+  /** YYYY-MM-DD. Se registra al adjudicar (licitaciones adjudicadas antes de 2026-09-30 no la tienen). */
+  fechaAdjudicacion?: string;
   aperturaOfertas?: RegistroAperturaOfertas;
   /** Devolución de las retenciones de garantía al contratista (tras el acta de recepción). */
   devolucionRetenciones?: { fecha: string; monto: number; registradaPor: string; observacion?: string };

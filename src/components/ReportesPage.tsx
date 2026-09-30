@@ -5,6 +5,7 @@ import { subscribeToProyectos } from '../services/firestoreService';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { auditarLicitacion, type AuditoriaLicitacion } from '../utils/auditoriaReport';
 import { generarReporteAuditoriaExcel } from '../utils/reporteExcelExport';
+import { IndicadoresGestion } from './IndicadoresGestion';
 
 interface ReportesPageProps {
   licitaciones: LicitacionProyecto[];
@@ -79,6 +80,10 @@ export function ReportesPage({ licitaciones, cotizaciones }: ReportesPageProps) 
           {exportando ? 'Generando…' : 'Exportar Reporte Completo (.xlsx)'}
         </button>
       </div>
+
+      <IndicadoresGestion licitaciones={licitaciones} proyectos={proyectos} />
+
+      <h3 className="text-sm font-black text-slate-800 pt-2">Auditoría de expedientes</h3>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
