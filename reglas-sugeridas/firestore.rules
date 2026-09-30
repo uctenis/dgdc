@@ -196,7 +196,14 @@ service cloud.firestore {
     // (Las licitaciones y sus subcolecciones tienen sus propias reglas arriba: un comodín aquí abriría las
     // ofertas selladas, porque en Firebase basta que UNA regla permita el acceso.)
     match /{coleccion}/{document=**} {
-      allow read, write: if esInterno() && coleccion != 'licitaciones';
+      allow read, write: if esInterno() && coleccion != 'licitaciones' && coleccion != 'auditoria';
+    }
+
+    // Registro de cambios: cada entrada queda a nombre de quien la escribe y nadie la edita ni la borra.
+    match /auditoria/{registroId} {
+      allow read: if esInterno();
+      allow create: if esInterno() && request.resource.data.usuario == request.auth.token.email;
+      allow update, delete: if false;
     }
   }
 }

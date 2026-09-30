@@ -6,6 +6,7 @@ import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { auditarLicitacion, type AuditoriaLicitacion } from '../utils/auditoriaReport';
 import { generarReporteAuditoriaExcel } from '../utils/reporteExcelExport';
 import { IndicadoresGestion } from './IndicadoresGestion';
+import { RegistroCambios } from './RegistroCambios';
 
 interface ReportesPageProps {
   licitaciones: LicitacionProyecto[];
@@ -82,6 +83,8 @@ export function ReportesPage({ licitaciones, cotizaciones }: ReportesPageProps) 
       </div>
 
       <IndicadoresGestion licitaciones={licitaciones} proyectos={proyectos} />
+
+      <RegistroCambios />
 
       <h3 className="text-sm font-black text-slate-800 pt-2">Auditoría de expedientes</h3>
 

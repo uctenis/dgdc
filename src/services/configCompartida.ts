@@ -9,6 +9,7 @@
 //   - cada guardado del administrador se publica (los demás usuarios solo leen).
 // Los módulos de datos siguen leyendo localStorage de forma síncrona, sin cambios.
 
+import { registrarCambio, resumirValor } from './auditoriaService';
 import { collection, doc, getDocs, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { SYSTEM_ADMIN_EMAIL } from '../lib/adminSistema';
@@ -116,9 +117,10 @@ export function suscribirConfigCompartida(): () => void {
  * Publica un catálogo en Firebase. Solo lo hace el administrador: para el resto de los usuarios lo
  * que guarden queda solo en su navegador (y será reemplazado por la versión oficial al sincronizar).
  */
-export async function publicarConfigCompartida(clave: string, valor: string): Promise<void> {
+export async function publicarConfigCompartida(clave: string, valor: string, registrar = true): Promise<void> {
   if (!CLAVES.has(clave) || !esAdmin() || !cargaInicialLista) return;
   await escribirEnFirebase(clave, valor);
+  if (registrar) registrarCambio({ accion: 'Modificó', entidad: 'Configuración', entidadId: clave, nombre: clave, cambios: { valor: { despues: resumirValor(valor) } } });
 }
 
 async function escribirEnFirebase(clave: string, valor: string): Promise<void> {
@@ -137,6 +139,9 @@ async function escribirEnFirebase(clave: string, valor: string): Promise<void> {
 /** Atajo para los módulos de datos: guarda en localStorage y publica. */
 export function guardarConfigCompartida(clave: string, datos: unknown): void {
   const valor = JSON.stringify(datos);
+  // Solo los cambios reales quedan en el registro de cambios.
+  let cambio = true;
+  try { cambio = localStorage.getItem(clave) !== valor; } catch { /* sin almacenamiento */ }
   localStorage.setItem(clave, valor);
-  void publicarConfigCompartida(clave, valor);
+  void publicarConfigCompartida(clave, valor, cambio);
 }
