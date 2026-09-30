@@ -11,6 +11,8 @@ import { generarItemizadoExcel } from '../services/itemizadoExporter';
 import { parsePresupuestoExcel, type ParsedPresupuestoImportado } from '../utils/excelParser';
 import { parsePresupuestoPdf } from '../utils/pdfParser';
 import { PresupuestoPrecisoIAModal } from './PresupuestoPrecisoIAModal';
+import { CalculadoraGastosGeneralesModal } from './CalculadoraGastosGeneralesModal';
+import { calcularGastosGenerales, plazoSugeridoMeses, type ParametrosCalculoGG } from '../utils/gastosGenerales';
 
 const UNIDADES_CONSTRUCCION = ['m2', 'm3', 'ml', 'm', 'un', 'gl', 'kg', 'ton', 'hh', 'día', 'jornada', 'litro', 'caja', 'saco', 'rollo'];
 
@@ -49,6 +51,9 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
   // (ver el cálculo en cascada más abajo). En 0 no afectan nada (Presupuesto = partidas + IVA).
   const [gastosGeneralesPct, setGastosGeneralesPct] = useState<number>(proyecto.itemizadoMarkup?.gastosGeneralesPct || 0);
   const [utilidadPct, setUtilidadPct] = useState<number>(proyecto.itemizadoMarkup?.utilidadPct || 0);
+  // Parámetros de la Calculadora de Gastos Generales (plazo, complejidad, etc.) con que se obtuvo el %.
+  const [calculoGG, setCalculoGG] = useState<ParametrosCalculoGG | undefined>(proyecto.itemizadoMarkup?.calculoGG);
+  const [mostrarCalculadoraGG, setMostrarCalculadoraGG] = useState(false);
   // Mientras se escribe una Cantidad con decimales, se guarda el texto crudo tal cual se tipea
   // (con la coma al final incluida) — si se reformateara desde el número en cada tecla, la coma
   // decimal desaparecería apenas se escribe (12, -> 12) y nunca se podría ingresar el decimal.
@@ -69,7 +74,7 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
   // Proyecto al que pertenecen los `items` en pantalla: al cambiar de proyecto, este efecto corre
   // antes de que se recarguen los items, y no debe guardar las partidas del anterior en el nuevo.
   const idCargadoRef = useRef(proyecto.id);
-  const pendienteRef = useRef<{ id: string; itemizado: ItemItemizadoProyecto[]; markup: { gastosGeneralesPct: number; utilidadPct: number } } | null>(null);
+  const pendienteRef = useRef<{ id: string; itemizado: ItemItemizadoProyecto[]; markup: { gastosGeneralesPct: number; utilidadPct: number; calculoGG?: ParametrosCalculoGG } } | null>(null);
   const guardarPendienteAhora = () => {
     const pendiente = pendienteRef.current;
     if (!pendiente) return;
@@ -84,7 +89,7 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
       pendienteRef.current = null;
       return;
     }
-    const datos = { id: proyecto.id, itemizado: items, markup: { gastosGeneralesPct, utilidadPct } };
+    const datos = { id: proyecto.id, itemizado: items, markup: { gastosGeneralesPct, utilidadPct, ...(calculoGG ? { calculoGG } : {}) } };
     pendienteRef.current = datos;
     const t = setTimeout(async () => {
       if (pendienteRef.current !== datos) return;
@@ -100,7 +105,7 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
       }
     }, 1500);
     return () => clearTimeout(t);
-  }, [items, gastosGeneralesPct, utilidadPct, hayCambios, proyecto.id]);
+  }, [items, gastosGeneralesPct, utilidadPct, calculoGG, hayCambios, proyecto.id]);
 
   // Al salir de la ficha (desmontar) se escribe lo pendiente; al cerrar/recargar la pestaña se avisa.
   useEffect(() => {
@@ -127,6 +132,7 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
     setItems(proyecto.itemizado || []);
     setGastosGeneralesPct(proyecto.itemizadoMarkup?.gastosGeneralesPct || 0);
     setUtilidadPct(proyecto.itemizadoMarkup?.utilidadPct || 0);
+    setCalculoGG(proyecto.itemizadoMarkup?.calculoGG);
     setHayCambios(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proyecto.id]);
@@ -144,6 +150,41 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
   const montoIva = Math.round(subtotalNeto * (tasaIva / 100));
   const totalConIva = subtotalNeto + montoIva;
   const gruposPorFase = useMemo(() => agruparPorFase(items), [items]);
+
+  // Un presupuesto a costo directo sin Gastos Generales ni Utilidad subestima el monto real: si
+  // ambos están en 0, se estiman automáticamente (una vez por proyecto) con los valores sugeridos
+  // de la calculadora según plazo y envergadura. El usuario puede ajustarlos con "Calcular".
+  const fasesEnCostoDirecto = useMemo(
+    () => [...new Set(items.filter(it => (it.precioTotal || 0) > 0 && it.fase).map(it => it.fase as string))],
+    [items],
+  );
+  const ggAutoAplicadoRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!modoEdicion || costoDirecto <= 0 || gastosGeneralesPct !== 0 || utilidadPct !== 0 || calculoGG) return;
+    if (ggAutoAplicadoRef.current === proyecto.id) return;
+    ggAutoAplicadoRef.current = proyecto.id;
+    const calculo: ParametrosCalculoGG = {
+      plazoMeses: plazoSugeridoMeses(proyecto, costoDirecto),
+      complejidad: 'media',
+      recintoOcupado: true,
+    };
+    const resultado = calcularGastosGenerales(costoDirecto, calculo, fasesEnCostoDirecto);
+    setGastosGeneralesPct(resultado.pct);
+    setUtilidadPct(resultado.utilidadSugeridaPct);
+    setCalculoGG(calculo);
+    setHayCambios(true);
+  }, [modoEdicion, costoDirecto, gastosGeneralesPct, utilidadPct, calculoGG, proyecto, fasesEnCostoDirecto]);
+
+  // Si el % viene de la calculadora, se mantiene al día con el itemizado: los GG dependen sobre todo
+  // del plazo (no crecen proporcional a las partidas), así que el % cambia al agregar o quitar obra.
+  useEffect(() => {
+    if (!calculoGG || !modoEdicion || costoDirecto <= 0) return;
+    const pct = calcularGastosGenerales(costoDirecto, calculoGG, fasesEnCostoDirecto).pct;
+    if (pct !== gastosGeneralesPct) {
+      setGastosGeneralesPct(pct);
+      setHayCambios(true);
+    }
+  }, [calculoGG, modoEdicion, costoDirecto, fasesEnCostoDirecto, gastosGeneralesPct]);
 
   const actualizarItem = (id: string, cambios: Partial<ItemItemizadoProyecto>) => {
     setItems(actuales => actuales.map(it => {
@@ -195,7 +236,7 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
       const renumerados = renumerarPartidasCorrelativas(items);
       await updateProyectoMaestro(proyecto.id, {
         itemizado: renumerados,
-        itemizadoMarkup: { gastosGeneralesPct, utilidadPct },
+        itemizadoMarkup: { gastosGeneralesPct, utilidadPct, ...(calculoGG ? { calculoGG } : {}) },
       });
       setItems(renumerados);
       setHayCambios(false);
@@ -295,6 +336,7 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
       if (costoDirectoNuevo > 0 && resultado.gastosGeneralesDetectados) {
         const pct = Math.round((resultado.gastosGeneralesDetectados / costoDirectoNuevo) * 10000) / 100;
         setGastosGeneralesPct(pct);
+        setCalculoGG(undefined);
         mensajesMarkup.push(`Gastos Generales detectados: ${pct}% del Costo Directo (${formatoMonedaCLP(resultado.gastosGeneralesDetectados)}).`);
         if (costoDirectoNuevo && resultado.utilidadDetectada) {
           const baseUtilidad = costoDirectoNuevo + resultado.gastosGeneralesDetectados;
@@ -624,12 +666,26 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
                       min={0}
                       step="0.1"
                       value={gastosGeneralesPct || ''}
-                      onChange={e => { setGastosGeneralesPct(Number(e.target.value) || 0); setHayCambios(true); }}
+                      onChange={e => { setGastosGeneralesPct(Number(e.target.value) || 0); setCalculoGG(undefined); setHayCambios(true); }}
                       placeholder="0"
                       className="w-14 p-1 border border-slate-200 rounded text-right text-[11px]"
                     />
                     <span className="text-[10px] text-slate-400">%</span>
+                    {modoEdicion && (
+                      <button
+                        type="button"
+                        onClick={() => setMostrarCalculadoraGG(true)}
+                        disabled={costoDirecto <= 0}
+                        className="flex items-center gap-1 px-2 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded text-[10px] font-bold"
+                        title="Calcular Gastos Generales según plazo, envergadura y complejidad de la obra"
+                      >
+                        <Calculator className="w-3 h-3" /> Calcular
+                      </button>
+                    )}
                   </div>
+                  {calculoGG && (
+                    <span className="block text-[9px] text-indigo-500 mt-0.5 whitespace-nowrap">calculado · {calculoGG.plazoMeses} meses · complejidad {calculoGG.complejidad}</span>
+                  )}
                 </td>
                 <td className="p-2 text-right font-bold text-slate-600">{formatoMonedaCLP(montoGastosGenerales)}</td>
                 <td></td>
@@ -679,6 +735,22 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
       </div>
       </fieldset>
       </>
+      )}
+
+      {costoDirecto > 0 && gastosGeneralesPct === 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-indigo-50 border border-indigo-200 rounded-lg p-2.5 text-[11px] text-indigo-900">
+          <span className="flex items-start gap-2">
+            <Calculator className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>El presupuesto está solo a <strong>costo directo</strong>: faltan los Gastos Generales y la Utilidad. Calcúlelos según el plazo y las condiciones de la obra para tener un monto estimado realista.</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setMostrarCalculadoraGG(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-[11px] shrink-0"
+          >
+            <Calculator className="w-3.5 h-3.5" /> Calcular Gastos Generales y Utilidad
+          </button>
+        </div>
       )}
 
       {items.some(it => it.precioReferencial) && (
@@ -749,6 +821,24 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
           {guardando ? 'Guardando…' : errorAutoguardado ? 'Reintentar guardado' : hayCambios ? 'Guardando cambios…' : 'Itemizado guardado'}
         </button>
       </div>
+      )}
+
+      {mostrarCalculadoraGG && (
+        <CalculadoraGastosGeneralesModal
+          costoDirecto={costoDirecto}
+          fasesEnCostoDirecto={fasesEnCostoDirecto}
+          proyecto={{ plazoEjecucionDias: proyecto.plazoEjecucionDias, duracionEstimadaDias: proyecto.duracionEstimadaDias }}
+          calculoPrevio={calculoGG}
+          onClose={() => setMostrarCalculadoraGG(false)}
+          onAplicar={({ gastosGeneralesPct: gg, utilidadPct: ut, calculo }) => {
+            setGastosGeneralesPct(gg);
+            if (ut !== undefined) setUtilidadPct(ut);
+            setCalculoGG(calculo);
+            setModoEdicion(true);
+            setHayCambios(true);
+            setMostrarCalculadoraGG(false);
+          }}
+        />
       )}
 
       {mostrarPresupuestoPreciso && (

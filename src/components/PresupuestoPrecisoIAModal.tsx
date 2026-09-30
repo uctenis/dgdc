@@ -4,6 +4,8 @@ import {
   sugerirPreguntasTecnicasConIA, sugerirItemizadoPrecisoConIA,
   type PreguntaTecnicaIA, type ItemItemizadoPrecisoSugeridoIA, mensajeErrorIA } from '../services/aiService';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
+import { getAllCotizaciones } from '../services/firestoreService';
+import { preciosDesdeCotizaciones, referenciaHistorica, MIN_PRECIOS_HISTORICOS, type PrecioHistorico } from '../utils/preciosHistoricos';
 
 interface Props {
   proyecto: { nombre: string; descripcion?: string; tipoObra?: string; rubro?: string; uso?: string };
@@ -21,6 +23,14 @@ export function PresupuestoPrecisoIAModal({ proyecto, onClose, onAgregarPartidas
   const [respuestas, setRespuestas] = useState<Record<string, string>>({});
   const [resultado, setResultado] = useState<ItemItemizadoPrecisoSugeridoIA[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [historicos, setHistoricos] = useState<PrecioHistorico[]>([]);
+
+  // Precios unitarios reales de ofertas anteriores: sirven para centrar la estimación de la IA en la media real.
+  useEffect(() => {
+    getAllCotizaciones()
+      .then(cots => setHistoricos(preciosDesdeCotizaciones(cots)))
+      .catch(err => console.warn('No se pudieron cargar precios históricos de ofertas:', err));
+  }, []);
 
   const cargarPreguntas = async () => {
     setFase('cargando_preguntas');
@@ -57,7 +67,16 @@ export function PresupuestoPrecisoIAModal({ proyecto, onClose, onAgregarPartidas
         setFase('formulario');
         return;
       }
-      setResultado(items);
+      // Con suficientes precios reales similares, el precio final es el promedio entre la media de la IA y la
+      // mediana de lo ofertado a la universidad: así no queda ni tan alto ni tan bajo.
+      setResultado(items.map(it => {
+        const ref = referenciaHistorica(it.descripcion, it.unidad, historicos);
+        if (!ref) return it;
+        const precio = ref.cantidad >= MIN_PRECIOS_HISTORICOS
+          ? Math.round((it.precioUnitarioReferencial + ref.mediana) / 2)
+          : it.precioUnitarioReferencial;
+        return { ...it, precioUnitarioReferencial: precio, precioHistorico: ref };
+      }));
       setFase('resultado');
     } catch (err) {
       console.error('Error generando presupuesto preciso con IA:', err);
@@ -69,8 +88,8 @@ export function PresupuestoPrecisoIAModal({ proyecto, onClose, onAgregarPartidas
   const totalReferencial = resultado.reduce((sum, it) => sum + it.cantidad * it.precioUnitarioReferencial, 0);
 
   return (
-    <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-2xl space-y-4 max-h-[92vh] flex flex-col border border-slate-200">
+    <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4">
+      <div className="bg-white rounded-2xl max-w-3xl w-full p-4 sm:p-6 shadow-2xl space-y-4 max-h-[92vh] flex flex-col border border-slate-200">
         <div className="flex items-center justify-between border-b pb-3.5 shrink-0">
           <div>
             <span className="text-[10px] font-extrabold uppercase bg-violet-100 text-violet-800 px-2.5 py-0.5 rounded flex items-center gap-1 w-fit">
@@ -164,7 +183,7 @@ export function PresupuestoPrecisoIAModal({ proyecto, onClose, onAgregarPartidas
             <>
               <div className="flex items-start gap-2 bg-amber-50 border border-amber-300 rounded-lg p-3 text-amber-950">
                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span><strong>Precios referenciales de IA, no vinculantes.</strong> Son una estimación de mercado, no una cotización real — valide o reemplace cada precio unitario antes de usar este itemizado como Presupuesto Estimado oficial.</span>
+                <span><strong>Precios referenciales de IA, no vinculantes.</strong> Cada precio es la media del rango de mercado regional (entre un contratista económico y uno caro){historicos.length > 0 ? `, promediada con la mediana de precios reales ofertados a la universidad cuando hay ${MIN_PRECIOS_HISTORICOS} o más partidas similares` : ''}. No es una cotización real: valide o reemplace cada precio unitario antes de usar este itemizado como Presupuesto Estimado oficial.</span>
               </div>
               <div className="overflow-x-auto border border-slate-200 rounded-xl">
                 <table className="w-full text-[11px]">
@@ -174,6 +193,7 @@ export function PresupuestoPrecisoIAModal({ proyecto, onClose, onAgregarPartidas
                       <th className="p-2 text-left">Descripción</th>
                       <th className="p-2">Unidad</th>
                       <th className="p-2 text-right">Cantidad</th>
+                      <th className="p-2 text-right">Rango mercado</th>
                       <th className="p-2 text-right">P. Unit. Referencial</th>
                       <th className="p-2 text-right">Total</th>
                     </tr>
@@ -185,14 +205,31 @@ export function PresupuestoPrecisoIAModal({ proyecto, onClose, onAgregarPartidas
                         <td className="p-2 min-w-[200px]">{it.descripcion}</td>
                         <td className="p-2 text-center">{it.unidad}</td>
                         <td className="p-2 text-right">{it.cantidad.toLocaleString('es-CL')}</td>
-                        <td className="p-2 text-right text-amber-700 font-semibold">{formatoMonedaCLP(it.precioUnitarioReferencial)}</td>
+                        <td className="p-2 text-right text-[10px] text-slate-500 whitespace-nowrap">
+                          {it.precioMinimo && it.precioMaximo && it.precioMinimo !== it.precioMaximo
+                            ? `${formatoMonedaCLP(it.precioMinimo)} – ${formatoMonedaCLP(it.precioMaximo)}`
+                            : '—'}
+                        </td>
+                        <td className="p-2 text-right text-amber-700 font-semibold">
+                          {formatoMonedaCLP(it.precioUnitarioReferencial)}
+                          {it.precioHistorico && (
+                            <span
+                              className={`block text-[9px] font-medium ${it.precioHistorico.cantidad >= MIN_PRECIOS_HISTORICOS ? 'text-emerald-700' : 'text-slate-400'}`}
+                              title={it.precioHistorico.cantidad >= MIN_PRECIOS_HISTORICOS
+                                ? 'Promediado con la mediana de precios reales ofertados en partidas similares'
+                                : `Solo como referencia: se necesitan ${MIN_PRECIOS_HISTORICOS} o más ofertas similares para ajustar el precio`}
+                            >
+                              Ofertas reales: {formatoMonedaCLP(it.precioHistorico.mediana)} ({it.precioHistorico.cantidad})
+                            </span>
+                          )}
+                        </td>
                         <td className="p-2 text-right font-bold">{formatoMonedaCLP(it.cantidad * it.precioUnitarioReferencial)}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
                     <tr className="bg-slate-50 border-t border-slate-200">
-                      <td colSpan={5} className="p-2 text-right font-bold text-slate-500 uppercase text-[10px]">Total Referencial (Neto)</td>
+                      <td colSpan={6} className="p-2 text-right font-bold text-slate-500 uppercase text-[10px]">Total Referencial (Neto)</td>
                       <td className="p-2 text-right font-black text-indigo-700">{formatoMonedaCLP(totalReferencial)}</td>
                     </tr>
                   </tfoot>

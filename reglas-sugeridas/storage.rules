@@ -22,7 +22,8 @@ service firebase.storage {
 
     // Ofertas: cada proveedor solo sube y lee dentro de SU carpeta (no puede listar ni ver las de otros).
     match /licitaciones/{licId}/ofertas/{provId}/{archivo=**} {
-      allow get: if esInterno()
+      // Selladas: el personal interno solo descarga las ofertas después del cierre.
+      allow get: if (esInterno() && request.time.toMillis() > firestore.get(/databases/(default)/documents/licitaciones/$(licId)).data.get('limiteOfertasMs', 0))
         || (proveedorInvitado(licId) && provId == miProveedorId());
       // Solo se puede subir hasta la hora de cierre (reloj del servidor).
       allow create: if esInterno()
@@ -33,8 +34,12 @@ service firebase.storage {
 
     // Todo lo demás: solo personal interno. Los documentos de antecedentes se entregan al proveedor mediante
     // los enlaces de descarga que ya guarda la licitación.
-    match /{todo=**} {
-      allow read, write: if esInterno();
+    // (Sin comodín sobre las ofertas: en Firebase basta que UNA regla permita, y abriría las ofertas selladas.)
+    match /licitaciones/{licId}/{categoria}/{archivo=**} {
+      allow read, write: if esInterno() && categoria != 'ofertas';
+    }
+    match /{carpeta}/{todo=**} {
+      allow read, write: if esInterno() && carpeta != 'licitaciones';
     }
   }
 }

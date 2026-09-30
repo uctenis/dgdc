@@ -117,7 +117,7 @@ export function ReclasificarRubrosModal({ proveedores, onUpdateProveedor, onClos
   const ocupado = Boolean(guardando || progresoIA);
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-2 sm:p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col">
         <div className="flex items-start justify-between gap-3 p-5 border-b">
           <div>

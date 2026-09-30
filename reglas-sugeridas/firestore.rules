@@ -30,6 +30,13 @@ service cloud.firestore {
       return request.time.toMillis() <= get(/databases/$(database)/documents/licitaciones/$(licId)).data.get('limiteOfertasMs', 9999999999999);
     }
 
+    // Ofertas selladas: el personal interno solo lee las propuestas después de la hora de cierre
+    // (sin hora de cierre definida, no hay sello). Nota: en la prueba local "Probar como este proveedor"
+    // se usa la sesión interna, así que con esta regla esa prueba no puede releer su oferta antes del cierre.
+    function ofertasAbiertas(licId) {
+      return request.time.toMillis() > get(/databases/$(database)/documents/licitaciones/$(licId)).data.get('limiteOfertasMs', 0);
+    }
+
     // El proveedor solo ve una licitación si figura entre sus invitados.
     function invitadoALicitacion(licId) {
       return esProveedor()
@@ -94,13 +101,35 @@ service cloud.firestore {
         allow create, delete: if esInterno();
         allow update: if esInterno()
           || (esProveedor() && provId == miProveedorId()
-              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estadoPropuesta', 'fechaPresentacion']));
+              && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['estadoPropuesta', 'fechaPresentacion', 'primerAcceso', 'ultimoAcceso', 'cantidadAccesos']));
+      }
+
+      // Consultas: el proveedor invitado solo crea y lee LAS SUYAS (antes del cierre del portal) y no puede
+      // responderlas ni modificarlas. Responder es del personal interno.
+      match /consultas/{consultaId} {
+        allow read: if esInterno() || (esProveedor() && resource.data.proveedorId == miProveedorId());
+        allow create: if esInterno()
+          || (invitadoALicitacion(licId)
+              && request.resource.data.proveedorId == miProveedorId()
+              && request.resource.data.proveedorUid == request.auth.uid
+              && request.resource.data.estado == 'Pendiente'
+              && request.resource.data.keys().hasOnly(['proveedorId', 'proveedorNombre', 'proveedorUid', 'pregunta', 'fechaPregunta', 'estado', '_createdAt'])
+              && request.resource.data.pregunta is string && request.resource.data.pregunta.size() <= 2000
+              && dentroDePlazo(licId));
+        allow update, delete: if esInterno();
+      }
+
+      // Respuestas publicadas (sin identificar a quién preguntó): las leen todos los invitados.
+      match /consultasPublicadas/{consultaId} {
+        allow read: if esInterno() || invitadoALicitacion(licId);
+        allow write: if esInterno();
       }
 
       // Cada proveedor solo lee y escribe SU propuesta, y no puede modificarla una vez enviada
       // (salvo dejar constancia de la confirmación por correo).
       match /propuestas/{provId} {
-        allow read: if esInterno() || (esProveedor() && provId == miProveedorId());
+        allow read: if (esInterno() && ofertasAbiertas(licId)) || (esProveedor() && provId == miProveedorId());
         allow create: if esInterno()
           || (invitadoALicitacion(licId) && provId == miProveedorId()
               && request.resource.data.proveedorUid == request.auth.uid
@@ -113,10 +142,38 @@ service cloud.firestore {
         allow delete: if esInterno();
       }
 
-      // Todo lo demás de la licitación (cotizaciones, estados de pago, envíos, etc.): solo personal interno.
-      match /{resto=**} {
-        allow read, write: if esInterno();
+      // Libro de obra: como el libro en papel, nadie edita ni borra una anotación (tampoco el administrador).
+      // Cada anotación queda a nombre de la sesión que la escribió; los errores se corrigen con otra anotación.
+      match /libroObra/{entradaId} {
+        allow read: if esInterno();
+        allow create: if esInterno() && request.resource.data.autorEmail == request.auth.token.email;
+        allow update, delete: if false;
+        match /fotos/{fotoId} {
+          allow read, create: if esInterno();
+          allow update, delete: if false;
+        }
       }
+
+      // Todo lo demás de la licitación (cotizaciones, estados de pago, envíos, etc.): solo personal interno.
+      // Excluye las propuestas (abriría las ofertas selladas) y el libro de obra (permitiría editarlo).
+      match /{sub}/{resto=**} {
+        allow read, write: if esInterno() && sub != 'propuestas' && sub != 'libroObra';
+      }
+    }
+
+    // Alerta de consultas pendientes de todas las licitaciones (consulta de grupo de colecciones).
+    match /{ruta=**}/consultas/{consultaId} {
+      allow read: if esInterno();
+    }
+
+    // Alerta de garantías por vencer de todas las licitaciones.
+    match /{ruta=**}/garantias/{garantiaId} {
+      allow read: if esInterno();
+    }
+
+    // Carga de trabajo de los proveedores: todos los invitados de todas las licitaciones en una sola lectura.
+    match /{ruta=**}/invitados/{provId} {
+      allow read: if esInterno();
     }
 
     // ── Proveedores: un proveedor solo lee la ficha de su propia empresa ───
@@ -129,8 +186,10 @@ service cloud.firestore {
     }
 
     // ── Todo lo demás: solo personal interno ───────────────────────────────
-    match /{document=**} {
-      allow read, write: if esInterno();
+    // (Las licitaciones y sus subcolecciones tienen sus propias reglas arriba: un comodín aquí abriría las
+    // ofertas selladas, porque en Firebase basta que UNA regla permita el acceso.)
+    match /{coleccion}/{document=**} {
+      allow read, write: if esInterno() && coleccion != 'licitaciones';
     }
   }
 }

@@ -1501,8 +1501,8 @@ Para confirmar, escriba el código del proyecto: ${codigoConfirmacion}`
 
           {/* Modal / Inline Editor para descripción */}
           {isEditingDesc && (
-            <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-2xl w-full max-w-2xl p-6 shadow-2xl border border-slate-200">
+            <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-2 sm:p-4">
+              <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[94vh] overflow-y-auto p-4 sm:p-6 shadow-2xl border border-slate-200">
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="font-extrabold">Editar Descripción del Proyecto</h4>
                   <button onClick={() => setIsEditingDesc(false)} className="text-slate-400 hover:text-slate-700">Cerrar</button>
@@ -1645,7 +1645,7 @@ Para confirmar, escriba el código del proyecto: ${codigoConfirmacion}`
             </form>
 
             {/* Tabla de Documentos Registrados */}
-            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+            <div className="border border-slate-200 rounded-xl overflow-x-auto bg-white">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-900 text-white font-bold text-[11px]">

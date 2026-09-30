@@ -1292,7 +1292,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 )}
 
                 {/* Tabla de Centros de Costo */}
-                <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm bg-white">
+                <div className="border border-slate-200 rounded-2xl overflow-x-auto shadow-sm bg-white">
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-slate-900 text-white font-bold text-[11px]">
@@ -1481,7 +1481,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 )}
 
                 {/* Tabla de Tipos de Obra */}
-                <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm bg-white">
+                <div className="border border-slate-200 rounded-2xl overflow-x-auto shadow-sm bg-white">
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-slate-900 text-white font-bold text-[11px]">
@@ -1670,7 +1670,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 )}
 
                 {/* Tabla de Estados de Proyecto */}
-                <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm bg-white">
+                <div className="border border-slate-200 rounded-2xl overflow-x-auto shadow-sm bg-white">
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-slate-900 text-white font-bold text-[11px]">
@@ -1833,7 +1833,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 )}
 
                 {/* Tabla de Rubros */}
-                <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm bg-white">
+                <div className="border border-slate-200 rounded-2xl overflow-x-auto shadow-sm bg-white">
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-slate-900 text-white font-bold text-[11px]">
@@ -2021,7 +2021,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 )}
 
                 {/* Tabla de Responsables */}
-                <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm bg-white">
+                <div className="border border-slate-200 rounded-2xl overflow-x-auto shadow-sm bg-white">
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-slate-900 text-white font-bold text-[11px]">

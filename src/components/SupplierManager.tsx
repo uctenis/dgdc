@@ -3,8 +3,10 @@ import { DatosContratistaForm } from './DatosContratistaForm';
 import { datosContratistaVacios } from '../utils/datosContratista';
 import type { DatosContratista } from '../types';
 import type { Proveedor } from '../types';
-import { Building2, Search, Plus, Leaf, Edit3, Trash2, Phone, Mail, MapPin, Wifi, History, CheckCircle2, AlertCircle, Upload, Loader2, FileText, X, Trophy } from 'lucide-react';
+import { Building2, Search, Plus, Leaf, Edit3, Trash2, Phone, Mail, MapPin, Wifi, History, CheckCircle2, AlertCircle, Upload, Loader2, FileText, X, Trophy, FolderOpen } from 'lucide-react';
 import { HistorialObrasModal } from './HistorialObrasModal';
+import { DocumentosProveedorModal } from './DocumentosProveedorModal';
+import { documentosConAviso } from '../utils/vencimientos';
 import { RankingDesempenoModal } from './RankingDesempenoModal';
 import { formatearRUT, validarRUT } from '../utils/rutUtils';
 import { parseProveedorDesdeCotizacion } from '../utils/providerDocumentParser';
@@ -12,6 +14,11 @@ import { parseProveedorDesdeCotizacion } from '../utils/providerDocumentParser';
 import { getRubrosList } from '../data/rubrosData';
 import { ReclasificarRubrosModal } from './ReclasificarRubrosModal';
 import { datosEsencialesFaltantes } from '../utils/proveedorCompleto';
+import { getLicitacionesConInvitados, getEvaluacionesDesempenoDeProveedores, calcularPromedioDesempeno } from '../services/firestoreService';
+import { calcularCargaProveedores, cargaVacia, MESES_ROTACION, type CargaProveedor } from '../utils/cargaProveedores';
+import { formatoMonedaCLP } from '../services/evaluationEngine';
+
+type OrdenProveedores = 'nombre' | 'desempeno' | 'carga' | 'invitaciones';
 
 /** Separa un campo de contacto (email o teléfono) que puede traer varios valores juntos (", " / ";" / "/" / salto de línea). */
 function splitContactos(valor?: string): string[] {
@@ -43,8 +50,36 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedHistorialProv, setSelectedHistorialProv] = useState<Proveedor | null>(null);
+  // Por id: así la carpeta se actualiza en vivo al guardar un documento.
+  const [documentosProvId, setDocumentosProvId] = useState<string | null>(null);
+  const documentosProv = documentosProvId ? proveedores.find(p => p.id === documentosProvId) : undefined;
   const [rankingAbierto, setRankingAbierto] = useState(false);
   const [reclasificarAbierto, setReclasificarAbierto] = useState(false);
+  const [orden, setOrden] = useState<OrdenProveedores>('nombre');
+  // Historial vivo de cada proveedor: desempeño evaluado, carga de trabajo actual y frecuencia de invitación.
+  const [cargas, setCargas] = useState<Record<string, CargaProveedor>>({});
+  const [desempeno, setDesempeno] = useState<Record<string, { promedio: number | null; cantidad: number }>>({});
+  const [resumenListo, setResumenListo] = useState(false);
+
+  const idsProveedores = proveedores.map(p => p.id).sort().join(',');
+  useEffect(() => {
+    if (!idsProveedores) return;
+    let cancelado = false;
+    Promise.all([
+      getLicitacionesConInvitados().then(({ licitaciones, invitadosPorLicitacion }) =>
+        calcularCargaProveedores(licitaciones, invitadosPorLicitacion)),
+      getEvaluacionesDesempenoDeProveedores(idsProveedores.split(',')),
+    ])
+      .then(([cargasCalculadas, evaluaciones]) => {
+        if (cancelado) return;
+        setCargas(cargasCalculadas);
+        setDesempeno(Object.fromEntries(Object.entries(evaluaciones).map(([id, evs]) =>
+          [id, { promedio: calcularPromedioDesempeno(evs), cantidad: evs.length }])));
+      })
+      .catch(err => console.error('Error cargando historial y desempeño de proveedores:', err))
+      .finally(() => { if (!cancelado) setResumenListo(true); });
+    return () => { cancelado = true; };
+  }, [idsProveedores]);
 
   // Form state
   const [rut, setRut] = useState('');
@@ -211,6 +246,16 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
       p.nombreContacto.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesRubro = (filtroRubro === 'Todos' || p.rubro === filtroRubro) && (!soloIncompletos || datosEsencialesFaltantes(p).length > 0);
     return matchesSearch && matchesRubro;
+  }).sort((a, b) => {
+    const ca = cargas[a.id] || cargaVacia();
+    const cb = cargas[b.id] || cargaVacia();
+    const puntosCarga = (c: CargaProveedor) => c.obrasEnEjecucion.length * 2 + c.licitacionesAbiertas.length;
+    const dif =
+      orden === 'desempeno' ? (desempeno[b.id]?.promedio ?? -1) - (desempeno[a.id]?.promedio ?? -1)
+      : orden === 'carga' ? puntosCarga(ca) - puntosCarga(cb)
+      : orden === 'invitaciones' ? ca.invitacionesRecientes - cb.invitacionesRecientes
+      : 0;
+    return dif || a.razonSocial.localeCompare(b.razonSocial);
   });
 
   return (
@@ -234,7 +279,7 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
           <button
             onClick={() => setReclasificarAbierto(true)}
             className="flex items-center justify-center gap-2 bg-violet-50 hover:bg-violet-100 border border-violet-300 text-violet-800 font-semibold px-4 py-2.5 rounded-xl shadow-sm transition text-xs"
@@ -285,6 +330,16 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
                 {r}
               </option>
             ))}
+          </select>
+          <select
+            value={orden}
+            onChange={e => setOrden(e.target.value as OrdenProveedores)}
+            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-sm"
+          >
+            <option value="nombre">Ordenar por nombre</option>
+            <option value="desempeno">Mejor desempeño primero</option>
+            <option value="carga">Menor carga de trabajo primero</option>
+            <option value="invitaciones">Menos invitados últimamente (rotar)</option>
           </select>
           <label className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-800 cursor-pointer">
             <input type="checkbox" checked={soloIncompletos} onChange={e => setSoloIncompletos(e.target.checked)} />
@@ -374,6 +429,37 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
               </div>
             </div>
 
+            {/* Desempeño, carga actual y frecuencia de invitación */}
+            {resumenListo && (() => {
+              const c = cargas[prov.id] || cargaVacia();
+              const d = desempeno[prov.id];
+              const colorCarga = c.nivel === 'Alta' ? 'text-rose-700' : c.nivel === 'Media' ? 'text-amber-700' : 'text-emerald-700';
+              const detalleCarga = [
+                ...c.obrasEnEjecucion.map(o => `Obra en ejecución: ${o.codigo} — ${o.nombre}${o.monto ? ` (${formatoMonedaCLP(o.monto)})` : ''}`),
+                ...c.licitacionesAbiertas.map(o => `Licitación abierta: ${o.codigo} — ${o.nombre} (${o.detalle})`),
+              ].join('\n') || 'Sin obras en ejecución ni licitaciones abiertas';
+              return (
+                <div className="mt-2 grid grid-cols-3 gap-1 text-center text-[10px] bg-slate-50 border border-slate-100 rounded-lg p-1.5">
+                  <div title={d?.cantidad ? `Promedio de ${d.cantidad} evaluación(es) post-ejecución` : 'Sin evaluaciones de desempeño'}>
+                    <span className="block text-slate-400">Desempeño</span>
+                    <strong className={d?.promedio == null ? 'text-slate-400' : d.promedio < 3 ? 'text-rose-700' : d.promedio < 4 ? 'text-amber-700' : 'text-emerald-700'}>
+                      {d?.promedio == null ? '—' : `★ ${d.promedio}/5`}
+                    </strong>
+                  </div>
+                  <div title={detalleCarga}>
+                    <span className="block text-slate-400">Carga</span>
+                    <strong className={colorCarga}>{c.nivel}</strong>
+                    <span className="block text-slate-500">{c.obrasEnEjecucion.length} obra · {c.licitacionesAbiertas.length} lic.</span>
+                  </div>
+                  <div title={`${c.invitacionesTotal} invitaciones, ${c.ofertasPresentadas} ofertas y ${c.adjudicacionesTotal} adjudicaciones en total${c.ultimaInvitacion ? ` · última invitación ${c.ultimaInvitacion}` : ''}`}>
+                    <span className="block text-slate-400">Invitado {MESES_ROTACION}m</span>
+                    <strong className={c.invitadoFrecuente ? 'text-orange-700' : 'text-slate-700'}>{c.invitacionesRecientes}×</strong>
+                    <span className="block text-slate-500">{c.adjudicacionesTotal} adjudic.</span>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Bottom status bar */}
             <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between gap-1.5 text-[10px] flex-wrap">
               <div className="flex items-center gap-1">
@@ -398,6 +484,23 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
                   <span>Historial</span>
                 </button>
 
+                <button
+                  onClick={() => setDocumentosProvId(prov.id)}
+                  className={`flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-md border transition ${
+                    documentosConAviso(prov).some(x => x.estado.nivel === 'vencido')
+                      ? 'text-red-700 bg-red-50 border-red-300 hover:bg-red-100'
+                      : documentosConAviso(prov).length
+                        ? 'text-amber-800 bg-amber-50 border-amber-300 hover:bg-amber-100'
+                        : 'text-slate-600 bg-slate-50 border-slate-200 hover:text-slate-800'
+                  }`}
+                  title={documentosConAviso(prov).length
+                    ? documentosConAviso(prov).map(x => `${x.nombre}: ${x.estado.texto}`).join(' · ')
+                    : 'Documentos del proveedor (F30, vigencia, seguros) con vencimiento'}
+                >
+                  <FolderOpen className="w-3 h-3" />
+                  <span>Docs{prov.documentos?.length ? ` (${prov.documentos.length})` : ''}</span>
+                </button>
+
                 <span
                   onClick={() =>
                     onUpdateProveedor(prov.id, {
@@ -417,6 +520,14 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
           </div>
         ))}
       </div>
+
+      {documentosProv && (
+        <DocumentosProveedorModal
+          proveedor={documentosProv}
+          onUpdateProveedor={onUpdateProveedor}
+          onClose={() => setDocumentosProvId(null)}
+        />
+      )}
 
       {selectedHistorialProv && (
         <HistorialObrasModal
@@ -443,7 +554,7 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
       {/* Modal Add / Edit */}
       {showModal && (
         <div
-          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4"
           onMouseDown={e => { if (e.target === e.currentTarget) cerrarModal(); }}
         >
           <div className="bg-white rounded-2xl max-w-2xl max-h-[92vh] w-full shadow-2xl flex flex-col overflow-hidden">

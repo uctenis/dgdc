@@ -20,7 +20,7 @@ export function construirInvitacionCorreo(licitacion: LicitacionProyecto, portal
             <strong>${licitacion.nombreProyecto || ''}</strong><br/>
             Código de Proyecto: ${licitacion.codigoProyecto || 'No informado'} · Centro de Costo: ${licitacion.codigoCP || 'No informado'}
           </p>
-          <p>Para revisar las bases, antecedentes técnicos y presentar su oferta, ingrese con su cuenta de correo al portal de proveedores:</p>
+          <p>Para revisar las bases, descargar los antecedentes técnicos, realizar sus consultas y presentar su oferta, ingrese con su cuenta de correo al portal de proveedores. Las consultas se reciben únicamente a través del portal, y sus respuestas se publican allí para todos los oferentes:</p>
           <p><a href="${portalUrl}" style="display:inline-block; background:#0369a1; color:#fff; text-decoration:none; padding:10px 18px; border-radius:8px; font-weight:bold;">Ingresar al Portal de Proveedores</a></p>
           <p style="font-size:12px; color:#64748b;">Si el botón no funciona, copie y pegue este enlace en su navegador: ${portalUrl}</p>
           <p><strong>Calendario del proceso:</strong></p>

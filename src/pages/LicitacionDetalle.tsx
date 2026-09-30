@@ -15,7 +15,9 @@ import {
   updateLicitacion,
   licitacionCerradaParaOfertas,
   registrarConfirmacionPropuesta,
+  registrarAccesoPortal,
 } from '../services/firestoreService';
+import { ConsultasPortal } from '../components/ConsultasPortal';
 import { enviarConfirmacionPropuesta } from '../services/confirmacionPropuestaService';
 import { uploadLicitacionDocument } from '../services/storageService';
 import { generarFormatoPresupuestoExcel } from '../services/formatoPresupuestoExporter';
@@ -132,9 +134,19 @@ export function LicitacionDetalle({ proveedorIdVista, soloLectura = false, demoL
     return unsub;
   }, [licitacionId, proveedorId]);
 
+  // Registro de ingreso: una vez por sesión del navegador, solo para el proveedor real (no vista de administrador ni pruebas).
+  useEffect(() => {
+    if (demoLicitacion || soloLectura || proveedorIdVista || !licitacionId || !proveedorId || profile?.uid === 'dev-proveedor') return;
+    const clave = `acceso-portal:${licitacionId}:${proveedorId}`;
+    try {
+      if (sessionStorage.getItem(clave)) return;
+      sessionStorage.setItem(clave, '1');
+    } catch { /* sin almacenamiento de sesión: se registra igual */ }
+    registrarAccesoPortal(licitacionId, proveedorId).catch(err => console.warn('No se pudo registrar el ingreso al portal:', err));
+  }, [licitacionId, proveedorId, demoLicitacion, soloLectura, proveedorIdVista, profile?.uid]);
+
   const handleFileUpload = async (file: File) => {
-    if (demoLicitacion) { alert('Vista de demostración: no se sube ningún archivo.'); return; }
-    if (soloLectura || !licitacionId || !proveedorId) return;
+    if (soloLectura || (!demoLicitacion && (!licitacionId || !proveedorId))) return;
     if (licitacion && plazoOfertasVencido(licitacion)) { alert(`El portal se cerró el ${textoLimiteOfertas(licitacion)}. Ya no es posible subir archivos.`); return; }
     if (procesoCerrado) {
       alert('Proceso cerrado: la licitación ya fue adjudicada y no acepta nuevas ofertas.');
@@ -148,7 +160,10 @@ export function LicitacionDetalle({ proveedorIdVista, soloLectura = false, demoL
     try {
       // 1. Subida del archivo a Firebase Storage
       setUploadPct(5);
-      const url = await uploadLicitacionDocument(licitacionId, 'ofertas', file, pct => setUploadPct(Math.round(pct * 0.6)), proveedorId);
+      // Demostración: el archivo no sale del navegador.
+      const url = demoLicitacion
+        ? URL.createObjectURL(file)
+        : await uploadLicitacionDocument(licitacionId!, 'ofertas', file, pct => setUploadPct(Math.round(pct * 0.6)), proveedorId);
       setUploadPct(60);
       
       // 2. Lectura e inteligencia de datos (Excel / PDF)
@@ -192,8 +207,7 @@ export function LicitacionDetalle({ proveedorIdVista, soloLectura = false, demoL
   };
 
   const handleTecnicoUpload = async (file: File) => {
-    if (demoLicitacion) { alert('Vista de demostración: no se sube ningún archivo.'); return; }
-    if (soloLectura || !licitacionId || !proveedorId) return;
+    if (soloLectura || (!demoLicitacion && (!licitacionId || !proveedorId))) return;
     if (licitacion && plazoOfertasVencido(licitacion)) { alert(`El portal se cerró el ${textoLimiteOfertas(licitacion)}. Ya no es posible subir archivos.`); return; }
     if (procesoCerrado) {
       alert('Proceso cerrado: la licitación ya fue adjudicada y no acepta nuevas ofertas.');
@@ -201,7 +215,9 @@ export function LicitacionDetalle({ proveedorIdVista, soloLectura = false, demoL
     }
     setUploadTecPct(5);
     try {
-      const url = await uploadLicitacionDocument(licitacionId, 'ofertas', file, pct => setUploadTecPct(pct), proveedorId);
+      const url = demoLicitacion
+        ? URL.createObjectURL(file)
+        : await uploadLicitacionDocument(licitacionId!, 'ofertas', file, pct => setUploadTecPct(pct), proveedorId);
       setPropuesta(prev => ({ ...prev, archivoTecnicoNombre: file.name, archivoTecnicoURL: url }));
     } catch (err) {
       console.error('Error subiendo la oferta técnica:', err);
@@ -253,11 +269,36 @@ export function LicitacionDetalle({ proveedorIdVista, soloLectura = false, demoL
     }
   };
 
+  // Demostración: completa la oferta con datos de ejemplo para recorrer el envío sin preparar archivos.
+  const rellenarOfertaDemo = () => {
+    const precios = [850000, 4500, 9800, 3200, 12500, 7600];
+    const cantidades = [1, 180, 180, 180, 190, 48];
+    const itemizado = (licitacion?.formatoPresupuesto || []).map((p, i) => {
+      const precioUnitario = precios[i % precios.length];
+      const cantidad = cantidades[i % cantidades.length];
+      return { id: `demo-${i}`, item: p.item, descripcion: p.descripcion, unidad: p.unidad, cantidad, precioUnitario, precioTotal: precioUnitario * cantidad };
+    });
+    setPropuesta(prev => ({
+      ...prev,
+      archivoNombre: 'oferta_economica_los_robles.xlsx', archivoURL: '#', archivoTipo: 'excel',
+      archivoTecnicoNombre: 'oferta_tecnica_los_robles.pdf', archivoTecnicoURL: '#',
+      itemizado,
+      montoNeto: itemizado.reduce((s, it) => s + it.precioTotal, 0),
+      plazoDias: 45,
+      fechaCotizacion: new Date().toISOString().split('T')[0],
+    }));
+    setDatosContrato({
+      representantes: [{ tratamiento: 'doña', nombre: 'María Soto Pérez', rut: '12.345.678-5' }],
+      domicilioLegal: 'Av. Alemania 0123, Temuco',
+      personeria: 'Certificado de Estatuto Actualizado',
+    });
+    setParsedFeedback([`✓ Itemizado leído: ${itemizado.length} partidas (datos de ejemplo)`]);
+  };
+
   const handleSave = async (estado: 'Borrador' | 'Enviada') => {
-    if (demoLicitacion) { alert('Vista de demostración: no se guarda ni se envía nada.'); return; }
     if (soloLectura) return;
     if (licitacion && plazoOfertasVencido(licitacion)) { alert(`El portal se cerró el ${textoLimiteOfertas(licitacion)}. Ya no es posible guardar ni enviar su propuesta.`); return; }
-    if (!licitacionId || !proveedorId || !profile) return;
+    if (!demoLicitacion && (!licitacionId || !proveedorId || !profile)) return;
     if (procesoCerrado) {
       alert('Proceso cerrado: no es posible guardar ni enviar propuestas después de la adjudicación.');
       return;
@@ -279,6 +320,21 @@ export function LicitacionDetalle({ proveedorIdVista, soloLectura = false, demoL
       return;
     }
     const setter = estado === 'Enviada' ? setSending : setSaving;
+
+    if (demoLicitacion) {
+      // Demostración: pasan las mismas validaciones, pero nada se guarda ni se envía.
+      setter(true);
+      await new Promise(r => setTimeout(r, 800));
+      setPropuesta(prev => ({ ...prev, datosContrato, estado, fechaEnvio: new Date().toISOString() }));
+      if (estado === 'Enviada') {
+        setConfirmacionMsg(`[DEMOSTRACIÓN] Aquí el proveedor recibe un correo de confirmación en ${demoProveedor?.email || 'su correo'}. No se envió nada.`);
+      }
+      setSavedMsg(estado === 'Enviada' ? '¡Propuesta enviada exitosamente!' : 'Borrador guardado.');
+      setTimeout(() => setSavedMsg(''), 3000);
+      setter(false);
+      return;
+    }
+    if (!licitacionId || !proveedorId || !profile) return;
     setter(true);
 
     const data: Omit<Propuesta, 'id'> = {
@@ -383,7 +439,12 @@ export function LicitacionDetalle({ proveedorIdVista, soloLectura = false, demoL
         )}
         {!soloLectura && !demoLicitacion && (
           <button
-            onClick={async () => { await logout(); navigate('/portal/login', { replace: true }); }}
+            onClick={async () => {
+              const pruebaLocal = profile?.uid === 'dev-proveedor';
+              await logout();
+              // Prueba local: se vuelve a la vista de administrador en esta misma página.
+              if (!pruebaLocal) navigate('/portal/login', { replace: true });
+            }}
             className="flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-white transition"
             title="Cerrar sesión"
           >
@@ -393,15 +454,30 @@ export function LicitacionDetalle({ proveedorIdVista, soloLectura = false, demoL
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+        {demoLicitacion && canEdit && (
+          <div className="rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs" style={{ background: 'rgba(251,191,36,0.1)', border: '1px dashed rgba(251,191,36,0.5)', color: '#fde68a' }}>
+            <span>Demostración: puede subir sus propios archivos, o completar la oferta con datos de ejemplo e ir directo al envío.</span>
+            <button type="button" onClick={rellenarOfertaDemo} className="px-3 py-1.5 rounded-lg font-bold text-amber-950 bg-amber-300 hover:bg-amber-200">
+              Completar oferta de ejemplo
+            </button>
+          </div>
+        )}
         {/* Info card */}
         <div
           className="rounded-2xl p-5 space-y-3"
           style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)' }}
         >
           <div className="flex flex-wrap gap-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider bg-sky-500/20 text-sky-200 border border-sky-400/30 px-2 py-0.5 rounded">Licitación</span>
             <span className="text-[10px] font-bold bg-slate-800 text-slate-300 px-2 py-0.5 rounded">{licitacion.codigoProyecto}</span>
           </div>
-          <p className="text-xs text-slate-300 leading-relaxed">{licitacion.descripcion}</p>
+          <h1
+            className="text-2xl sm:text-3xl font-black tracking-tight leading-tight bg-clip-text text-transparent"
+            style={{ backgroundImage: 'linear-gradient(90deg, #ffffff 0%, #bae6fd 55%, #7dd3fc 100%)' }}
+          >
+            {licitacion.nombreProyecto.toLocaleUpperCase('es-CL')}
+          </h1>
+          <p className="text-sm text-slate-300 leading-relaxed">{licitacion.descripcion}</p>
           <div className="flex items-center gap-4 pt-1">
             <span className="flex items-center gap-1.5 text-xs text-slate-400">
               <Calendar className="w-3.5 h-3.5 text-sky-400" />
@@ -470,6 +546,16 @@ export function LicitacionDetalle({ proveedorIdVista, soloLectura = false, demoL
             <p className="text-xs text-slate-400 italic">Aún no hay documentos de antecedentes disponibles para esta licitación.</p>
           )}
         </div>
+
+        <ConsultasPortal
+          licitacion={licitacion}
+          proveedorId={proveedorId}
+          proveedorNombre={proveedorDatos?.razonSocial || profile?.displayName || user?.email || ''}
+          proveedorUid={user?.uid || ''}
+          soloLectura={soloLectura}
+          demo={Boolean(demoLicitacion)}
+          portalCerrado={vencida || procesoCerrado}
+        />
 
         {/* Comprobante: oferta enviada */}
         {yaEnviada && (

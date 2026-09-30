@@ -1,32 +1,16 @@
-import { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useState, useEffect, lazy, Suspense } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
-import { ProjectManager } from './components/ProjectManager';
-import { SupplierManager } from './components/SupplierManager';
-import { QuotationIngestion } from './components/QuotationIngestion';
-import { EvaluationMatrix } from './components/EvaluationMatrix';
-import { DocumentGenerator } from './components/DocumentGenerator';
-import { SettingsView } from './components/SettingsView';
-import { ProyectosMaestros } from './components/ProyectosMaestros';
-import { AvanceFinancieroPage } from './components/AvanceFinancieroPage';
-import { SgcProcessWorkflow } from './components/SgcProcessWorkflow';
-import { ReportesPage } from './components/ReportesPage';
-import { FichaProyectoPage } from './components/FichaProyectoPage';
-import { LicitacionWorkspacePage, type TabId } from './components/LicitacionWorkspacePage';
+import type { TabId } from './components/LicitacionWorkspacePage';
+import { ConsultasPendientesAlerta } from './components/ConsultasPendientesAlerta';
+import { VencimientosAlerta } from './components/VencimientosAlerta';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { BandejaOPPage } from './components/BandejaOPPage';
-import { BandejaOPDemo } from './pages/BandejaOPDemo';
 import { EVENTO_CONFIG_ACTUALIZADA } from './services/configCompartida';
 import { reloadResponsables } from './data/responsablesData';
-import { EETTDemo } from './pages/EETTDemo';
-import { CaratulaDemo } from './pages/CaratulaDemo';
-import { ProveedoresDemo } from './pages/ProveedoresDemo';
 import { InternalLoginPage } from './pages/InternalLoginPage';
 import { PortalBloqueoProveedor } from './pages/PortalBloqueoProveedor';
-import { PortalInvitacionPage } from './pages/PortalInvitacionPage';
 import { PortalAccesoRestringido } from './pages/PortalAccesoRestringido';
-import { PortalDemo } from './pages/PortalDemo';
 
 import type { Proveedor, LicitacionProyecto, Cotizacion, ConfiguracionFirmas, ProyectoMaestro } from './types';
 import { storageService } from './services/storageService';
@@ -39,7 +23,7 @@ import {
   addLicitacion as fsAddLicitacion,
   updateLicitacion as fsUpdateLicitacion,
   deleteLicitacion as fsDeleteLicitacion,
-  getAllCotizaciones,
+  subscribeToAllCotizaciones,
   addCotizacion as fsAddCotizacion,
   deleteCotizacion as fsDeleteCotizacion,
   adjudicarLicitacion as fsAdjudicarLicitacion,
@@ -47,6 +31,39 @@ import {
 import { evaluarCotizaciones } from './services/evaluationEngine';
 import { esProcesoSimplificado } from './data/contratoTemplateData';
 import { isProjectResponsible } from './services/internalAccessService';
+
+
+// Cada pantalla se descarga recién cuando se abre: el ingreso al sistema no carga todo el código de una vez.
+const ProjectManager = lazy(() => import('./components/ProjectManager').then(m => ({ default: m.ProjectManager })));
+const SupplierManager = lazy(() => import('./components/SupplierManager').then(m => ({ default: m.SupplierManager })));
+const QuotationIngestion = lazy(() => import('./components/QuotationIngestion').then(m => ({ default: m.QuotationIngestion })));
+const EvaluationMatrix = lazy(() => import('./components/EvaluationMatrix').then(m => ({ default: m.EvaluationMatrix })));
+const DocumentGenerator = lazy(() => import('./components/DocumentGenerator').then(m => ({ default: m.DocumentGenerator })));
+const SettingsView = lazy(() => import('./components/SettingsView').then(m => ({ default: m.SettingsView })));
+const ProyectosMaestros = lazy(() => import('./components/ProyectosMaestros').then(m => ({ default: m.ProyectosMaestros })));
+const AvanceFinancieroPage = lazy(() => import('./components/AvanceFinancieroPage').then(m => ({ default: m.AvanceFinancieroPage })));
+const SgcProcessWorkflow = lazy(() => import('./components/SgcProcessWorkflow').then(m => ({ default: m.SgcProcessWorkflow })));
+const ReportesPage = lazy(() => import('./components/ReportesPage').then(m => ({ default: m.ReportesPage })));
+const FichaProyectoPage = lazy(() => import('./components/FichaProyectoPage').then(m => ({ default: m.FichaProyectoPage })));
+const BandejaOPPage = lazy(() => import('./components/BandejaOPPage').then(m => ({ default: m.BandejaOPPage })));
+const BandejaOPDemo = lazy(() => import('./pages/BandejaOPDemo').then(m => ({ default: m.BandejaOPDemo })));
+const EETTDemo = lazy(() => import('./pages/EETTDemo').then(m => ({ default: m.EETTDemo })));
+const CaratulaDemo = lazy(() => import('./pages/CaratulaDemo').then(m => ({ default: m.CaratulaDemo })));
+const ProveedoresDemo = lazy(() => import('./pages/ProveedoresDemo').then(m => ({ default: m.ProveedoresDemo })));
+const PortalInvitacionPage = lazy(() => import('./pages/PortalInvitacionPage').then(m => ({ default: m.PortalInvitacionPage })));
+const LibroObraMovilPage = lazy(() => import('./pages/LibroObraMovilPage').then(m => ({ default: m.LibroObraMovilPage })));
+const MisObrasLista = lazy(() => import('./components/MisObrasLista').then(m => ({ default: m.MisObrasLista })));
+const LicitacionDemo = lazy(() => import('./pages/LicitacionDemo').then(m => ({ default: m.LicitacionDemo })));
+const PortalDemo = lazy(() => import('./pages/PortalDemo').then(m => ({ default: m.PortalDemo })));
+const LicitacionWorkspacePage = lazy(() => import('./components/LicitacionWorkspacePage').then(m => ({ default: m.LicitacionWorkspacePage })));
+
+function CargandoPantalla() {
+  return (
+    <div className="py-24 flex items-center justify-center text-slate-400 text-sm gap-2">
+      <span className="w-4 h-4 rounded-full border-2 border-slate-300 border-t-sky-500 animate-spin" /> Cargando...
+    </div>
+  );
+}
 
 function AdminApp() {
   // Cuando llega configuración nueva desde Firebase (ej. el administrador editó campus o la nómina en
@@ -119,8 +136,8 @@ function AdminApp() {
       }
     );
 
-    // Cargar cotizaciones
-    getAllCotizaciones().then(cots => setCotizaciones(cots)).catch(err => {
+    // Cotizaciones en vivo: se actualizan solas al agregar, importar o eliminar ofertas.
+    const unsubCots = subscribeToAllCotizaciones(setCotizaciones, err => {
       console.error('Error cargando cotizaciones:', err);
       setErrorCargaDatos('No se pudieron cargar las cotizaciones. Puede ser un problema de conexión o de permisos — recargue la página; si persiste, avise al administrador del sistema.');
     });
@@ -128,6 +145,7 @@ function AdminApp() {
     return () => {
       unsubProvs();
       unsubLics();
+      unsubCots();
     };
   }, []);
 
@@ -179,8 +197,6 @@ function AdminApp() {
       throw new Error('PROCESO_CERRADO: La licitación ya fue adjudicada y no acepta nuevas ofertas.');
     }
     await fsAddCotizacion(newCot);
-    const updatedCots = await getAllCotizaciones();
-    setCotizaciones(updatedCots);
   };
 
   const handleDeleteCotizacion = async (id: string) => {
@@ -199,8 +215,6 @@ function AdminApp() {
     }
     if (confirm('¿Confirma que desea eliminar esta cotización?')) {
       await fsDeleteCotizacion(id);
-      const updatedCots = await getAllCotizaciones();
-      setCotizaciones(updatedCots);
     }
   };
 
@@ -267,7 +281,8 @@ function AdminApp() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
+        <Suspense fallback={<CargandoPantalla />}>
         {errorCargaDatos && (
           <div className="mb-6 bg-red-50 border border-red-300 text-red-900 rounded-2xl px-5 py-4 flex items-start justify-between gap-3">
             <p className="text-xs font-semibold">⚠️ {errorCargaDatos}</p>
@@ -280,8 +295,50 @@ function AdminApp() {
             </button>
           </div>
         )}
+        {!soloBandejaOP && (
+          <ConsultasPendientesAlerta
+            licitaciones={licitaciones}
+            onAbrir={id => {
+              setLicitacionSeleccionadaId(id);
+              setLicitacionWorkspaceId(id);
+              setLicitacionWorkspaceTab('consultas');
+              setActiveTab('ficha-licitacion');
+            }}
+          />
+        )}
+        {!soloBandejaOP && (
+          <VencimientosAlerta
+            licitaciones={licitaciones}
+            proveedores={proveedores}
+            onAbrirGarantias={id => {
+              setLicitacionSeleccionadaId(id);
+              setLicitacionWorkspaceId(id);
+              setLicitacionWorkspaceTab('garantias');
+              setActiveTab('ficha-licitacion');
+            }}
+            onAbrirProveedores={() => setActiveTab('proveedores')}
+          />
+        )}
         {activeTab === 'bandeja-op' && (isAdmin || isSecretaria) && (
           <BandejaOPPage licitaciones={licitaciones} cotizaciones={cotizaciones} proveedores={proveedores} configFirmas={configFirmas} />
+        )}
+
+        {!soloBandejaOP && activeTab === 'mis-obras' && (
+          <div className="max-w-2xl mx-auto space-y-3">
+            <div>
+              <h2 className="text-lg font-bold text-slate-800">Mis obras en ejecución</h2>
+              <p className="text-xs text-slate-500">Elija una obra para abrir su libro de obra. En el celular, este sistema se puede instalar como aplicación desde el menú del navegador.</p>
+            </div>
+            <MisObrasLista
+              licitaciones={licitaciones}
+              onAbrir={id => {
+                setLicitacionSeleccionadaId(id);
+                setLicitacionWorkspaceId(id);
+                setLicitacionWorkspaceTab('libro');
+                setActiveTab('ficha-licitacion');
+              }}
+            />
+          </div>
         )}
 
         {!soloBandejaOP && activeTab === 'licitaciones' && (
@@ -330,6 +387,7 @@ function AdminApp() {
           const licitacion = licitaciones.find(l => l.id === licitacionWorkspaceId);
           return licitacion ? (
             <LicitacionWorkspacePage
+              key={`${licitacion.id}-${licitacionWorkspaceTab}`}
               licitacion={licitacion}
               initialTab={licitacionWorkspaceTab}
               proveedores={proveedores}
@@ -400,6 +458,7 @@ function AdminApp() {
             onResetData={handleResetAllData}
           />
         )}
+        </Suspense>
       </main>
 
       {/* Footer */}
@@ -427,8 +486,10 @@ function BloqueaProveedor({ children }: { children: React.ReactNode }) {
 
 function ProtectedInternalRoute({ children }: { children: React.ReactNode }) {
   const { user, isInternalUser, loading } = useAuth();
+  const location = useLocation();
   if (loading) return <div className="min-h-screen bg-slate-950" />;
-  if (!user || !isInternalUser) return <Navigate to="/login" replace />;
+  // Tras ingresar se vuelve a donde se quería ir (ej. el libro de obra en el celular).
+  if (!user || !isInternalUser) return <Navigate to="/login" replace state={{ volverA: location.pathname }} />;
   return <>{children}</>;
 }
 
@@ -436,10 +497,13 @@ export function App() {
   return (
     <AuthProvider>
       <BrowserRouter basename={import.meta.env.BASE_URL}>
+        <Suspense fallback={<div className="min-h-screen bg-slate-950" />}>
         <Routes>
           {/* Rutas internas */}
           <Route path="/login" element={<BloqueaProveedor><InternalLoginPage /></BloqueaProveedor>} />
           <Route path="/" element={<BloqueaProveedor><ProtectedInternalRoute><AdminApp /></ProtectedInternalRoute></BloqueaProveedor>} />
+          <Route path="/libro-obra" element={<BloqueaProveedor><ProtectedInternalRoute><LibroObraMovilPage /></ProtectedInternalRoute></BloqueaProveedor>} />
+          <Route path="/libro-obra/:id" element={<BloqueaProveedor><ProtectedInternalRoute><LibroObraMovilPage /></ProtectedInternalRoute></BloqueaProveedor>} />
 
           {/* Provider routes */}
           <Route path="/portal/login" element={<PortalAccesoRestringido />} />
@@ -448,12 +512,14 @@ export function App() {
           {import.meta.env.DEV && <Route path="/demo/eett" element={<EETTDemo />} />}
           {import.meta.env.DEV && <Route path="/demo/caratula" element={<CaratulaDemo />} />}
           {import.meta.env.DEV && <Route path="/demo/proveedores" element={<ProveedoresDemo />} />}
+          {import.meta.env.DEV && <Route path="/demo/licitacion" element={<LicitacionDemo />} />}
           {/* Único punto de entrada: el enlace de la invitación. Exige sesión y verifica la invitación. */}
           <Route path="/portal/licitacion/:id" element={<PortalInvitacionPage />} />
           {/* Cualquier otra ruta del portal: sin dashboard ni listados, solo la pantalla neutra */}
           <Route path="/portal/*" element={<PortalAccesoRestringido />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </Suspense>
       </BrowserRouter>
     </AuthProvider>
   );

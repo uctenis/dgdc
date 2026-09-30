@@ -1,21 +1,22 @@
 import { useState } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AlertCircle, Building2, Loader2, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export function InternalLoginPage() {
   const { user, isInternalUser, loading, loginInternalWithGoogle, loginDevBypass, error, clearError } = useAuth();
   const navigate = useNavigate();
+  const volverA = (useLocation().state as { volverA?: string } | null)?.volverA || '/';
   const [submitting, setSubmitting] = useState(false);
 
-  if (!loading && user && isInternalUser) return <Navigate to="/" replace />;
+  if (!loading && user && isInternalUser) return <Navigate to={volverA} replace />;
 
   const login = async () => {
     clearError();
     setSubmitting(true);
     try {
       await loginInternalWithGoogle();
-      navigate('/', { replace: true });
+      navigate(volverA, { replace: true });
     } catch {
       // El contexto entrega el mensaje específico al usuario.
     } finally {

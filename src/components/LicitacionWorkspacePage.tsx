@@ -4,12 +4,12 @@ import {
   CalendarDays, CircleDollarSign, Clock3, Loader2, Receipt, Save, TrendingUp,
   Trophy, Upload, WalletCards, ShieldCheck, LockKeyhole,
   AlertTriangle, ShieldAlert, Award, CheckSquare, Minus, TrendingDown, BarChart3,
-  Camera, Plus, Trash2, Image as ImageIcon, Users, BookOpen,
+  Camera, Plus, Trash2, Image as ImageIcon, Users, BookOpen, BookOpenCheck, HelpCircle,
 } from 'lucide-react';
 
 import type {
   AumentoObra, ConfiguracionFirmas, Cotizacion, EstadoPago, ItemEstadoPago,
-  LicitacionProyecto, Proveedor,
+  InvitadoLicitacion, LicitacionProyecto, Propuesta, Proveedor,
 } from '../types';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { QuotationIngestion } from './QuotationIngestion';
@@ -22,19 +22,26 @@ import { ActaRecepcionModal } from './ActaRecepcionModal';
 import { EvaluacionDesempenoModal } from './EvaluacionDesempenoModal';
 import { InvitadosManager } from './InvitadosManager';
 import { AntecedentesManager } from './AntecedentesManager';
+import { ConsultasManager } from './ConsultasManager';
+import { GarantiasManager } from './GarantiasManager';
+import { LibroObraPanel } from './LibroObraPanel';
+import { estadoVencimiento, requiereAviso } from '../utils/vencimientos';
+import { useOfertasSelladas } from '../hooks/useOfertasSelladas';
+import { fechaLimiteOfertas, textoLimiteOfertas } from '../utils/plazoOfertas';
 import { PremiumDatePicker } from './PremiumDatePicker';
 import { HITOS_LICITACION, calcularEstadosHitos, obtenerFechasHitos, formatearFechaCorta, ESTADO_HITO_DOT, ESTADO_HITO_TEXT, LIFECYCLE_COLOR, LIFECYCLE_LABEL } from '../utils/hitosLicitacion';
 import { parseOrdenDeCompra } from '../utils/ocParser';
 import { uploadLicitacionDocument } from '../services/storageService';
 import {
-  addEstadoPago, subscribeToAumentosObra, subscribeToEstadosPago, updateLicitacion, syncOCToProyectoMaestro
+  addEstadoPago, subscribeToAumentosObra, subscribeToEstadosPago, updateLicitacion, syncOCToProyectoMaestro,
+  subscribeToConsultas, subscribeToPropuestas, subscribeToGarantias, subscribeToInvitados, registrarAperturaOfertas,
 } from '../services/firestoreService';
 import { useAuth } from '../context/AuthContext';
 import { isProjectResponsible } from '../services/internalAccessService';
 import { firmarEstadoPagoSeguro } from '../services/paymentSignatureService';
 import { esProcesoSimplificado, UMBRAL_LICITACION_OBLIGATORIA } from '../data/contratoTemplateData';
 
-export type TabId = 'resumen' | 'expediente' | 'antecedentes' | 'invitados' | 'ofertas' | 'evaluacion' | 'actas' | 'oc' | 'pagos';
+export type TabId = 'resumen' | 'expediente' | 'antecedentes' | 'invitados' | 'consultas' | 'ofertas' | 'evaluacion' | 'actas' | 'oc' | 'garantias' | 'pagos' | 'libro';
 
 interface Props {
   licitacion: LicitacionProyecto;
@@ -54,11 +61,14 @@ const tabs: { id: TabId; label: string; icon: typeof FileText }[] = [
   { id: 'expediente', label: 'Ficha', icon: FolderOpen },
   { id: 'antecedentes', label: 'Bases & Planos', icon: BookOpen },
   { id: 'invitados', label: 'Invitados', icon: Users },
+  { id: 'consultas', label: 'Consultas', icon: HelpCircle },
   { id: 'ofertas', label: 'Ofertas', icon: Receipt },
   { id: 'evaluacion', label: 'Evaluación', icon: Trophy },
   { id: 'actas', label: 'Actas', icon: FileCheck2 },
   { id: 'oc', label: 'Orden de compra', icon: Landmark },
+  { id: 'garantias', label: 'Garantías', icon: ShieldCheck },
   { id: 'pagos', label: 'Estados de pago', icon: WalletCards },
+  { id: 'libro', label: 'Libro de obra', icon: BookOpenCheck },
 ];
 
 export function LicitacionWorkspacePage({
@@ -66,7 +76,53 @@ export function LicitacionWorkspacePage({
   onAddCotizacion, onDeleteCotizacion, onAdjudicarLicitacion, initialTab,
 }: Props) {
   const [activeTab, setActiveTab] = useState<TabId>(initialTab || 'resumen');
+  const [consultasPendientes, setConsultasPendientes] = useState(0);
+  useEffect(() => subscribeToConsultas(licitacion.id, c => setConsultasPendientes(c.filter(x => x.estado === 'Pendiente').length)), [licitacion.id]);
+  // Garantías vigentes vencidas o por vencer: número en la pestaña.
+  const [garantiasConAviso, setGarantiasConAviso] = useState(0);
+  useEffect(() => subscribeToGarantias(licitacion.id, gs => setGarantiasConAviso(
+    gs.filter(g => g.estado === 'Vigente' && requiereAviso(estadoVencimiento(g.fechaVencimiento))).length
+  )), [licitacion.id]);
+  // Ofertas del portal. Mientras la recepción está abierta quedan SELLADAS: solo se sabe quién presentó (por los
+  // invitados), sin leer montos ni archivos. Al cierre se leen y se fija el registro de apertura.
+  const { user: usuarioActual } = useAuth();
+  const sellada = useOfertasSelladas(licitacion);
+  const [invitadosLic, setInvitadosLic] = useState<InvitadoLicitacion[]>([]);
+  useEffect(() => subscribeToInvitados(licitacion.id, setInvitadosLic), [licitacion.id]);
+  const presentados = invitadosLic.filter(i => i.estadoPropuesta === 'Presentada');
+  const [propuestasPortal, setPropuestasPortal] = useState<Propuesta[] | null>(null);
+  useEffect(() => {
+    setPropuestasPortal(null);
+    if (sellada) return;
+    return subscribeToPropuestas(licitacion.id, p => setPropuestasPortal(p.filter(x => x.estado === 'Enviada')));
+  }, [licitacion.id, sellada]);
   const ofertas = cotizaciones.filter(c => c.licitacionId === licitacion.id);
+  const propuestasNuevas = (propuestasPortal || []).filter(p => !ofertas.some(o => o.proveedorId === p.proveedorId));
+
+  // Registro de apertura: se fija una sola vez, con lo recibido hasta el cierre.
+  useEffect(() => {
+    const limite = fechaLimiteOfertas(licitacion);
+    if (sellada || !limite || licitacion.aperturaOfertas || propuestasPortal === null) return;
+    const ofertasAbiertas = propuestasPortal.filter(p => !p.fechaEnvio || new Date(p.fechaEnvio).getTime() <= limite.getTime());
+    void registrarAperturaOfertas(licitacion.id, {
+      fechaCierre: limite.toISOString(),
+      fechaRegistro: new Date().toISOString(),
+      registradoPor: usuarioActual?.email || 'sistema',
+      ofertas: ofertasAbiertas.map(p => ({
+        proveedorId: p.proveedorId,
+        proveedorNombre: p.proveedorNombre,
+        ...(p.proveedorRut ? { proveedorRut: p.proveedorRut } : {}),
+        ...(p.fechaEnvio ? { fechaEnvio: p.fechaEnvio } : {}),
+        montoTotal: p.montoTotal || 0,
+        plazoDias: p.plazoDias || 0,
+        ...(p.archivoNombre ? { archivoEconomico: p.archivoNombre } : {}),
+        ...(p.archivoTecnicoNombre ? { archivoTecnico: p.archivoTecnicoNombre } : {}),
+      })),
+      sinOferta: invitadosLic
+        .filter(i => !ofertasAbiertas.some(p => p.proveedorId === i.proveedorId))
+        .map(i => ({ proveedorId: i.proveedorId, proveedorNombre: i.proveedorNombre })),
+    }).catch(err => console.warn('No se pudo fijar el registro de apertura:', err));
+  }, [sellada, licitacion, propuestasPortal, invitadosLic, usuarioActual?.email]);
   const ofertaAdjudicada = ofertas.find(c => c.id === licitacion.cotizacionAdjudicadaId)
     || ofertas.find(c => c.proveedorId === (licitacion.proveedorAdjudicadoId || licitacion.proveedorGanadorId));
   const proveedorAdjudicado = proveedores.find(p => p.id === (licitacion.proveedorAdjudicadoId || licitacion.proveedorGanadorId));
@@ -84,7 +140,7 @@ export function LicitacionWorkspacePage({
         <ArrowLeft className="w-4 h-4" /> Volver a licitaciones
       </button>
 
-      <section className="rounded-3xl p-6 sm:p-8 text-white shadow-lg border border-slate-700 bg-gradient-to-br from-slate-950 via-blue-950 to-sky-900">
+      <section className="rounded-3xl p-4 sm:p-8 text-white shadow-lg border border-slate-700 bg-gradient-to-br from-slate-950 via-blue-950 to-sky-900">
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-5">
           <div className="space-y-3">
             <div className="flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-wide">
@@ -95,10 +151,10 @@ export function LicitacionWorkspacePage({
                 <span className="px-2.5 py-1 rounded-full bg-emerald-400/15 text-emerald-200 border border-emerald-300/20">Comparación de Precios (proceso simplificado)</span>
               )}
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight">{licitacion.nombreProyecto.toLocaleUpperCase('es-CL')}</h1>
-            <p className="text-sm text-slate-300 max-w-3xl">{licitacion.descripcion}</p>
+            <h1 className="text-xl sm:text-3xl font-black tracking-tight break-words">{licitacion.nombreProyecto.toLocaleUpperCase('es-CL')}</h1>
+            <p className="text-sm text-slate-300 max-w-3xl line-clamp-3 sm:line-clamp-none">{licitacion.descripcion}</p>
           </div>
-          <div className="grid grid-cols-2 gap-3 min-w-[300px]">
+          <div className="grid grid-cols-2 gap-3 sm:min-w-[300px]">
             <div className="rounded-xl bg-white/8 border border-white/10 p-3">
               <span className="block text-[10px] uppercase text-slate-400">Ofertas</span>
               <strong className="text-xl text-sky-300">{ofertas.length}</strong>
@@ -128,7 +184,51 @@ export function LicitacionWorkspacePage({
         </div>
       )}
 
-      <nav className="flex gap-1 overflow-x-auto bg-white border border-slate-200 rounded-2xl p-1.5 shadow-sm">
+      {sellada && presentados.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-sky-300 bg-sky-50 px-5 py-3 text-xs text-sky-900">
+          <LockKeyhole className="w-4 h-4 shrink-0" />
+          <span>
+            <strong>{presentados.length === 1 ? '1 oferta recibida' : `${presentados.length} ofertas recibidas`} por el portal, selladas hasta el cierre ({textoLimiteOfertas(licitacion)}):</strong>{' '}
+            {presentados.map(i => `${i.proveedorNombre}${i.fechaPresentacion ? ` (${new Date(i.fechaPresentacion).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })})` : ''}`).join(' · ')}
+          </span>
+        </div>
+      )}
+      {propuestasNuevas.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-emerald-300 bg-emerald-50 px-5 py-3 text-xs text-emerald-900">
+          <Receipt className="w-4 h-4 shrink-0" />
+          <span>
+            <strong>{propuestasNuevas.length === 1 ? 'Nueva oferta recibida' : `${propuestasNuevas.length} ofertas nuevas recibidas`} por el portal de proveedores:</strong>{' '}
+            {propuestasNuevas.map(p => `${p.proveedorNombre}${p.fechaEnvio ? ` (${new Date(p.fechaEnvio).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })})` : ''}`).join(' · ')}
+          </span>
+          <button type="button" onClick={() => setActiveTab('ofertas')} className="ml-auto px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white font-bold">
+            Revisar ofertas
+          </button>
+        </div>
+      )}
+
+      {/* Celular: pestañas en cuadrícula (sin desplazamiento lateral) */}
+      <nav className="sm:hidden grid grid-cols-3 gap-1 bg-white border border-slate-200 rounded-2xl p-1.5 shadow-sm">
+        {tabs.map(tab => {
+          const Icon = tab.icon;
+          const aviso = tab.id === 'ofertas' ? propuestasNuevas.length : tab.id === 'garantias' ? garantiasConAviso : tab.id === 'consultas' ? consultasPendientes : 0;
+          const colorAviso = tab.id === 'ofertas' ? 'bg-emerald-500' : tab.id === 'garantias' ? 'bg-red-500' : 'bg-amber-500';
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`relative flex flex-col items-center justify-center gap-1 px-1 py-2.5 rounded-xl text-[10px] font-bold leading-tight text-center transition ${activeTab === tab.id ? 'bg-slate-900 text-white' : 'text-slate-600 active:bg-slate-100'}`}
+            >
+              <Icon className="w-4 h-4" />
+              {tab.label}
+              {aviso > 0 && (
+                <span className={`absolute top-1 right-1 min-w-[16px] h-[16px] px-1 rounded-full ${colorAviso} text-white text-[9px] font-black flex items-center justify-center`}>{aviso}</span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
+
+      <nav className="hidden sm:flex gap-1 overflow-x-auto bg-white border border-slate-200 rounded-2xl p-1.5 shadow-sm">
         {tabs.map(tab => {
           const Icon = tab.icon;
           return (
@@ -138,6 +238,21 @@ export function LicitacionWorkspacePage({
               className={`shrink-0 px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition ${activeTab === tab.id ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}
             >
               <Icon className="w-4 h-4" /> {tab.label}
+              {tab.id === 'ofertas' && propuestasNuevas.length > 0 && (
+                <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-500 text-white text-[10px] font-black flex items-center justify-center" title="Ofertas nuevas del portal sin revisar">
+                  {propuestasNuevas.length}
+                </span>
+              )}
+              {tab.id === 'garantias' && garantiasConAviso > 0 && (
+                <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center" title="Garantías vencidas o por vencer">
+                  {garantiasConAviso}
+                </span>
+              )}
+              {tab.id === 'consultas' && consultasPendientes > 0 && (
+                <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-black flex items-center justify-center" title="Consultas sin responder">
+                  {consultasPendientes}
+                </span>
+              )}
             </button>
           );
         })}
@@ -170,6 +285,7 @@ export function LicitacionWorkspacePage({
           onClose={() => setActiveTab('resumen')}
         />
       )}
+      {activeTab === 'consultas' && <ConsultasManager licitacion={licitacion} />}
       {activeTab === 'ofertas' && (
         <QuotationIngestion licitacion={licitacion} proveedores={proveedores} cotizaciones={cotizaciones} onAddCotizacion={onAddCotizacion} onDeleteCotizacion={onDeleteCotizacion} configFirmas={configFirmas} />
       )}
@@ -186,6 +302,8 @@ export function LicitacionWorkspacePage({
         />
       )}
       {activeTab === 'oc' && <OrdenCompraTab licitacion={licitacion} oferta={ofertaAdjudicada} />}
+      {activeTab === 'libro' && <LibroObraPanel licitacion={licitacion} />}
+      {activeTab === 'garantias' && <GarantiasManager licitacion={licitacion} proveedores={proveedores} />}
       {activeTab === 'pagos' && <EstadosPagoTab licitacion={licitacion} oferta={ofertaAdjudicada} configFirmas={configFirmas} />}
     </div>
   );
@@ -881,7 +999,7 @@ function EstadosPagoTab({ licitacion, oferta, configFirmas }: { licitacion: Lici
 
         {/* Costo/m² efectivo */}
         {licitacion.superficieM2 && licitacion.superficieM2 > 0 && pagadoAcumulado > 0 && (
-          <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm min-w-[220px]">
+          <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:min-w-[220px]">
             <div className="p-2 bg-indigo-100 rounded-xl">
               <BarChart3 className="w-5 h-5 text-indigo-600" />
             </div>
@@ -912,10 +1030,10 @@ function EstadosPagoTab({ licitacion, oferta, configFirmas }: { licitacion: Lici
 
         {fechaInicio && plazoDias ? (
           <div className="overflow-x-auto">
-            <div className="min-w-[760px] space-y-2">
-              <div className="grid grid-cols-[260px_1fr] gap-3 text-[10px] font-bold text-slate-500"><span>PARTIDA</span><div className="flex justify-between"><span>{formatearFecha(fechaInicio)}</span><span>{formatearFecha(fechaTermino)}</span></div></div>
+            <div className="sm:min-w-[760px] space-y-2">
+              <div className="grid grid-cols-1 sm:grid-cols-[260px_1fr] gap-1 sm:gap-3 text-[10px] font-bold text-slate-500"><span className="hidden sm:inline">PARTIDA</span><div className="flex justify-between"><span>{formatearFecha(fechaInicio)}</span><span>{formatearFecha(fechaTermino)}</span></div></div>
               {ganttItems.map(item => (
-                <div key={item.id} className="grid grid-cols-[260px_1fr] gap-3 items-center py-1.5 border-t border-slate-100">
+                <div key={item.id} className="grid grid-cols-1 sm:grid-cols-[260px_1fr] gap-1 sm:gap-3 items-center py-1.5 border-t border-slate-100">
                   <div className="min-w-0"><strong className="text-[11px] text-slate-800 block truncate">{item.item}. {item.descripcion}</strong><span className="text-[9px] text-slate-400">{formatearFecha(item.fechaInicio)} – {formatearFecha(item.fechaTermino)} · {item.avancePct}% ejecutado</span></div>
                   <div className="relative h-7 rounded-md bg-slate-100 overflow-hidden">
                     <div className="absolute inset-y-1 rounded bg-slate-300 border border-slate-400 overflow-hidden" style={{ left: `${item.inicioPct}%`, width: `${item.anchoPct}%` }}>
@@ -1025,24 +1143,24 @@ function EstadosPagoTab({ licitacion, oferta, configFirmas }: { licitacion: Lici
       <section className={`${contratoCompletado || estadoPendienteFirma ? 'hidden' : ''} bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden`}>
         <div className="p-5 border-b"><h2 className="font-black">Estado de pago N° {estados.length + 1}</h2><p className="text-xs text-slate-500">Ingrese el nuevo avance acumulado. Debe ser igual o superior al aprobado anteriormente y nunca mayor a 100%.</p></div>
         <div className="overflow-x-auto">
-          <table className="w-full text-[11px]">
-            <thead className="bg-slate-900 text-white"><tr><th className="p-3 text-left">Item / descripción</th><th className="p-3 text-right">Contrato neto</th><th className="p-3 text-right">Anterior</th><th className="p-3 text-right">Nuevo acumulado</th><th className="p-3 text-right">Avance período</th><th className="p-3 text-right">Monto período</th></tr></thead>
-            <tbody className="divide-y divide-slate-100">
+          <table className="w-full text-[11px] block sm:table">
+            <thead className="hidden sm:table-header-group bg-slate-900 text-white"><tr><th className="p-3 text-left">Item / descripción</th><th className="p-3 text-right">Contrato neto</th><th className="p-3 text-right">Anterior</th><th className="p-3 text-right">Nuevo acumulado</th><th className="p-3 text-right">Avance período</th><th className="p-3 text-right">Monto período</th></tr></thead>
+            <tbody className="block sm:table-row-group divide-y divide-slate-100">
               {itemsPago.map(item => {
                 const error = erroresAvance[item.itemCotizacionId];
                 return (
-                  <tr key={item.itemCotizacionId} className={error ? 'bg-red-50/60' : ''}>
-                    <td className="p-3"><strong>{item.item}</strong><span className="block text-slate-500 max-w-md">{item.descripcion}</span></td>
-                    <td className="p-3 text-right">{formatoMonedaCLP(item.precioTotal)}</td>
-                    <td className="p-3 text-right font-bold text-slate-600">{item.avanceAnteriorPct}%</td>
-                    <td className="p-3 text-right">
-                      <div className="inline-flex flex-col items-end">
+                  <tr key={item.itemCotizacionId} className={`grid grid-cols-2 gap-x-3 gap-y-2 p-3 sm:p-0 sm:table-row ${error ? 'bg-red-50/60' : ''}`}>
+                    <td className="col-span-2 sm:p-3 sm:table-cell"><strong>{item.item}</strong><span className="block text-slate-500 max-w-md">{item.descripcion}</span></td>
+                    <td className="sm:p-3 sm:table-cell sm:text-right"><span className="sm:hidden block text-[9px] font-bold uppercase text-slate-400">Contrato neto</span>{formatoMonedaCLP(item.precioTotal)}</td>
+                    <td className="sm:p-3 sm:table-cell sm:text-right font-bold text-slate-600"><span className="sm:hidden block text-[9px] font-bold uppercase text-slate-400">Anterior</span>{item.avanceAnteriorPct}%</td>
+                    <td className="sm:p-3 sm:table-cell sm:text-right"><span className="sm:hidden block text-[9px] font-bold uppercase text-slate-400">Nuevo acumulado</span>
+                      <div className="inline-flex flex-col sm:items-end">
                         <span><input type="number" min={item.avanceAnteriorPct} max={100} step="0.01" value={avances[item.itemCotizacionId] ?? ''} placeholder={String(item.avanceAnteriorPct)} onChange={e => setAvances(actual => ({ ...actual, [item.itemCotizacionId]: e.target.value === '' ? undefined : Number(e.target.value) }))} onBlur={e => { if (e.target.value !== '') setAvances(actual => ({ ...actual, [item.itemCotizacionId]: Math.min(100, Math.max(item.avanceAnteriorPct, Number(e.target.value))) })); }} className={`w-24 px-2 py-1.5 border rounded-lg text-right font-bold outline-none ${error ? 'border-red-500 text-red-700 ring-2 ring-red-100' : 'border-slate-300 focus:ring-2 focus:ring-sky-500'}`} /> %</span>
                         {error && <span className="text-[9px] text-red-600 mt-1">{error}</span>}
                       </div>
                     </td>
-                    <td className="p-3 text-right font-bold text-sky-700">+{item.avancePeriodoPct}%</td>
-                    <td className="p-3 text-right font-bold text-emerald-700">{formatoMonedaCLP(item.montoPeriodo)}</td>
+                    <td className="sm:p-3 sm:table-cell sm:text-right font-bold text-sky-700"><span className="sm:hidden block text-[9px] font-bold uppercase text-slate-400">Avance período</span>+{item.avancePeriodoPct}%</td>
+                    <td className="sm:p-3 sm:table-cell sm:text-right font-bold text-emerald-700"><span className="sm:hidden block text-[9px] font-bold uppercase text-slate-400">Monto período</span>{formatoMonedaCLP(item.montoPeriodo)}</td>
                   </tr>
                 );
               })}

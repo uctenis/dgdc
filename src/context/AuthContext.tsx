@@ -362,7 +362,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    setDevProveedor(null);
+    // Prueba local como proveedor: solo se sale de la prueba; la sesión interna de Firebase sigue abierta.
+    if (devProveedor) { setDevProveedor(null); return; }
     await signOut(auth);
   };
 

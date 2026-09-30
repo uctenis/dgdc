@@ -147,7 +147,7 @@ export function uploadProyectoDocumento(
 /** Respaldo persistente para documentos administrativos cuando Drive no está disponible. */
 export function uploadLicitacionDocument(
   licitacionId: string,
-  categoria: 'ofertas' | 'ordenes-compra' | 'estados-pago' | 'antecedentes',
+  categoria: 'ofertas' | 'ordenes-compra' | 'estados-pago' | 'antecedentes' | 'garantias',
   file: File,
   onProgress?: (pct: number) => void,
   /** Subcarpeta (ej. el id del proveedor): así cada proveedor solo escribe en la suya. */
@@ -157,6 +157,20 @@ export function uploadLicitacionDocument(
     const nombreSeguro = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
     const storageRef = ref(storage, `licitaciones/${licitacionId}/${categoria}/${subcarpeta ? `${subcarpeta}/` : ''}${Date.now()}_${nombreSeguro}`);
     const task = uploadBytesResumable(storageRef, file);
+    task.on(
+      'state_changed',
+      snapshot => onProgress?.(Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)),
+      reject,
+      async () => resolve(await getDownloadURL(task.snapshot.ref))
+    );
+  });
+}
+
+/** Documentos de la carpeta del proveedor (F30, vigencia, seguros...): proveedores/{id}/documentos/. */
+export function uploadDocumentoProveedor(proveedorId: string, file: File, onProgress?: (pct: number) => void): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const nombreSeguro = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const task = uploadBytesResumable(ref(storage, `proveedores/${proveedorId}/documentos/${Date.now()}_${nombreSeguro}`), file);
     task.on(
       'state_changed',
       snapshot => onProgress?.(Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)),

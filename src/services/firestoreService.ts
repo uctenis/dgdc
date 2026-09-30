@@ -17,6 +17,7 @@ import {
   arrayUnion,
   arrayRemove,
   writeBatch,
+  collectionGroup,
   type Unsubscribe,
   type DocumentReference,
 } from 'firebase/firestore';
@@ -37,7 +38,9 @@ import type {
   AumentoObra,
   HitoDesarrolloProyecto,
   UserProfile,
-  EvaluacionDesempeno, EnvioInvitacion, InvitacionAcceso } from '../types';
+  EvaluacionDesempeno, EnvioInvitacion, InvitacionAcceso, ConsultaLicitacion, ConsultaPublicada, GarantiaLicitacion, RegistroAperturaOfertas,
+  EntradaLibroObra, FotoLibroObra,
+} from '../types';
 
 // ═══════════════════════════════════════════════════════════════════
 // PROVEEDORES
@@ -731,6 +734,33 @@ export async function getInvitadosLicitacion(licitacionId: string): Promise<Invi
   return snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<InvitadoLicitacion, 'id'>) }));
 }
 
+/** Todas las licitaciones con sus invitados: base para medir la carga de trabajo y la rotación de proveedores. */
+export async function getLicitacionesConInvitados(): Promise<{
+  licitaciones: LicitacionProyecto[];
+  invitadosPorLicitacion: Record<string, InvitadoLicitacion[]>;
+}> {
+  const licitaciones = await getAllLicitaciones();
+  // Una sola consulta por todos los invitados (grupo de colecciones) en vez de una por licitación.
+  try {
+    const snap = await getDocs(collectionGroup(db, 'invitados'));
+    const invitadosPorLicitacion: Record<string, InvitadoLicitacion[]> = Object.fromEntries(licitaciones.map(l => [l.id, []]));
+    snap.docs.forEach(d => {
+      const licId = d.ref.parent.parent?.id;
+      if (licId && invitadosPorLicitacion[licId]) {
+        invitadosPorLicitacion[licId].push({ id: d.id, ...(d.data() as Omit<InvitadoLicitacion, 'id'>) });
+      }
+    });
+    return { licitaciones, invitadosPorLicitacion };
+  } catch (err) {
+    // Reglas de Firebase sin permiso para el grupo de colecciones: se lee licitación por licitación.
+    console.warn('Lectura agrupada de invitados no permitida; se lee por licitación:', err);
+    const entradas = await Promise.all(licitaciones.map(async l =>
+      [l.id, await getInvitadosLicitacion(l.id).catch(() => [])] as const
+    ));
+    return { licitaciones, invitadosPorLicitacion: Object.fromEntries(entradas) };
+  }
+}
+
 /**
  * Valida el acceso al portal: el enlace personal (código) debe corresponder a la invitación de ESA licitación Y la
  * cuenta que entra debe ser de ese mismo proveedor (por su cuenta ya vinculada o por el correo con el que se le
@@ -763,6 +793,106 @@ export async function removeInvitado(licitacionId: string, proveedorId: string):
   ]);
 }
 
+/** Deja constancia de que el proveedor ingresó al portal con su enlace (primera vez, última vez y n° de sesiones). */
+export async function registrarAccesoPortal(licitacionId: string, proveedorId: string): Promise<void> {
+  const ref = doc(db, 'licitaciones', licitacionId, 'invitados', proveedorId);
+  const previo = await getDoc(ref);
+  if (!previo.exists()) return;
+  const ahora = new Date().toISOString();
+  await updateDoc(ref, {
+    ...((previo.data() as InvitadoLicitacion).primerAcceso ? {} : { primerAcceso: ahora }),
+    ultimoAcceso: ahora,
+    cantidadAccesos: increment(1),
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CONSULTAS DE PROVEEDORES (período de consultas)
+// `consultas`: cada pregunta con su autor (solo personal interno y el propio proveedor).
+// `consultasPublicadas`: pregunta + respuesta, SIN identificar al proveedor, visibles para todos los invitados.
+// ═══════════════════════════════════════════════════════════════════
+
+export async function addConsulta(
+  licitacionId: string,
+  data: Pick<ConsultaLicitacion, 'proveedorId' | 'proveedorNombre' | 'proveedorUid' | 'pregunta'>
+): Promise<void> {
+  await addDoc(collection(db, 'licitaciones', licitacionId, 'consultas'), {
+    ...data,
+    fechaPregunta: new Date().toISOString(),
+    estado: 'Pendiente',
+    _createdAt: serverTimestamp(),
+  });
+}
+
+const ordenarPorFecha = <T extends { fechaPregunta: string }>(lista: T[]) =>
+  lista.sort((a, b) => a.fechaPregunta.localeCompare(b.fechaPregunta));
+
+/** Todas las consultas de una licitación (personal interno). */
+export function subscribeToConsultas(licitacionId: string, callback: (c: ConsultaLicitacion[]) => void): Unsubscribe {
+  return onSnapshot(collection(db, 'licitaciones', licitacionId, 'consultas'), snap => {
+    callback(ordenarPorFecha(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<ConsultaLicitacion, 'id'>) }))));
+  });
+}
+
+/** Las consultas que hizo un proveedor (portal): solo las suyas. */
+export function subscribeToMisConsultas(
+  licitacionId: string,
+  proveedorId: string,
+  callback: (c: ConsultaLicitacion[]) => void,
+  onError?: (err: unknown) => void
+): Unsubscribe {
+  const q = query(collection(db, 'licitaciones', licitacionId, 'consultas'), where('proveedorId', '==', proveedorId));
+  return onSnapshot(q, snap => {
+    callback(ordenarPorFecha(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<ConsultaLicitacion, 'id'>) }))));
+  }, onError);
+}
+
+/** Preguntas y respuestas publicadas (anónimas), visibles para todos los invitados. */
+export function subscribeToConsultasPublicadas(
+  licitacionId: string,
+  callback: (c: ConsultaPublicada[]) => void,
+  onError?: (err: unknown) => void
+): Unsubscribe {
+  return onSnapshot(collection(db, 'licitaciones', licitacionId, 'consultasPublicadas'), snap => {
+    callback(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<ConsultaPublicada, 'id'>) })).sort((a, b) => a.numero - b.numero));
+  }, onError);
+}
+
+/**
+ * Responde una consulta y la publica en el portal sin identificar al proveedor. Si ya estaba publicada,
+ * corrige la respuesta manteniendo su número.
+ */
+export async function responderConsulta(
+  licitacionId: string,
+  consulta: ConsultaLicitacion,
+  respuesta: string,
+  numeroNuevo: number,
+  respondidaPorEmail: string
+): Promise<void> {
+  const numero = consulta.numero ?? numeroNuevo;
+  const fechaRespuesta = new Date().toISOString();
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'licitaciones', licitacionId, 'consultas', consulta.id), {
+    estado: 'Respondida', respuesta, fechaRespuesta, respondidaPorEmail, numero,
+  });
+  batch.set(doc(db, 'licitaciones', licitacionId, 'consultasPublicadas', consulta.id), {
+    numero, pregunta: consulta.pregunta, respuesta, fechaPregunta: consulta.fechaPregunta, fechaRespuesta,
+  });
+  await batch.commit();
+}
+
+/** Consultas pendientes de todas las licitaciones (alerta del personal interno). */
+export function subscribeToConsultasPendientes(
+  callback: (pendientes: (ConsultaLicitacion & { licitacionId: string })[]) => void
+): Unsubscribe {
+  // Sin filtro en la consulta (un filtro sobre un grupo de colecciones exige un índice): se filtra aquí.
+  return onSnapshot(collectionGroup(db, 'consultas'), snap => {
+    callback(snap.docs
+      .map(d => ({ id: d.id, licitacionId: d.ref.parent.parent?.id || '', ...(d.data() as Omit<ConsultaLicitacion, 'id'>) }))
+      .filter(c => c.estado === 'Pendiente' && c.licitacionId));
+  }, err => console.warn('No se pudieron leer las consultas pendientes:', err));
+}
+
 export async function updateInvitadoEstado(
   licitacionId: string,
   proveedorId: string,
@@ -790,6 +920,16 @@ export function subscribeToCotizaciones(
   return onSnapshot(q, snap => {
     callback(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Cotizacion, 'id'>) })));
   });
+}
+
+/** Todas las ofertas, en vivo: con la copia local solo se descargan los cambios, no la colección completa cada vez. */
+export function subscribeToAllCotizaciones(
+  callback: (cotizaciones: Cotizacion[]) => void,
+  onError?: (err: unknown) => void
+): Unsubscribe {
+  return onSnapshot(collection(db, 'cotizaciones'), snap => {
+    callback(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Cotizacion, 'id'>) })));
+  }, err => onError?.(err));
 }
 
 export async function getAllCotizaciones(): Promise<Cotizacion[]> {
@@ -1364,4 +1504,96 @@ export async function resetCarteraYLicitaciones(): Promise<{
     licitaciones: licitacionesSnap.size,
     cotizaciones: cotizacionesSnap.size,
   };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GARANTÍAS (licitaciones/{id}/garantias)
+// ═══════════════════════════════════════════════════════════════════
+
+export function subscribeToGarantias(
+  licitacionId: string,
+  callback: (garantias: GarantiaLicitacion[]) => void
+): Unsubscribe {
+  return onSnapshot(collection(db, 'licitaciones', licitacionId, 'garantias'), snap => {
+    callback(snap.docs
+      .map(d => ({ id: d.id, ...(d.data() as Omit<GarantiaLicitacion, 'id'>) }))
+      .sort((a, b) => (a.fechaVencimiento || '').localeCompare(b.fechaVencimiento || '')));
+  }, err => console.warn('No se pudieron leer las garantías:', err));
+}
+
+/** Garantías vigentes de todas las licitaciones (alerta de vencimientos del personal interno). */
+export function subscribeToGarantiasVigentes(
+  callback: (garantias: (GarantiaLicitacion & { licitacionId: string })[]) => void
+): Unsubscribe {
+  // Sin filtro en la consulta (un filtro sobre un grupo de colecciones exige un índice): se filtra aquí.
+  return onSnapshot(collectionGroup(db, 'garantias'), snap => {
+    callback(snap.docs
+      .map(d => ({ id: d.id, licitacionId: d.ref.parent.parent?.id || '', ...(d.data() as Omit<GarantiaLicitacion, 'id'>) }))
+      .filter(g => g.estado === 'Vigente' && g.licitacionId));
+  }, err => console.warn('No se pudieron leer las garantías vigentes:', err));
+}
+
+export async function addGarantia(licitacionId: string, data: Omit<GarantiaLicitacion, 'id'>): Promise<string> {
+  const ref = await addDoc(collection(db, 'licitaciones', licitacionId, 'garantias'), { ...data, _createdAt: serverTimestamp() });
+  return ref.id;
+}
+
+export async function updateGarantia(licitacionId: string, garantiaId: string, data: Partial<GarantiaLicitacion>): Promise<void> {
+  await updateDoc(doc(db, 'licitaciones', licitacionId, 'garantias', garantiaId), { ...data, _updatedAt: serverTimestamp() });
+}
+
+export async function deleteGarantia(licitacionId: string, garantiaId: string): Promise<void> {
+  await deleteDoc(doc(db, 'licitaciones', licitacionId, 'garantias', garantiaId));
+}
+
+/** Fija el registro de apertura una sola vez (si dos personas abren la licitación a la vez, vale el primero). */
+export async function registrarAperturaOfertas(licitacionId: string, registro: RegistroAperturaOfertas): Promise<boolean> {
+  const ref = doc(db, 'licitaciones', licitacionId);
+  return runTransaction(db, async transaction => {
+    const snap = await transaction.get(ref);
+    if (!snap.exists() || snap.data().aperturaOfertas) return false;
+    transaction.update(ref, { aperturaOfertas: registro, _updatedAt: serverTimestamp() });
+    return true;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// LIBRO DE OBRA (licitaciones/{id}/libroObra) — funciona sin señal
+// ═══════════════════════════════════════════════════════════════════
+
+/** Anotaciones del libro, de la más antigua a la más nueva. `pendientes` = ids aún no sincronizados con el servidor. */
+export function subscribeToLibroObra(
+  licitacionId: string,
+  callback: (entradas: EntradaLibroObra[], pendientes: Set<string>) => void
+): Unsubscribe {
+  return onSnapshot(collection(db, 'licitaciones', licitacionId, 'libroObra'), { includeMetadataChanges: true }, snap => {
+    const pendientes = new Set(snap.docs.filter(d => d.metadata.hasPendingWrites).map(d => d.id));
+    callback(
+      snap.docs
+        .map(d => ({ id: d.id, ...(d.data() as Omit<EntradaLibroObra, 'id'>) }))
+        .sort((a, b) => a.fecha.localeCompare(b.fecha)),
+      pendientes
+    );
+  }, err => console.warn('No se pudo leer el libro de obra:', err));
+}
+
+export async function getFotosLibroObra(licitacionId: string, entradaId: string): Promise<FotoLibroObra[]> {
+  const snap = await getDocs(collection(db, 'licitaciones', licitacionId, 'libroObra', entradaId, 'fotos'));
+  return snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<FotoLibroObra, 'id'>) })).sort((a, b) => a.orden - b.orden);
+}
+
+/**
+ * Guarda una anotación con sus fotos en un solo lote. NO espera al servidor: sin señal queda guardada en el
+ * teléfono y se sube sola al volver la conexión (la pantalla la muestra al instante como "pendiente").
+ */
+export function addEntradaLibroObra(
+  licitacionId: string,
+  entrada: Omit<EntradaLibroObra, 'id'>,
+  fotos: Omit<FotoLibroObra, 'id'>[]
+): { id: string; sincronizado: Promise<void> } {
+  const entradaRef = doc(collection(db, 'licitaciones', licitacionId, 'libroObra'));
+  const batch = writeBatch(db);
+  batch.set(entradaRef, { ...entrada, _createdAt: serverTimestamp() });
+  fotos.forEach((f, i) => batch.set(doc(entradaRef, 'fotos', String(i + 1)), f));
+  return { id: entradaRef.id, sincronizado: batch.commit() };
 }

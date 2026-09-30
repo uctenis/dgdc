@@ -273,7 +273,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
         });
       } else {
         const campusNombreNuevo = form.campusSigla ? obtenerCampusPorSigla(form.campusSigla)?.nombre : '';
-        const nuevoId = await addProyectoMaestro({
+        await addProyectoMaestro({
           codigoCP: form.codigoCP,
           codigoOP: '',
           codigoOT: '',
@@ -297,34 +297,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           responsableEmail: form.responsableEmail,
           documentosAntecedentes: form.documentosAntecedentes,
         });
-
-        setShowModal(false);
-        // Encadenar directo a las Bases: se pre-cargan según el Tipo de Obra recién elegido.
-        setBasesProyecto({
-          id: nuevoId,
-          correlativo: 0,
-          codigoCP: form.codigoCP,
-          codigoOP: '',
-          codigoOT: '',
-          codigoProyecto: form.codigoProyecto,
-          ordenCompraNumero: form.ordenCompraNumero,
-          codigoOC: form.codigoOC,
-          nombre: normalizarNombreProyecto(form.nombre),
-          descripcion: form.descripcion,
-          valorAprox: form.valorAprox,
-          estado: form.estado,
-          fechaCreacion: new Date().toISOString(),
-          campusSigla: form.campusSigla,
-          campusNombre: campusNombreNuevo,
-          edificioSigla: form.edificioSigla,
-          uso: form.uso,
-          tipoObra: form.tipoObra,
-          rubro: form.rubro,
-          politicaGarantias: form.politicaGarantias || undefined,
-          responsableNombre: form.responsableNombre,
-          responsableEmail: form.responsableEmail,
-        });
-        return;
+        // Las Bases no se abren al crear: se preparan después, desde la ficha del proyecto.
       }
 
       setShowModal(false);
@@ -484,30 +457,43 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
         </div>
 
         {/* Totales financieros — franja propia para distinguirlos de la distribución por prioridad */}
-        <div className="mt-1.5 pt-1.5 border-t border-slate-100 flex flex-wrap items-center gap-x-6 gap-y-1">
-          {presupuestoAnualAprobado > 0 ? (
-            <div className="flex items-baseline gap-1.5" title="Techo institucional anual, comparado solo contra los proyectos con Presupuesto Aprobado (columna Prioridad)">
-              <span className="text-[9px] font-bold uppercase tracking-wide text-indigo-400">Presupuesto Anual Aprobado</span>
-              <span className="text-xs font-black text-indigo-900">{formatoMonedaCLP(presupuestoAnualAprobado)}</span>
-              <span className={`text-[9px] font-extrabold ${presupuestoColor}`}>({pctPresupuestoUsado}% comprometido)</span>
-            </div>
-          ) : (
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-[9px] font-bold uppercase tracking-wide text-amber-500">Presupuesto Anual Aprobado</span>
-              <span className="text-[10px] font-bold text-amber-700 italic">Sin definir — configúrelo en Configuración → Parámetros</span>
-            </div>
-          )}
-          <div className="flex items-baseline gap-1.5" title="Suma de proyectos con Presupuesto Aprobado — son los que se proyectan mes a mes en Avance Financiero">
-            <span className={`text-[9px] font-bold uppercase tracking-wide ${presupuestoColor}`}>Aprobado p/ Presupuesto ({proyectosAprobadosPpto.length})</span>
-            <span className={`text-xs font-black ${presupuestoColor}`}>{formatoMonedaCLP(totalPresupuestoAprobado)}</span>
+        <div className="mt-2 pt-2 border-t border-slate-100 grid grid-cols-2 lg:grid-cols-4 gap-2">
+          <div
+            className="rounded-xl bg-indigo-50/60 border border-indigo-100 px-3 py-2"
+            title="Techo institucional anual, comparado solo contra los proyectos con Presupuesto Aprobado (columna Prioridad)"
+          >
+            <span className="block text-[9px] font-bold uppercase tracking-wide text-indigo-400">Presupuesto anual</span>
+            {presupuestoAnualAprobado > 0 ? (
+              <>
+                <span className="block text-sm font-black text-indigo-900 tabular-nums">{formatoMonedaCLP(presupuestoAnualAprobado)}</span>
+                <span className={`block text-[10px] font-bold ${presupuestoColor}`}>{pctPresupuestoUsado}% comprometido</span>
+              </>
+            ) : (
+              <>
+                <span className="block text-sm font-black text-amber-700">Sin definir</span>
+                <span className="block text-[10px] text-amber-700">Configuración → Parámetros</span>
+              </>
+            )}
           </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Cartera Total ({proyectos.length})</span>
-            <span className="text-xs font-black text-slate-500">{formatoMonedaCLP(totalPresupuestoGeneral)}</span>
+          <div
+            className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2"
+            title="Suma de proyectos con Presupuesto Aprobado — son los que se proyectan mes a mes en Avance Financiero"
+          >
+            <span className={`block text-[9px] font-bold uppercase tracking-wide ${presupuestoColor}`}>Aprobado p/ presupuesto</span>
+            <span className={`block text-sm font-black tabular-nums ${presupuestoColor}`}>{formatoMonedaCLP(totalPresupuestoAprobado)}</span>
+            <span className="block text-[10px] text-slate-500">{proyectosAprobadosPpto.length} proyecto{proyectosAprobadosPpto.length === 1 ? '' : 's'}</span>
           </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="text-[9px] font-bold uppercase tracking-wide text-emerald-500">Gasto Efectivo Pagado</span>
-            <span className="text-xs font-black text-emerald-700">{formatoMonedaCLP(totalGastoEfectivoGeneral)}</span>
+          <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
+            <span className="block text-[9px] font-bold uppercase tracking-wide text-slate-400">Cartera total</span>
+            <span className="block text-sm font-black text-slate-700 tabular-nums">{formatoMonedaCLP(totalPresupuestoGeneral)}</span>
+            <span className="block text-[10px] text-slate-500">{proyectos.length} proyecto{proyectos.length === 1 ? '' : 's'}</span>
+          </div>
+          <div className="rounded-xl bg-emerald-50/60 border border-emerald-100 px-3 py-2">
+            <span className="block text-[9px] font-bold uppercase tracking-wide text-emerald-600">Gasto efectivo pagado</span>
+            <span className="block text-sm font-black text-emerald-700 tabular-nums">{formatoMonedaCLP(totalGastoEfectivoGeneral)}</span>
+            <span className="block text-[10px] text-slate-500">
+              {totalPresupuestoGeneral > 0 ? `${Math.round((totalGastoEfectivoGeneral / totalPresupuestoGeneral) * 100)}% de la cartera` : '—'}
+            </span>
           </div>
         </div>
       </div>
@@ -605,33 +591,37 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
 
       {/* Totales del filtro activo — se recalculan sobre lo que muestra la tabla, no sobre toda la cartera */}
       {!modoSelector && (
-        <div className={`flex flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 rounded-xl border text-[10px] ${
+        <div className={`px-3 py-2 rounded-xl border text-[10px] space-y-1.5 ${
           hayFiltrosActivos ? 'bg-sky-50 border-sky-200' : 'bg-slate-50 border-slate-200'
         }`}>
-          <span className="font-bold uppercase tracking-wide text-slate-500">
-            {hayFiltrosActivos ? `Filtro activo · ${filtered.length} proyecto(s)` : `Todos los proyectos · ${filtered.length}`}
-          </span>
-          <div className="flex items-baseline gap-1.5">
-            <span className="font-semibold uppercase tracking-wide text-slate-400">Estimado</span>
-            <span className="font-black text-slate-700">{formatoMonedaCLP(totalEstimadoFiltrado)}</span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-bold uppercase tracking-wide text-slate-500">
+              {hayFiltrosActivos ? `Filtro activo · ${filtered.length} proyecto(s)` : `Todos los proyectos · ${filtered.length}`}
+            </span>
+            {hayFiltrosActivos && (
+              <button
+                type="button"
+                onClick={limpiarFiltros}
+                className="font-bold text-sky-700 hover:text-sky-900 underline underline-offset-2"
+              >
+                Limpiar filtros
+              </button>
+            )}
           </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="font-semibold uppercase tracking-wide text-indigo-400">Adjudicado</span>
-            <span className="font-black text-indigo-700">{formatoMonedaCLP(totalAdjudicadoFiltrado)}</span>
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <span className="block font-semibold uppercase tracking-wide text-slate-400">Estimado</span>
+              <span className="block text-xs font-black text-slate-700 tabular-nums">{formatoMonedaCLP(totalEstimadoFiltrado)}</span>
+            </div>
+            <div>
+              <span className="block font-semibold uppercase tracking-wide text-indigo-400">Adjudicado</span>
+              <span className="block text-xs font-black text-indigo-700 tabular-nums">{formatoMonedaCLP(totalAdjudicadoFiltrado)}</span>
+            </div>
+            <div>
+              <span className="block font-semibold uppercase tracking-wide text-emerald-500">Gasto efectivo</span>
+              <span className="block text-xs font-black text-emerald-700 tabular-nums">{formatoMonedaCLP(totalGastoEfectivoFiltrado)}</span>
+            </div>
           </div>
-          <div className="flex items-baseline gap-1.5">
-            <span className="font-semibold uppercase tracking-wide text-emerald-500">Gasto Efectivo</span>
-            <span className="font-black text-emerald-700">{formatoMonedaCLP(totalGastoEfectivoFiltrado)}</span>
-          </div>
-          {hayFiltrosActivos && (
-            <button
-              type="button"
-              onClick={limpiarFiltros}
-              className="ml-auto font-bold text-sky-700 hover:text-sky-900 underline underline-offset-2"
-            >
-              Limpiar filtros
-            </button>
-          )}
         </div>
       )}
 
@@ -644,7 +634,51 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           <p className="text-slate-500 text-sm">No se encontraron proyectos en la Cartera 2026 con ese criterio de búsqueda.</p>
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-auto max-h-[75vh]">
+        <>
+        {/* Celular: lista compacta (una fila por proyecto, título completo). Tocar la fila abre la Ficha, donde se editan los datos. */}
+        <div className="sm:hidden bg-white rounded-2xl border border-slate-200 shadow-sm divide-y divide-slate-100 overflow-hidden">
+          {filtered.map(p => {
+            const colorPrioridad = p.prioridad === 'Alta' ? 'bg-red-500' : p.prioridad === 'Baja' ? 'bg-emerald-500' : 'bg-amber-400';
+            return (
+              <div
+                key={p.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => (modoSelector ? onSelectProyecto?.(p) : onOpenFicha?.(p))}
+                className="flex items-start gap-2.5 px-3 py-2.5 active:bg-sky-50"
+              >
+                <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${colorPrioridad}`} title={`Prioridad ${p.prioridad || 'Media'}`} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-bold text-slate-800 leading-snug">{(p.nombre || '').toUpperCase()}</p>
+                  <p className="text-[11px] text-slate-500 leading-snug mt-0.5">
+                    <span className="font-mono font-bold text-sky-700">{p.codigoProyecto || (p.correlativo ? String(p.correlativo).padStart(3, '0') : '-')}</span>
+                    {' · '}{p.estado}
+                    {p.campusSigla && ` · ${p.campusSigla}`}
+                    {' · '}<span className="font-semibold text-slate-700">{formatoMonedaCLP(p.montoAdjudicado || p.valorAprox)}</span>
+                    {p.montoAdjudicado ? ' adj.' : ' est.'}
+                    {p.presupuesto?.aprobado && <span className="text-indigo-600 font-bold"> · ✓ Ppto</span>}
+                    {tieneLicitacion(p) && <span className="text-indigo-600 font-bold"> · Lic.</span>}
+                  </p>
+                  {p.responsableNombre && <p className="text-[10px] text-slate-400 truncate">{p.responsableNombre}</p>}
+                </div>
+                {!modoSelector && (
+                  <button
+                    type="button"
+                    onClick={e => { e.stopPropagation(); setBasesProyecto(p); }}
+                    className={`p-1.5 rounded-lg shrink-0 ${
+                      p.bases?.estado === 'Aprobada' ? 'text-emerald-600' : p.bases ? 'text-amber-600' : 'text-slate-300'
+                    }`}
+                    title={p.bases ? `Bases (${p.bases.estado})` : 'Generar Bases'}
+                  >
+                    <ScrollText className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="hidden sm:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-auto max-h-[75vh]">
           <table className={`w-full text-xs ${modoSelector ? 'min-w-[560px]' : 'min-w-[880px]'}`}>
             <thead className="bg-slate-900 text-white border-b border-slate-800">
               <tr>
@@ -941,12 +975,13 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {/* MODAL PROFESIONAL DE PROYECTO (NUEVO / EDITAR) */}
       {showModal && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-2xl space-y-5 max-h-[92vh] flex flex-col border border-slate-200">
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4">
+          <div className="bg-white rounded-2xl max-w-3xl w-full p-4 sm:p-6 shadow-2xl space-y-5 max-h-[92vh] flex flex-col border border-slate-200">
             
             {/* Header Modal */}
             <div className="flex items-center justify-between border-b pb-4 shrink-0">

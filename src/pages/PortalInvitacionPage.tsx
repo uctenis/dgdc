@@ -16,7 +16,7 @@ const TARJETA: React.CSSProperties = {
   boxShadow: '0 24px 48px -8px rgba(0,0,0,0.5)',
 };
 
-function Pantalla({ children }: { children: React.ReactNode }) {
+export function Pantalla({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4" style={{ background: FONDO }}>
       <div className="mb-8 text-center">
@@ -75,6 +75,8 @@ export function PortalInvitacionPage() {
       .then(lista => { setInvitadosVista(lista); setVistaProveedorId(prev => prev || lista[0]?.proveedorId || ''); })
       .catch(() => { /* sin invitados legibles: se ve como proveedor genérico */ });
   }, [esAdminVista, licitacionId]);
+
+  const vistaInvitado = invitadosVista.find(i => i.proveedorId === vistaProveedorId);
 
   const [acceso, setAcceso] = useState<'verificando' | 'ok' | 'denegado'>('verificando');
 
@@ -231,6 +233,16 @@ export function PortalInvitacionPage() {
               </select>
             </label>
           )}
+          {loginPortalDevBypass && vistaInvitado && (
+            <button
+              type="button"
+              onClick={() => loginPortalDevBypass({ proveedorId: vistaInvitado.proveedorId, email: vistaInvitado.proveedorEmail, nombre: vistaInvitado.proveedorNombre })}
+              className="px-3 py-1 rounded-lg font-bold bg-amber-300 text-amber-950 hover:bg-amber-200"
+              title="Solo servidor local: entra como este proveedor y lo que haga (consultas, oferta) se guarda de verdad en la licitación"
+            >
+              Probar como este proveedor (se guarda de verdad)
+            </button>
+          )}
         </div>
         <LicitacionDetalle key={vistaProveedorId} proveedorIdVista={vistaProveedorId || 'vista-admin'} soloLectura />
       </div>
@@ -241,7 +253,20 @@ export function PortalInvitacionPage() {
   if (!token && profile?.uid !== 'dev-proveedor') return <PortalAccesoRestringido />;
 
   if (user && isProveedor) {
-    if (acceso === 'ok') return <LicitacionDetalle />;
+    if (acceso === 'ok') {
+      if (profile?.uid !== 'dev-proveedor') return <LicitacionDetalle />;
+      return (
+        <div>
+          <div className="px-4 py-2 flex flex-wrap items-center justify-center gap-3 text-xs font-bold" style={{ background: '#78350f', color: '#fde68a' }}>
+            <span>Prueba local como <strong>{profile.displayName}</strong> · las consultas y la oferta se guardan de verdad en la licitación (sin correos reales)</span>
+            <button type="button" onClick={() => { void logout(); }} className="px-2.5 py-1 rounded-lg border border-amber-300/50 hover:bg-amber-900">
+              Volver a la vista de administrador
+            </button>
+          </div>
+          <LicitacionDetalle />
+        </div>
+      );
+    }
     if (acceso === 'verificando') {
       return (
         <Pantalla>

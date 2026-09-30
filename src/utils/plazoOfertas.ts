@@ -36,6 +36,15 @@ export function plazoOfertasVencido(lic: CampoPlazo, ahora: Date = new Date()): 
   return Boolean(limite) && ahora.getTime() > (limite as Date).getTime();
 }
 
+/**
+ * Ofertas selladas: mientras la recepción está abierta nadie de la UCT ve el contenido de las ofertas (montos ni
+ * archivos), solo quién ya presentó. Sin fecha límite definida no hay sello.
+ */
+export function ofertasSelladas(lic: CampoPlazo, ahora: Date = new Date()): boolean {
+  const limite = fechaLimiteOfertas(lic);
+  return Boolean(limite) && ahora.getTime() <= (limite as Date).getTime();
+}
+
 const dos = (n: string | number) => String(n).padStart(2, '0');
 
 /** Fecha y hora de Chile de un instante, ej. "04-10-2026 17:00". */
@@ -71,4 +80,21 @@ export function tiempoRestanteOfertas(lic: CampoPlazo, ahora: Date = new Date())
 export function ahoraParaInput(): string {
   const d = new Date();
   return `${d.getFullYear()}-${dos(d.getMonth() + 1)}-${dos(d.getDate())}T${dos(d.getHours())}:${dos(d.getMinutes())}`;
+}
+
+/** Fin del período de consultas: el día de fechaRecepcionConsultas a las 23:59 (hora de Chile). */
+export function fechaLimiteConsultas(lic: Pick<LicitacionProyecto, 'fechaRecepcionConsultas'>): Date | null {
+  const f = lic.fechaRecepcionConsultas;
+  return f && /^\d{4}-\d{2}-\d{2}$/.test(f) ? fechaHoraChile(f, HORA_LIMITE_POR_DEFECTO) : null;
+}
+
+/** Plazo para que la universidad publique las respuestas: el día de fechaRespuestaConsultas a las 23:59 (hora de Chile). */
+export function fechaLimiteRespuestas(lic: Pick<LicitacionProyecto, 'fechaRespuestaConsultas'>): Date | null {
+  const f = lic.fechaRespuestaConsultas;
+  return f && /^\d{4}-\d{2}-\d{2}$/.test(f) ? fechaHoraChile(f, HORA_LIMITE_POR_DEFECTO) : null;
+}
+
+/** Días completos que faltan hasta una fecha (negativo = vencida). */
+export function diasHasta(limite: Date, ahora: Date = new Date()): number {
+  return Math.floor((limite.getTime() - ahora.getTime()) / 86400000);
 }

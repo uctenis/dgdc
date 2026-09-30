@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   FileSpreadsheet,
   Building2,
@@ -12,8 +12,10 @@ import {
   BarChart3,
   TrendingUp,
   ClipboardList,
+  HardHat,
+  Menu,
+  X,
 } from 'lucide-react';
-import { generarPlantillaCotizacionExcel } from '../services/templateGenerator';
 import { useAuth } from '../context/AuthContext';
 
 interface NavbarProps {
@@ -27,6 +29,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
     { id: 'proyectos-maestros', label: 'Cartera de Proyectos 2026', icon: FileText },
     { id: 'avance-financiero', label: 'Avance Financiero', icon: TrendingUp },
     { id: 'licitaciones', label: 'Licitaciones', icon: FolderKanban },
+    { id: 'mis-obras', label: 'Mis obras', icon: HardHat },
     { id: 'bandeja-op', label: 'Solicitudes OP', icon: ClipboardList, adminOnly: true },
     { id: 'proveedores',  label: 'Proveedores', icon: Building2, adminOnly: true },
     { id: 'cotizaciones', label: 'Cotizaciones', icon: FileSpreadsheet, contextual: true, adminOnly: true },
@@ -39,6 +42,10 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
   ];
 
   // Secretaría (mbustos@uct.cl) solo trabaja en la bandeja de Solicitudes de OP.
+  // Celular: el menú se despliega con ☰ y se cierra al elegir una opción.
+  const [menuAbierto, setMenuAbierto] = useState(false);
+  useEffect(() => { setMenuAbierto(false); }, [activeTab]);
+
   const tabs = isSecretaria && !isAdmin
     ? allTabs.filter(t => t.id === 'bandeja-op')
     : allTabs.filter(t => (!t.contextual || activeTab === t.id) && (!t.adminOnly || isAdmin));
@@ -52,13 +59,13 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
       }}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-[72px] gap-4">
+        <div className="flex items-center justify-between h-[60px] lg:h-[72px] gap-3">
 
           {/* ── Brand ─────────────────────────────────────────────────── */}
-          <div className="flex items-center gap-4 shrink-0">
+          <div className="flex items-center gap-3 lg:gap-4 min-w-0">
             {/* Logo mark */}
             <div
-              className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+              className="w-9 h-9 lg:w-11 lg:h-11 rounded-xl flex items-center justify-center shrink-0"
               style={{
                 background: 'linear-gradient(135deg, #38bdf8 0%, #1d4ed8 100%)',
                 boxShadow: '0 0 0 2px rgba(56,189,248,0.25), 0 4px 12px -2px rgba(29,78,216,0.5)',
@@ -72,8 +79,8 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
             </div>
 
             {/* Title stack */}
-            <div>
-              <div className="flex items-center gap-2 mb-0.5">
+            <div className="min-w-0">
+              <div className="hidden sm:flex items-center gap-2 mb-0.5">
                 <span
                   className="text-[10px] font-bold tracking-[0.12em] uppercase px-2 py-0.5 rounded"
                   style={{ background: 'rgba(56,189,248,0.15)', color: '#7dd3fc', border: '1px solid rgba(56,189,248,0.2)' }}
@@ -82,7 +89,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
                 </span>
                 <span className="text-[10px] text-slate-400 hidden sm:inline">DGDC</span>
               </div>
-              <h1 className="text-base font-bold tracking-tight text-white leading-tight" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+              <h1 className="text-sm lg:text-base font-bold tracking-tight text-white leading-tight truncate" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
                 Gestor de Adjudicaciones
               </h1>
             </div>
@@ -91,7 +98,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
           {/* ── Actions ────────────────────────────────────────────────── */}
           <div className="flex items-center gap-2 shrink-0">
             {isAdmin && <button
-              onClick={() => generarPlantillaCotizacionExcel()}
+              onClick={() => { void import('../services/templateGenerator').then(m => m.generarPlantillaCotizacionExcel()); }}
               title="Descargar plantilla Excel oficial para enviar a proveedores"
               className="hidden sm:flex items-center gap-2 text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition border"
               style={{
@@ -113,12 +120,50 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
               <UserCircle2 className="h-4 w-4 text-sky-300" />
               <span><strong className="block text-white">{profile?.displayName || user?.displayName || 'Usuario UCT'}</strong>{user?.email}</span>
             </div>
-            <button onClick={() => void logout()} title="Cerrar sesión" className="rounded-lg bg-white/5 p-2.5 text-slate-300 transition hover:bg-white/15 hover:text-white"><LogOut className="h-5 w-5" /></button>
+            <button onClick={() => void logout()} title="Cerrar sesión" className="hidden lg:block rounded-lg bg-white/5 p-2.5 text-slate-300 transition hover:bg-white/15 hover:text-white"><LogOut className="h-5 w-5" /></button>
+            <button
+              type="button"
+              onClick={() => setMenuAbierto(v => !v)}
+              className="lg:hidden rounded-lg bg-white/10 p-2.5 text-white"
+              aria-label={menuAbierto ? 'Cerrar menú' : 'Abrir menú'}
+              aria-expanded={menuAbierto}
+            >
+              {menuAbierto ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
           </div>
         </div>
 
+        {/* ── Menú de celular ───────────────────────────────────────── */}
+        {menuAbierto && (
+          <nav className="lg:hidden pb-3 space-y-0.5" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+            {tabs.map(tab => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => { setActiveTab(tab.id); setMenuAbierto(false); }}
+                  className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-semibold text-left ${isActive ? 'bg-sky-400/15 text-sky-300' : 'text-slate-200 active:bg-white/10'}`}
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  {tab.label}
+                </button>
+              );
+            })}
+            <div className="mt-2 pt-3 flex items-center justify-between gap-3 px-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+              <span className="text-[11px] text-slate-300 min-w-0">
+                <strong className="block text-white truncate">{profile?.displayName || user?.displayName || 'Usuario UCT'}</strong>
+                <span className="truncate block">{user?.email}</span>
+              </span>
+              <button onClick={() => void logout()} className="flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-2 text-xs font-bold text-white shrink-0">
+                <LogOut className="h-4 w-4" /> Salir
+              </button>
+            </div>
+          </nav>
+        )}
+
         {/* ── Navigation Tabs ───────────────────────────────────────── */}
-        <nav className="flex gap-0.5 overflow-x-auto pb-0" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+        <nav className="hidden lg:flex gap-0.5 overflow-x-auto pb-0" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
           {tabs.map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;

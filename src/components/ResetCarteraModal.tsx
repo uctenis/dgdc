@@ -51,8 +51,8 @@ export function ResetCarteraModal({ onClose, onCompletado }: ResetCarteraModalPr
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5 border border-rose-200">
+    <div className="fixed inset-0 bg-slate-900/85 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4">
+      <div className="bg-white rounded-2xl max-w-lg w-full max-h-[94vh] overflow-y-auto p-4 sm:p-6 shadow-2xl space-y-5 border border-rose-200">
         <div className="flex items-center justify-between border-b border-rose-100 pb-4">
           <div className="flex items-center gap-2">
             <AlertOctagon className="w-6 h-6 text-rose-600" />

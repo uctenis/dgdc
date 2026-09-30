@@ -14,11 +14,54 @@ import {
   asegurarTokensInvitados,
   subscribeToEnviosInvitaciones,
   getEvaluacionesDesempenoDeProveedores,
+  getLicitacionesConInvitados,
 } from '../services/firestoreService';
 import type { Proveedor, InvitadoLicitacion, LicitacionProyecto, EvaluacionDesempeno, ConfiguracionFirmas, EnvioInvitacion } from '../types';
 import { ordenarProveedoresPorRubroYDesempeno, porcentajeAntecedentes, checklistAntecedentesEfectivo, checklistAntecedentesCompleto } from '../utils/proveedorMatching';
 import { useAuth } from '../context/AuthContext';
 import { enviarInvitacionesLicitacion, ENVIO_CORREOS_REAL } from '../services/invitacionService';
+import { calcularCargaProveedores, advertenciaCarga, MESES_ROTACION, type CargaProveedor } from '../utils/cargaProveedores';
+import { formatoMonedaCLP } from '../services/evaluationEngine';
+
+const ESTILO_NIVEL_CARGA: Record<CargaProveedor['nivel'], string> = {
+  Libre: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  Media: 'bg-amber-50 text-amber-800 border-amber-300',
+  Alta: 'bg-rose-50 text-rose-700 border-rose-300',
+};
+
+/** Chips con la carga de trabajo y la frecuencia de invitación de un proveedor. */
+const ChipsCarga: React.FC<{ carga?: CargaProveedor }> = ({ carga }) => {
+  if (!carga) return null;
+  const detalle = [
+    ...carga.obrasEnEjecucion.map(o => `Obra en ejecución: ${o.codigo} — ${o.nombre}${o.monto ? ` (${formatoMonedaCLP(o.monto)})` : ''}`),
+    ...carga.licitacionesAbiertas.map(o => `Licitación abierta: ${o.codigo} — ${o.nombre} (${o.detalle})`),
+  ].join('\n');
+  return (
+    <div className="flex flex-wrap items-center gap-1 mt-1">
+      <span title={detalle || 'Sin obras en ejecución ni otras licitaciones abiertas'} className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${ESTILO_NIVEL_CARGA[carga.nivel]}`}>
+        Carga {carga.nivel.toLowerCase()}
+      </span>
+      {carga.obrasEnEjecucion.length > 0 && (
+        <span title={detalle} className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+          {carga.obrasEnEjecucion.length} obra(s) en ejecución{carga.montoEnEjecucion ? ` · ${formatoMonedaCLP(carga.montoEnEjecucion)}` : ''}
+        </span>
+      )}
+      {carga.licitacionesAbiertas.length > 0 && (
+        <span title={detalle} className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+          En {carga.licitacionesAbiertas.length} licitación(es) abierta(s)
+        </span>
+      )}
+      <span
+        title={carga.ultimaInvitacion ? `Última invitación: ${carga.ultimaInvitacion} · ${carga.invitacionesTotal} invitaciones, ${carga.ofertasPresentadas} ofertas presentadas, ${carga.adjudicacionesTotal} adjudicaciones en total` : 'Nunca se le ha invitado'}
+        className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${carga.invitadoFrecuente ? 'bg-orange-100 text-orange-800' : 'bg-slate-50 text-slate-500'}`}
+      >
+        {carga.invitacionesTotal === 0
+          ? 'Nunca invitado'
+          : `Invitado ${carga.invitacionesRecientes}× en ${MESES_ROTACION} meses${carga.invitadoFrecuente ? ' — rotar' : ''}`}
+      </span>
+    </div>
+  );
+};
 
 interface InvitadosManagerProps {
   licitacion: LicitacionProyecto;
@@ -50,6 +93,8 @@ export const InvitadosManager: React.FC<InvitadosManagerProps> = ({
   const [error, setError] = useState('');
   const [guardandoUnicoProveedor, setGuardandoUnicoProveedor] = useState(false);
   const [evaluacionesPorProveedor, setEvaluacionesPorProveedor] = useState<Record<string, EvaluacionDesempeno[]>>({});
+  const [cargas, setCargas] = useState<Record<string, CargaProveedor>>({});
+  const [cargasListas, setCargasListas] = useState(false);
 
   const handleToggleUnicoProveedor = async () => {
     const nuevoValor = !licitacion.esUnicoProveedor;
@@ -121,6 +166,19 @@ export const InvitadosManager: React.FC<InvitadosManagerProps> = ({
       .catch(err => console.error('Error cargando evaluaciones de desempeño:', err));
   }, [proveedores]);
 
+  // Carga de trabajo de cada proveedor en las DEMÁS licitaciones: otras licitaciones abiertas en que participa,
+  // obras adjudicadas en ejecución y cuántas veces se le invitó últimamente (para rotar).
+  useEffect(() => {
+    let cancelado = false;
+    getLicitacionesConInvitados()
+      .then(({ licitaciones, invitadosPorLicitacion }) => {
+        if (!cancelado) setCargas(calcularCargaProveedores(licitaciones, invitadosPorLicitacion, licitacion.id));
+      })
+      .catch(err => console.error('Error calculando la carga de trabajo de los proveedores:', err))
+      .finally(() => { if (!cancelado) setCargasListas(true); });
+    return () => { cancelado = true; };
+  }, [licitacion.id]);
+
   const invitadoIds = new Set(invitados.map(i => i.proveedorId));
 
   const proveedoresDisponibles = useMemo(() => {
@@ -133,11 +191,15 @@ export const InvitadosManager: React.FC<InvitadosManagerProps> = ({
         p.rubro.toLowerCase().includes(search.toLowerCase())
       )
       .filter(p => !soloMiRubro || !licitacion.rubro || p.rubro === licitacion.rubro);
-    return ordenarProveedoresPorRubroYDesempeno(filtrados, licitacion.rubro, evaluacionesPorProveedor);
+    return ordenarProveedoresPorRubroYDesempeno(filtrados, licitacion.rubro, evaluacionesPorProveedor, cargas);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [proveedores, invitados, search, soloMiRubro, licitacion.rubro, evaluacionesPorProveedor]);
+  }, [proveedores, invitados, search, soloMiRubro, licitacion.rubro, evaluacionesPorProveedor, cargas]);
 
-  const handleAdd = async (prov: Proveedor) => {
+  const handleAdd = async (prov: Proveedor, advertir = true) => {
+    if (advertir) {
+      const aviso = advertenciaCarga(prov.razonSocial, cargas[prov.id], formatoMonedaCLP);
+      if (aviso && !confirm(`${aviso}\n\n¿Invitarlo de todas formas?`)) return;
+    }
     setError('');
     setAddingId(prov.id);
     try {
@@ -161,17 +223,31 @@ export const InvitadosManager: React.FC<InvitadosManagerProps> = ({
     if (!licitacion.rubro) {
       alert('Esta licitación no tiene un Rubro Requerido definido — vaya a "Editar Licitación" y asígnelo para que la sugerencia priorice el rubro correcto. Mientras tanto se sugerirá solo por desempeño histórico.');
     }
-    const recomendados = proveedoresDisponibles.slice(0, 3);
+    if (!cargasListas) {
+      alert('Aún se está calculando la carga de trabajo de los proveedores. Intente en unos segundos.');
+      return;
+    }
+    // Ya vienen ordenados por rubro, desempeño, carga y rotación. Se evita a quien tiene desempeño bajo 3/5
+    // y, mientras haya alternativas, a quien tiene carga alta.
+    const candidatos = proveedoresDisponibles.filter(s => !s.bajoUmbral);
+    const recomendados = [
+      ...candidatos.filter(s => s.carga.nivel !== 'Alta'),
+      ...candidatos.filter(s => s.carga.nivel === 'Alta'),
+    ].slice(0, 3);
     if (recomendados.length === 0) {
       alert('No hay proveedores disponibles para invitar.');
       return;
     }
-    if (recomendados.length < 3) {
-      alert(`Solo se encontraron ${recomendados.length} proveedor(es) disponibles — se recomienda al menos 3 invitados.`);
-    }
+    const avisos = recomendados
+      .map(s => advertenciaCarga(s.proveedor.razonSocial, s.carga, formatoMonedaCLP))
+      .filter(Boolean);
+    const resumen = `Se invitará a:\n${recomendados.map(s => `  • ${s.proveedor.razonSocial}`).join('\n')}`
+      + (recomendados.length < 3 ? `\n\nSolo se encontraron ${recomendados.length} proveedor(es) disponibles — se recomienda al menos 3 invitados.` : '')
+      + (avisos.length ? `\n\nADVERTENCIAS:\n\n${avisos.join('\n\n')}` : '');
+    if (!confirm(`${resumen}\n\n¿Confirma?`)) return;
 
     for (const sugerido of recomendados) {
-      await handleAdd(sugerido.proveedor);
+      await handleAdd(sugerido.proveedor, false);
     }
   };
 
@@ -505,6 +581,17 @@ export const InvitadosManager: React.FC<InvitadosManagerProps> = ({
                             <Mail className="w-3 h-3 shrink-0" /> {inv.proveedorEmail}
                           </span>
                         </div>
+                        <span
+                          className={`block text-[10px] font-semibold mt-0.5 ${inv.primerAcceso ? 'text-emerald-700' : 'text-slate-400'}`}
+                          title={inv.primerAcceso ? `Primer ingreso: ${new Date(inv.primerAcceso).toLocaleString('es-CL')}` : undefined}
+                        >
+                          {inv.primerAcceso
+                            ? `✓ Ingresó al portal · último ingreso ${new Date(inv.ultimoAcceso || inv.primerAcceso).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })} · ${inv.cantidadAccesos || 1} ${(inv.cantidadAccesos || 1) === 1 ? 'vez' : 'veces'}`
+                            : 'Aún no ingresa al portal'}
+                        </span>
+                        {cargas[inv.proveedorId] && cargas[inv.proveedorId].nivel !== 'Libre' && (
+                          <ChipsCarga carga={cargas[inv.proveedorId]} />
+                        )}
                         <span className="flex items-center gap-1 text-[10px] text-slate-400 mt-0.5">
                           <Clock className="w-3 h-3" /> Invitado el {inv.fechaInvitacion}
                           <button
@@ -547,7 +634,7 @@ export const InvitadosManager: React.FC<InvitadosManagerProps> = ({
               </h4>
               <button
                 onClick={handleAutoSuggest}
-                title="Selecciona los 3 proveedores más idóneos: primero por coincidencia de Rubro Requerido, luego por mejor desempeño histórico evaluado"
+                title="Selecciona los 3 proveedores más idóneos: primero por coincidencia de Rubro Requerido, luego por desempeño histórico, descontando su carga de trabajo actual y cuántas veces se les invitó últimamente (rotación). Evita a quienes tienen desempeño bajo 3/5."
                 className="flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-3 py-1.5 rounded-xl text-xs transition border border-indigo-200 shadow-sm"
               >
                 <Send className="w-3.5 h-3.5" />
@@ -584,7 +671,7 @@ export const InvitadosManager: React.FC<InvitadosManagerProps> = ({
               </p>
             ) : (
               <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-                {proveedoresDisponibles.map(({ proveedor: prov, coincideRubro, promedioDesempeno, cantidadEvaluaciones }) => (
+                {proveedoresDisponibles.map(({ proveedor: prov, coincideRubro, promedioDesempeno, cantidadEvaluaciones, carga, bajoUmbral }) => (
                   <div
                     key={prov.id}
                     className={`flex items-center justify-between bg-white border rounded-xl px-4 py-3 hover:border-sky-300 hover:bg-sky-50/30 transition group ${coincideRubro ? 'border-indigo-200' : 'border-slate-200'}`}
@@ -598,10 +685,15 @@ export const InvitadosManager: React.FC<InvitadosManagerProps> = ({
                             <Award className="w-3 h-3" /> Rubro coincide
                           </span>
                         )}
-                        {promedioDesempeno !== null && (
-                          <span className="flex items-center gap-1 text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">
-                            <Star className="w-3 h-3 fill-current" /> {promedioDesempeno.toFixed(1)} ({cantidadEvaluaciones})
+                        {promedioDesempeno !== null ? (
+                          <span
+                            title={`Desempeño promedio en ${cantidadEvaluaciones} evaluación(es) post-ejecución`}
+                            className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-bold ${bajoUmbral ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-800'}`}
+                          >
+                            <Star className="w-3 h-3 fill-current" /> {promedioDesempeno.toFixed(1)}/5 ({cantidadEvaluaciones}){bajoUmbral ? ' — bajo umbral' : ''}
                           </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 italic">Sin evaluaciones</span>
                         )}
                         {prov.cuentaSustentabilidad && (
                           <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-medium">Sustentable</span>
@@ -611,6 +703,7 @@ export const InvitadosManager: React.FC<InvitadosManagerProps> = ({
                         <span className="text-[11px] text-slate-500">{prov.rut}</span>
                         <span className="text-[11px] text-slate-400">{prov.rubro}</span>
                       </div>
+                      {cargasListas && <ChipsCarga carga={carga} />}
                     </div>
                     <button
                       onClick={() => handleAdd(prov)}

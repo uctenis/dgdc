@@ -181,7 +181,7 @@ export const AvanceFinancieroPage: React.FC<AvanceFinancieroPageProps> = ({ conf
           <span className="text-[10px] font-bold uppercase text-emerald-500 block">Ejecutado Real {anio}</span>
           <span className="text-sm font-black text-emerald-900">{formatoMonedaCLP(totalRealAnio)}</span>
         </div>
-        <div className={`p-4 rounded-xl border shadow-sm ${desviacionGlobalPct >= 0 ? 'bg-emerald-50 border-emerald-200' : desviacionGlobalPct >= -15 ? 'bg-amber-50 border-amber-200' : 'bg-rose-50 border-rose-200'}`}>
+        <div className={`col-span-2 sm:col-span-1 p-4 rounded-xl border shadow-sm ${desviacionGlobalPct >= 0 ? 'bg-emerald-50 border-emerald-200' : desviacionGlobalPct >= -15 ? 'bg-amber-50 border-amber-200' : 'bg-rose-50 border-rose-200'}`}>
           <span className="text-[10px] font-bold uppercase text-slate-500 block">Desviación a la Fecha</span>
           <span className="text-lg font-black text-slate-800">{desviacionGlobalPct > 0 ? '+' : ''}{desviacionGlobalPct}%</span>
         </div>
@@ -189,7 +189,7 @@ export const AvanceFinancieroPage: React.FC<AvanceFinancieroPageProps> = ({ conf
 
       {/* Gráfico Curva S: acumulado proyectado vs real + barras mensuales */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-2">
           <h3 className="text-xs font-bold text-slate-700">Curva S — Acumulado Proyectado vs Real</h3>
           <div className="flex items-center gap-3 text-[10px] font-semibold">
             <span className="flex items-center gap-1 text-indigo-700"><span className="w-2.5 h-2.5 rounded-sm bg-indigo-500 inline-block" />Proyectado</span>
@@ -249,8 +249,32 @@ export const AvanceFinancieroPage: React.FC<AvanceFinancieroPageProps> = ({ conf
         </p>
       </div>
 
+      {/* Celular: lista compacta por proyecto (título completo + montos alineados) */}
+      <div className="sm:hidden bg-white rounded-2xl border border-slate-200 shadow-sm divide-y divide-slate-100 overflow-hidden">
+        {resumen.length === 0 ? (
+          <p className="text-center py-10 px-4 text-xs text-slate-400 italic">Ningún proyecto tiene Presupuesto Aprobado todavía. Actívelo desde la Cartera de Proyectos.</p>
+        ) : resumen.map(r => (
+          <div key={r.proyecto.id} className="px-3 py-2.5 space-y-1.5">
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-[13px] font-bold text-slate-800 leading-snug">{r.proyecto.nombre}</p>
+              <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded border ${SEMAFORO_ESTILOS[r.semaforo]}`}>{r.semaforo}</span>
+            </div>
+            <p className="text-[10px] text-slate-500">
+              <span className="font-mono font-bold text-sky-700">{r.proyecto.codigoProyecto}</span>
+              {' · '}{r.estadoLicitacion || 'Sin licitar'}
+              {r.semaforo !== 'Sin programar' && ` · avance ${r.pctAvanceReal}% / ${r.pctEsperadoAFecha}% esperado`}
+            </p>
+            <div className="grid grid-cols-3 gap-2 text-[10px]">
+              <div><span className="block text-slate-400 font-semibold uppercase">Proyectado</span><strong className="text-slate-700 tabular-nums">{formatoMonedaCLP(r.montoProyectado)}</strong></div>
+              <div><span className="block text-violet-500 font-semibold uppercase">Adjudicado</span><strong className="text-violet-700 tabular-nums">{r.montoAdjudicado ? formatoMonedaCLP(r.montoAdjudicado) : '—'}</strong></div>
+              <div><span className="block text-emerald-600 font-semibold uppercase">Real</span><strong className="text-emerald-700 tabular-nums">{r.ejecutadoReal ? formatoMonedaCLP(r.ejecutadoReal) : '—'}</strong></div>
+            </div>
+          </div>
+        ))}
+      </div>
+
       {/* Tabla comparativa por proyecto */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-x-auto">
+      <div className="hidden sm:block bg-white rounded-2xl border border-slate-200 shadow-sm overflow-x-auto">
         <table className="w-full text-xs min-w-[920px]">
           <thead className="bg-slate-900 text-white sticky top-0">
             <tr>

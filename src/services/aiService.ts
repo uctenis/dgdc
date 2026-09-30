@@ -1,15 +1,21 @@
 // ─── PROVEEDOR DE IA (Gemini u OpenAI) ─────────────────────────────────────
-// Ambas funciones de IA de la app (reescritura de texto y sugerencia de
-// itemizado) llaman a través de este único despachador: si hay una API key de
-// Gemini configurada se usa esa (tiene nivel gratuito real, sin tarjeta de
-// crédito); si no, cae a OpenAI. Ambas llamadas se hacen directo desde el
-// navegador — la key queda visible en el bundle del cliente (ver .env.example).
+// Todas las funciones de IA de la app llaman a través de este único despachador.
+// Con VITE_IA_SERVIDOR=true (producción) Gemini se consulta a través de la función
+// `consultarIA` de Firebase: la clave vive solo en el servidor y exige sesión
+// @uct.cl. Sin eso (pruebas locales) se usa la clave VITE_GEMINI_API_KEY directo
+// desde el navegador —queda visible en el bundle— y, si no hay, OpenAI.
 
 import { FASES_ITEMIZADO } from '../types';
+import { auth } from '../lib/firebase';
 
 type ProveedorIA = 'gemini' | 'openai';
 
+const IA_POR_SERVIDOR = import.meta.env.VITE_IA_SERVIDOR === 'true';
+const IA_ENDPOINT = (import.meta.env.VITE_IA_SERVIDOR_URL as string | undefined)
+  || 'https://us-central1-dgdc-c848d.cloudfunctions.net/consultarIA';
+
 function proveedorActivo(): ProveedorIA | null {
+  if (IA_POR_SERVIDOR) return 'gemini';
   if (import.meta.env.VITE_GEMINI_API_KEY) return 'gemini';
   if (import.meta.env.VITE_OPENAI_API_KEY) return 'openai';
   return null;
@@ -79,6 +85,8 @@ async function llamarGemini(prompt: string, maxOutputTokens: number, timeoutMs?:
 /** Mensaje claro para el usuario según el error de IA (mismo texto en todas las pantallas). */
 export function mensajeErrorIA(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err || '');
+  if (msg.includes('AI_AUTH_REQUIRED') || msg.includes('IA_AUTH')) return 'Su sesión expiró. Vuelva a iniciar sesión para usar la IA.';
+  if (msg.includes('IA_NO_AUTORIZADO')) return 'Solo el personal de la UCT puede usar la IA.';
   if (msg.includes('AI_API_KEY_NOT_CONFIGURED')) return 'La IA no está configurada en este ambiente (falta la clave de Gemini).';
   if (/AI_REQUEST_FAILED: (503|500|502|504)/.test(msg) || msg.includes('AI_TIMEOUT'))
     return 'Los servidores de IA de Google están saturados en este momento (el sistema reintentó varias veces con distintos modelos). Intente nuevamente en unos minutos.';
@@ -99,23 +107,37 @@ function urlGemini(model: string, key: string): string {
 }
 
 async function llamarGeminiModelo(model: string, prompt: string, maxOutputTokens: number, timeoutMs?: number): Promise<string> {
-  const key = import.meta.env.VITE_GEMINI_API_KEY;
-
   let resp: Response;
   try {
-    resp = await fetchConTimeout(
-      urlGemini(model, key),
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens, temperature: 0.3 },
-        }),
-      },
-      timeoutMs
-    );
+    if (IA_POR_SERVIDOR) {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error('AI_AUTH_REQUIRED');
+      resp = await fetchConTimeout(
+        IA_ENDPOINT,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ model, prompt, maxOutputTokens }),
+        },
+        timeoutMs
+      );
+    } else {
+      const key = import.meta.env.VITE_GEMINI_API_KEY;
+      resp = await fetchConTimeout(
+        urlGemini(model, key),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { maxOutputTokens, temperature: 0.3 },
+          }),
+        },
+        timeoutMs
+      );
+    }
   } catch (err) {
+    if (err instanceof Error && err.message === 'AI_AUTH_REQUIRED') throw err;
     if (err instanceof DOMException && err.name === 'AbortError') throw new Error('AI_TIMEOUT');
     throw new Error(`AI_NETWORK_ERROR: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -429,7 +451,7 @@ export async function sugerirItemizadoConIA(params: {
 
 ${contexto}
 
-Primero determina qué tipo de proyecto es y cuál es la lógica de ejecución más adecuada para él. Luego propone entre 6 y 14 partidas TÍPICAS y RECURRENTES de itemizado (Bill of Quantities), en el orden lógico de ejecución de la obra. Cada partida debe clasificarse en EXACTAMENTE una de estas fases (usa el texto tal cual, sin inventar otras): ${catalogoFases}. No todas las fases son obligatorias — usa solo las que apliquen a este proyecto en particular. NO inventes cantidades ni precios unitarios — el responsable del proyecto los completará manualmente. Responde EXCLUSIVAMENTE con un array JSON válido, sin texto adicional ni markdown, con este formato exacto:
+Primero determina qué tipo de proyecto es y cuál es la lógica de ejecución más adecuada para él. Luego propone entre 6 y 14 partidas TÍPICAS y RECURRENTES de itemizado (Bill of Quantities), en el orden lógico de ejecución de la obra. Cada partida debe clasificarse en EXACTAMENTE una de estas fases (usa el texto tal cual, sin inventar otras): ${catalogoFases}. No todas las fases son obligatorias — usa solo las que apliquen a este proyecto en particular. Las partidas son SOLO de COSTO DIRECTO (materiales, mano de obra, equipos y subcontratos de cada trabajo). NO incluyas como partidas los Gastos Generales ni la Utilidad — el profesional residente, el prevencionista de riesgos, garantías, seguros, gastos financieros, consumos mensuales, aseo final y gastos de oficina se calculan aparte como Gastos Generales según el plazo de la obra. NO inventes cantidades ni precios unitarios — el responsable del proyecto los completará manualmente. Responde EXCLUSIVAMENTE con un array JSON válido, sin texto adicional ni markdown, con este formato exacto:
 [{"item":"1.1","fase":"Instalación de Faenas","descripcion":"...","unidad":"m2"}, ...]
 Usa unidades reales de construcción chilena (m2, m3, ml, un, gl, kg, hh, etc).`;
 
@@ -512,6 +534,19 @@ export interface ItemItemizadoPrecisoSugeridoIA {
   /** Estimación de mercado chileno propuesta por la IA — NO es una cotización real, se marca
    * como referencial en la UI y el usuario debe validarla o reemplazarla. */
   precioUnitarioReferencial: number;
+  /** Rango de mercado regional que la IA considera razonable (del contratista más económico al más caro). */
+  precioMinimo?: number;
+  precioMaximo?: number;
+  /** Mediana de precios unitarios reales ofertados a la universidad en partidas similares, si las hay. */
+  precioHistorico?: { mediana: number; cantidad: number };
+}
+
+/** Promedio de mínimo, típico y máximo: deja el precio en la media del rango, sin irse a los extremos. */
+function precioEnLaMedia(minimo: number, tipico: number, maximo: number): number {
+  const valores = [minimo, tipico, maximo].filter(v => Number.isFinite(v) && v > 0).sort((a, b) => a - b);
+  if (!valores.length) return 0;
+  const media = valores.reduce((a, b) => a + b, 0) / valores.length;
+  return Math.round(media);
 }
 
 /**
@@ -555,9 +590,11 @@ ${listaRespuestas}
 Con esos datos, propone entre 6 y 14 partidas de itemizado (Bill of Quantities), en el orden lógico de ejecución de la obra. Para cada partida:
 - Clasifícala en EXACTAMENTE una de estas fases (texto tal cual, sin inventar otras): ${catalogoFases}.
 - Calcula una CANTIDAD real (no 0) a partir de los datos entregados — si un dato no fue precisado, estímalo con criterio profesional conservador a partir del resto del contexto (ej. metros lineales de cumbrera o canaletas a partir del m2 y la geometría típica de una techumbre) y dilo implícito en la cantidad, sin inventar partidas que no correspondan al alcance.
-- Propón un precioUnitarioReferencial en pesos chilenos (CLP, sin IVA), como estimación de mercado chileno actual para esa partida específica — es una referencia orientativa, no una cotización real.
-No todas las fases son obligatorias — usa solo las que apliquen. Responde EXCLUSIVAMENTE con un array JSON válido, sin texto adicional ni markdown, con este formato exacto:
-[{"item":"1.1","fase":"Obra Gruesa","descripcion":"...","unidad":"m2","cantidad":120,"precioUnitarioReferencial":18000}, ...]
+- Estima el precio unitario en pesos chilenos (CLP, sin IVA) a COSTO DIRECTO: solo materiales, mano de obra (con leyes sociales), equipos y pérdidas de esa partida, SIN Gastos Generales ni Utilidad del contratista (se suman después sobre el total). Es una estimación orientativa, no una cotización real.
+- Calcula cada precio como un análisis de precio unitario: materiales a precio de distribuidor/ferretería mayorista, mano de obra con rendimientos normales (HH por unidad) y tarifas de contratistas pequeños y medianos de REGIÓN (Temuco, La Araucanía). Las partidas globales (gl) deben ser acotadas al alcance real (ej. la instalación de faenas de una obra menor es un monto acotado).
+- Entrega TRES valores por partida: "precioMinimo" (lo que cobraría un contratista económico pero serio), "precioMaximo" (un contratista caro pero razonable, sin sobreprecios anómalos) y "precioUnitarioReferencial" (el precio TÍPICO, en la MEDIA del mercado). El precio típico debe quedar al centro del rango: ni el más barato ni el más caro, sin márgenes de seguridad ni recortes.
+No todas las fases son obligatorias — usa solo las que apliquen. Las partidas son SOLO de COSTO DIRECTO (materiales, mano de obra, equipos y subcontratos de cada trabajo). NO incluyas como partidas los Gastos Generales ni la Utilidad — el profesional residente, el prevencionista de riesgos, garantías, seguros, gastos financieros, consumos mensuales, aseo final y gastos de oficina se calculan aparte como Gastos Generales según el plazo de la obra. Responde EXCLUSIVAMENTE con un array JSON válido, sin texto adicional ni markdown, con este formato exacto:
+[{"item":"1.1","fase":"Obra Gruesa","descripcion":"...","unidad":"m2","cantidad":120,"precioMinimo":15000,"precioUnitarioReferencial":18000,"precioMaximo":21000}, ...]
 Usa unidades reales de construcción chilena (m2, m3, ml, un, gl, kg, hh, etc).`;
 
   const content = await llamarIA(prompt, 4000);
@@ -571,7 +608,16 @@ Usa unidades reales de construcción chilena (m2, m3, ml, un, gl, kg, hh, etc).`
       unidad: String(x.unidad ?? 'un').trim(),
       fase: normalizarFase(String(x.fase ?? '')),
       cantidad: Math.max(0, Number(x.cantidad ?? 0)),
-      precioUnitarioReferencial: Math.max(0, Number(x.precioUnitarioReferencial ?? 0)),
+      ...(() => {
+        const tipico = Math.max(0, Number(x.precioUnitarioReferencial ?? 0));
+        const minimo = Math.max(0, Number(x.precioMinimo ?? tipico));
+        const maximo = Math.max(0, Number(x.precioMaximo ?? tipico));
+        return {
+          precioUnitarioReferencial: precioEnLaMedia(minimo, tipico, maximo),
+          precioMinimo: Math.min(minimo, maximo) || undefined,
+          precioMaximo: Math.max(minimo, maximo) || undefined,
+        };
+      })(),
     }))
     .filter(x => x.descripcion.length > 0);
 }

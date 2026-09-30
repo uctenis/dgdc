@@ -1,3 +1,5 @@
+import type { ParametrosCalculoGG } from '../utils/gastosGenerales';
+
 // ─── DATOS DEL CONTRATISTA PARA EL CONTRATO ────────────────────────────────
 export interface RepresentanteLegal {
   /** Tratamiento con que se cita en el contrato (se pide, no se deduce del nombre). */
@@ -30,8 +32,66 @@ export interface Proveedor {
   ciudad?: string;
   /** Representantes legales, domicilio y personería: se usan para redactar el contrato. */
   datosContrato?: DatosContratista;
+  /** Carpeta de documentos de la empresa (F30, vigencia, seguros...) con su fecha de vencimiento. */
+  documentos?: DocumentoProveedor[];
   estado: 'Activo' | 'Inactivo';
   fechaRegistro: string;
+}
+
+// ─── DOCUMENTOS DEL PROVEEDOR CON VENCIMIENTO ─────────────────────────────
+export const TIPOS_DOCUMENTO_PROVEEDOR = [
+  'Certificado F30 (Antecedentes Laborales y Previsionales)',
+  'Certificado F30-1 (Cumplimiento de Obligaciones Laborales)',
+  'Certificado de Vigencia de la Sociedad',
+  'Escritura / Estatutos',
+  'Seguro de Responsabilidad Civil',
+  'Certificado de Mutualidad (tasa de accidentabilidad)',
+  'Otro',
+] as const;
+export type TipoDocumentoProveedor = typeof TIPOS_DOCUMENTO_PROVEEDOR[number];
+
+export interface DocumentoProveedor {
+  id: string;
+  tipo: TipoDocumentoProveedor;
+  /** Descripción libre (obligatoria si el tipo es "Otro"). */
+  descripcion?: string;
+  fechaEmision?: string;
+  /** YYYY-MM-DD. Sin fecha = no vence (ej. escritura). */
+  fechaVencimiento?: string;
+  archivoNombre?: string;
+  archivoURL?: string;
+  fechaCarga: string;
+  cargadoPor?: string;
+}
+
+// ─── GARANTÍAS DE LA LICITACIÓN / CONTRATO ────────────────────────────────
+// Subcolección licitaciones/{id}/garantias.
+export const TIPOS_GARANTIA = ['Seriedad de la Oferta', 'Fiel Cumplimiento del Contrato', 'Anticipo', 'Correcta Ejecución de la Obra', 'Otra'] as const;
+export type TipoGarantia = typeof TIPOS_GARANTIA[number];
+export const INSTRUMENTOS_GARANTIA = ['Boleta de Garantía Bancaria', 'Vale Vista', 'Póliza de Seguro', 'Certificado de Fianza'] as const;
+export type InstrumentoGarantia = typeof INSTRUMENTOS_GARANTIA[number];
+
+export interface GarantiaLicitacion {
+  id: string;
+  tipo: TipoGarantia;
+  instrumento: InstrumentoGarantia;
+  numero: string;
+  /** Banco o compañía que la emite. */
+  emisor: string;
+  monto: number;
+  moneda: 'CLP' | 'UF';
+  proveedorId?: string;
+  proveedorNombre?: string;
+  fechaEmision?: string;
+  /** YYYY-MM-DD */
+  fechaVencimiento: string;
+  estado: 'Vigente' | 'Devuelta' | 'Cobrada';
+  fechaCambioEstado?: string;
+  observaciones?: string;
+  archivoNombre?: string;
+  archivoURL?: string;
+  fechaRegistro: string;
+  registradaPor?: string;
 }
 
 // ─── HISTORIAL DE OBRAS POR PROVEEDOR ─────────────────────────────────────
@@ -124,6 +184,9 @@ export interface ProyectoMaestro {
   itemizadoMarkup?: {
     gastosGeneralesPct: number;
     utilidadPct: number;
+    /** Parámetros con que se estimó el % de Gastos Generales en la calculadora (plazo,
+     * complejidad, recinto ocupado y ajustes) — respaldo del % aplicado. */
+    calculoGG?: ParametrosCalculoGG;
   };
   /** Ítems del checklist de la Ficha marcados a mano, sin documento que los respalde. */
   checklistManual?: Record<string, boolean>;
@@ -333,6 +396,39 @@ export interface InvitadoLicitacion {
   tokenAcceso?: string;
   /** Cuándo el proveedor envió su oferta desde el portal (ISO). */
   fechaPresentacion?: string;
+  /** Registro de ingresos al portal con su enlace personal (ISO): primera vez, última vez y cuántas sesiones. */
+  primerAcceso?: string;
+  ultimoAcceso?: string;
+  cantidadAccesos?: number;
+}
+
+/**
+ * Consulta de un proveedor durante el período de consultas (`licitaciones/{id}/consultas`). Solo la ven el
+ * personal interno y el proveedor que la hizo; al responderla se publica sin identificar a quien preguntó.
+ */
+export interface ConsultaLicitacion {
+  id: string;
+  proveedorId: string;
+  proveedorNombre: string;
+  proveedorUid: string;
+  pregunta: string;
+  fechaPregunta: string;
+  estado: 'Pendiente' | 'Respondida';
+  respuesta?: string;
+  fechaRespuesta?: string;
+  respondidaPorEmail?: string;
+  /** N° correlativo con que se publicó (Consulta N° 1, 2, ...). */
+  numero?: number;
+}
+
+/** Pregunta y respuesta publicadas, anónimas y visibles para todos los invitados (`licitaciones/{id}/consultasPublicadas`). */
+export interface ConsultaPublicada {
+  id: string;
+  numero: number;
+  pregunta: string;
+  respuesta: string;
+  fechaPregunta: string;
+  fechaRespuesta: string;
 }
 
 /** Lo que resuelve un enlace personal de invitación (colección `invitaciones/{código}`). */
@@ -387,6 +483,59 @@ export interface Propuesta {
 }
 
 // ─── LICITACIÓN / PROYECTO ─────────────────────────────────────────────────
+// ─── LIBRO DE OBRA DIGITAL ────────────────────────────────────────────────
+// licitaciones/{id}/libroObra/{entradaId} y sus fotos en libroObra/{entradaId}/fotos/{n}. Las anotaciones no se
+// editan ni se borran (como el libro en papel): un error se corrige con una nueva anotación que la referencia.
+export const TIPOS_ANOTACION_LIBRO = ['Avance', 'Instrucción al contratista', 'Observación', 'Visita / inspección', 'Recepción de materiales', 'Otro'] as const;
+export type TipoAnotacionLibro = typeof TIPOS_ANOTACION_LIBRO[number];
+
+export interface EntradaLibroObra {
+  id: string;
+  tipo: TipoAnotacionLibro;
+  texto: string;
+  /** Momento en que se escribió en el dispositivo (ISO): ordena el libro y da el N° de folio. */
+  fecha: string;
+  autorEmail: string;
+  autorNombre: string;
+  /** Avance físico estimado de la obra a la fecha, en % (alimenta la Curva S real). */
+  avanceFisicoPct?: number;
+  ubicacion?: { lat: number; lng: number; precisionM?: number };
+  clima?: string;
+  cantidadFotos: number;
+  /** Id de la anotación que esta corrige. */
+  corrigeA?: string;
+  /** SHA-256 del contenido: permite demostrar que la anotación no cambió. */
+  huella: string;
+}
+
+export interface FotoLibroObra {
+  id: string;
+  /** Imagen comprimida (JPEG en base64): viaja con la anotación y funciona sin señal. */
+  dataUrl: string;
+  nombre: string;
+  orden: number;
+}
+
+/** Registro automático de la apertura: quiénes ofertaron y cuándo, fijado al primer ingreso tras el cierre. */
+export interface RegistroAperturaOfertas {
+  /** Hora de cierre de la recepción (ISO). */
+  fechaCierre: string;
+  fechaRegistro: string;
+  registradoPor: string;
+  ofertas: {
+    proveedorId: string;
+    proveedorNombre: string;
+    proveedorRut?: string;
+    fechaEnvio?: string;
+    montoTotal: number;
+    plazoDias: number;
+    archivoEconomico?: string;
+    archivoTecnico?: string;
+  }[];
+  /** Invitados que no presentaron oferta. */
+  sinOferta: { proveedorId: string; proveedorNombre: string }[];
+}
+
 export interface LicitacionProyecto {
   id: string;
   codigoCP: string;    // ej: 409-123
@@ -400,6 +549,7 @@ export interface LicitacionProyecto {
   fechaCreacion?: string;
   estado: 'Borrador' | 'En Evaluacion' | 'Adjudicado' | 'Cerrado';
   proveedorAdjudicadoId?: string;
+  aperturaOfertas?: RegistroAperturaOfertas;
   proveedorGanadorId?: string;
   justificacionAdjudicacion?: string;
   proveedorAdjudicadoNombre?: string;

@@ -47,7 +47,7 @@ export function RankingDesempenoModal({ proveedores, onClose }: RankingDesempeno
   const totalEvaluados = proveedores.filter(p => (mapaEvaluaciones[p.id] || []).length > 0).length;
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4">
       <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl flex flex-col max-h-[85vh]">
         <div className="flex items-center justify-between p-6 border-b border-slate-100">
           <div>

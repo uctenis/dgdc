@@ -148,8 +148,8 @@ export const AntecedentesManager: React.FC<AntecedentesManagerProps> = ({
   ];
 
   return (
-    <div className={embedded ? '' : 'fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4'}>
-      <div className={embedded ? 'bg-white rounded-2xl w-full p-6 shadow-sm space-y-5 flex flex-col border border-slate-200' : 'bg-white rounded-2xl max-w-3xl w-full p-6 shadow-2xl space-y-5 max-h-[90vh] flex flex-col border border-slate-200'}>
+    <div className={embedded ? '' : 'fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4'}>
+      <div className={embedded ? 'bg-white rounded-2xl w-full p-6 shadow-sm space-y-5 flex flex-col border border-slate-200' : 'bg-white rounded-2xl max-w-3xl w-full p-4 sm:p-6 shadow-2xl space-y-5 max-h-[90vh] flex flex-col border border-slate-200'}>
 
         {/* Header */}
         <div className="flex items-center justify-between border-b pb-4 shrink-0">

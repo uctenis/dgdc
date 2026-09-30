@@ -1,13 +1,14 @@
 import { checklistAntecedentesEfectivo, checklistAntecedentesCompleto } from '../utils/proveedorMatching';
 import React, { useState, useEffect } from 'react';
-import type { Cotizacion, Proveedor, LicitacionProyecto, Propuesta, ItemCotizacion, ConfiguracionFirmas } from '../types';
-import { FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Plus, Trash2, ShieldCheck, Leaf, Clock, FileText, Globe, ArrowDownToLine, Loader2, Mail } from 'lucide-react';
+import type { Cotizacion, Proveedor, LicitacionProyecto, Propuesta, ItemCotizacion, ConfiguracionFirmas, InvitadoLicitacion, RegistroAperturaOfertas } from '../types';
+import { FileSpreadsheet, Upload, CheckCircle2, AlertCircle, Plus, Trash2, ShieldCheck, Leaf, Clock, FileText, Globe, ArrowDownToLine, Loader2, Mail, LockKeyhole, Printer } from 'lucide-react';
 import { parseCotizacionExcel } from '../utils/excelParser';
 import { parseCotizacionPdf } from '../utils/pdfParser';
 import { uploadFileToProjectFolder } from '../services/driveService';
 import { uploadLicitacionDocument } from '../services/storageService';
 import { formatoMonedaCLP, ordenarCotizacionesPorResultado } from '../services/evaluationEngine';
-import { subscribeToPropuestas, convertirPropuestaACotizacion } from '../services/firestoreService';
+import { subscribeToPropuestas, subscribeToInvitados, convertirPropuestaACotizacion } from '../services/firestoreService';
+import { useOfertasSelladas } from '../hooks/useOfertasSelladas';
 import { useAuth } from '../context/AuthContext';
 import { validarCotizacion } from '../utils/validacionCotizacion';
 import { textoLimiteOfertas, tiempoRestanteOfertas, plazoOfertasVencido, fechaLimiteOfertas, ahoraParaInput, formatoFechaHoraChile } from '../utils/plazoOfertas';
@@ -69,19 +70,58 @@ const OnlinePropuestasList: React.FC<{
 }> = ({ licitacionId, licitacion, onImportPropuesta, procesoCerrado = false }) => {
   const [propuestas, setPropuestas] = useState<Propuesta[]>([]);
   const [loading, setLoading] = useState(true);
+  const sellada = useOfertasSelladas(licitacion);
+  const [presentados, setPresentados] = useState<InvitadoLicitacion[]>([]);
 
   useEffect(() => {
+    if (!sellada) return;
+    return subscribeToInvitados(licitacionId, invs => setPresentados(invs.filter(i => i.estadoPropuesta === 'Presentada')));
+  }, [licitacionId, sellada]);
+
+  useEffect(() => {
+    // Selladas: no se leen hasta el cierre.
+    if (sellada) return;
     const unsub = subscribeToPropuestas(licitacionId, data => {
       // El administrador ve solo las ofertas ya ENVIADAS por el proveedor (no los borradores).
       setPropuestas(data.filter(p => p.estado === 'Enviada'));
       setLoading(false);
     });
     return unsub;
-  }, [licitacionId]);
+  }, [licitacionId, sellada]);
 
-  if (loading || propuestas.length === 0) return null;
+  if (sellada) {
+    return (
+      <div className="bg-gradient-to-r from-slate-800 to-sky-900 text-white p-6 rounded-2xl shadow-sm space-y-2">
+        <h4 className="text-xs font-bold uppercase tracking-wider flex items-center gap-2 text-sky-300">
+          <LockKeyhole className="w-4 h-4" /> Ofertas del portal selladas hasta el cierre
+        </h4>
+        <p className="text-xs text-sky-100">
+          Se abren automáticamente el {textoLimiteOfertas(licitacion)}. Hasta entonces nadie de la UCT puede ver montos ni archivos:
+          así nadie puede ser acusado de filtrar precios o de dejar ajustar una oferta.
+        </p>
+        {presentados.length === 0 ? (
+          <p className="text-xs text-slate-300 italic">Aún no se reciben ofertas.</p>
+        ) : (
+          <ul className="text-xs text-white space-y-1">
+            {presentados.map(i => (
+              <li key={i.proveedorId} className="flex items-center gap-2">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" /> {i.proveedorNombre}
+                {i.fechaPresentacion && <span className="text-sky-200">· recibida {new Date(i.fechaPresentacion).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  }
+
+  if (loading || propuestas.length === 0) {
+    return licitacion.aperturaOfertas ? <RegistroApertura registro={licitacion.aperturaOfertas} licitacion={licitacion} /> : null;
+  }
 
   return (
+    <>
+    {licitacion.aperturaOfertas && <RegistroApertura registro={licitacion.aperturaOfertas} licitacion={licitacion} />}
     <div className="bg-gradient-to-r from-sky-900 to-indigo-900 text-white p-6 rounded-2xl shadow-sm space-y-3">
       <div className="flex items-center justify-between">
         <h4 className="text-xs font-bold uppercase tracking-wider flex items-center gap-2 text-sky-300">
@@ -133,6 +173,51 @@ const OnlinePropuestasList: React.FC<{
           );
         })}
       </div>
+    </div>
+    </>
+  );
+};
+
+const escaparHtml = (t: string) => t.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
+const fechaCortaHora = (iso?: string) => (iso ? new Date(iso).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' }) : '—');
+
+/** Registro de apertura: quiénes ofertaron y cuándo, fijado al cierre; se puede imprimir o guardar en PDF. */
+const RegistroApertura: React.FC<{ registro: RegistroAperturaOfertas; licitacion: LicitacionProyecto }> = ({ registro, licitacion }) => {
+  const imprimir = () => {
+    const filas = registro.ofertas.map((o, i) => `<tr><td>${i + 1}</td><td>${escaparHtml(o.proveedorNombre)}${o.proveedorRut ? `<br><small>${escaparHtml(o.proveedorRut)}</small>` : ''}</td><td>${fechaCortaHora(o.fechaEnvio)}</td><td style="text-align:right">${formatoMonedaCLP(o.montoTotal)}</td><td>${o.plazoDias} días</td><td><small>${escaparHtml([o.archivoEconomico, o.archivoTecnico].filter(Boolean).join(' / '))}</small></td></tr>`).join('');
+    const sinOferta = registro.sinOferta.length
+      ? `<p style="margin-top:12px">Invitados que no presentaron oferta: ${registro.sinOferta.map(x => escaparHtml(x.proveedorNombre)).join(', ')}.</p>`
+      : '';
+    const v = window.open('', '_blank');
+    if (!v) return;
+    v.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Registro de apertura ${escaparHtml(licitacion.codigoProyecto || '')}</title>
+      <style>body{font-family:Arial,sans-serif;font-size:12px;color:#1e293b;margin:32px}h1{font-size:16px}table{border-collapse:collapse;width:100%;margin-top:12px}th,td{border:1px solid #cbd5e1;padding:6px;text-align:left;vertical-align:top}th{background:#f1f5f9}</style></head><body>
+      <h1>Registro de apertura de ofertas</h1>
+      <p><strong>${escaparHtml(licitacion.nombreProyecto)}</strong><br>Código de proyecto: ${escaparHtml(licitacion.codigoProyecto || '—')} · Centro de costo: ${escaparHtml(licitacion.codigoCP || '—')}</p>
+      <p>Cierre de recepción: <strong>${fechaCortaHora(registro.fechaCierre)}</strong> · Registro generado automáticamente el ${fechaCortaHora(registro.fechaRegistro)} (sesión de ${escaparHtml(registro.registradoPor)}).</p>
+      <table><thead><tr><th>N°</th><th>Proveedor</th><th>Recibida</th><th>Monto total</th><th>Plazo</th><th>Archivos</th></tr></thead><tbody>${filas || '<tr><td colspan="6">No se recibieron ofertas por el portal.</td></tr>'}</tbody></table>
+      ${sinOferta}
+      <p style="margin-top:24px;color:#64748b">Subdirección de Infraestructura — Universidad Católica de Temuco</p>
+      </body></html>`);
+    v.document.close();
+    v.focus();
+    v.print();
+  };
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-5 space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+          <LockKeyhole className="w-4 h-4 text-sky-600" /> Registro de apertura · cierre {fechaCortaHora(registro.fechaCierre)}
+        </h4>
+        <button type="button" onClick={imprimir} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 text-[11px] font-bold text-slate-700 hover:bg-slate-50">
+          <Printer className="w-3.5 h-3.5" /> Imprimir / PDF
+        </button>
+      </div>
+      <p className="text-[11px] text-slate-500">
+        {registro.ofertas.length} {registro.ofertas.length === 1 ? 'oferta recibida' : 'ofertas recibidas'} hasta el cierre
+        {registro.sinOferta.length > 0 && ` · sin oferta: ${registro.sinOferta.map(x => x.proveedorNombre).join(', ')}`}.
+        Generado automáticamente el {fechaCortaHora(registro.fechaRegistro)}.
+      </p>
     </div>
   );
 };
