@@ -102,7 +102,7 @@ service cloud.firestore {
         allow update: if esInterno()
           || (esProveedor() && provId == miProveedorId()
               && request.resource.data.diff(resource.data).affectedKeys()
-                   .hasOnly(['estadoPropuesta', 'fechaPresentacion', 'primerAcceso', 'ultimoAcceso', 'cantidadAccesos']));
+                   .hasOnly(['estadoPropuesta', 'fechaPresentacion', 'primerAcceso', 'ultimoAcceso', 'cantidadAccesos', 'aclaracionesVistas']));
       }
 
       // Consultas: el proveedor invitado solo crea y lee LAS SUYAS (antes del cierre del portal) y no puede
@@ -118,6 +118,12 @@ service cloud.firestore {
               && request.resource.data.pregunta is string && request.resource.data.pregunta.size() <= 2000
               && dentroDePlazo(licId));
         allow update, delete: if esInterno();
+      }
+
+      // Aclaraciones y modificaciones a las bases: las publica la UCT y las leen todos los invitados.
+      match /aclaraciones/{aclaracionId} {
+        allow read: if esInterno() || invitadoALicitacion(licId);
+        allow write: if esInterno();
       }
 
       // Respuestas publicadas (sin identificar a quién preguntó): las leen todos los invitados.

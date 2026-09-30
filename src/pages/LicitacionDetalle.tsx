@@ -18,6 +18,7 @@ import {
   registrarAccesoPortal,
 } from '../services/firestoreService';
 import { ConsultasPortal } from '../components/ConsultasPortal';
+import { AclaracionesPortal } from '../components/AclaracionesPortal';
 import { enviarConfirmacionPropuesta } from '../services/confirmacionPropuestaService';
 import { uploadLicitacionDocument } from '../services/storageService';
 import { generarFormatoPresupuestoExcel } from '../services/formatoPresupuestoExporter';
@@ -546,6 +547,13 @@ export function LicitacionDetalle({ proveedorIdVista, soloLectura = false, demoL
             <p className="text-xs text-slate-400 italic">Aún no hay documentos de antecedentes disponibles para esta licitación.</p>
           )}
         </div>
+
+        <AclaracionesPortal
+          licitacion={licitacion}
+          proveedorId={proveedorId}
+          soloLectura={soloLectura}
+          demo={Boolean(demoLicitacion)}
+        />
 
         <ConsultasPortal
           licitacion={licitacion}

@@ -23,6 +23,7 @@ import { EvaluacionDesempenoModal } from './EvaluacionDesempenoModal';
 import { InvitadosManager } from './InvitadosManager';
 import { AntecedentesManager } from './AntecedentesManager';
 import { ConsultasManager } from './ConsultasManager';
+import { AclaracionesManager } from './AclaracionesManager';
 import { GarantiasManager } from './GarantiasManager';
 import { LibroObraPanel } from './LibroObraPanel';
 import { MultasRetencionesPanel } from './MultasRetencionesPanel';
@@ -64,7 +65,7 @@ const tabs: { id: TabId; label: string; icon: typeof FileText }[] = [
   { id: 'expediente', label: 'Ficha', icon: FolderOpen },
   { id: 'antecedentes', label: 'Bases & Planos', icon: BookOpen },
   { id: 'invitados', label: 'Invitados', icon: Users },
-  { id: 'consultas', label: 'Consultas', icon: HelpCircle },
+  { id: 'consultas', label: 'Consultas y aclaraciones', icon: HelpCircle },
   { id: 'ofertas', label: 'Ofertas', icon: Receipt },
   { id: 'evaluacion', label: 'Evaluación', icon: Trophy },
   { id: 'actas', label: 'Actas', icon: FileCheck2 },
@@ -289,7 +290,12 @@ export function LicitacionWorkspacePage({
           onClose={() => setActiveTab('resumen')}
         />
       )}
-      {activeTab === 'consultas' && <ConsultasManager licitacion={licitacion} />}
+      {activeTab === 'consultas' && (
+        <div className="space-y-4">
+          <AclaracionesManager licitacion={licitacion} />
+          <ConsultasManager licitacion={licitacion} />
+        </div>
+      )}
       {activeTab === 'ofertas' && (
         <QuotationIngestion licitacion={licitacion} proveedores={proveedores} cotizaciones={cotizaciones} onAddCotizacion={onAddCotizacion} onDeleteCotizacion={onDeleteCotizacion} configFirmas={configFirmas} />
       )}

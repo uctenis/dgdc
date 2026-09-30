@@ -400,6 +400,23 @@ export interface InvitadoLicitacion {
   primerAcceso?: string;
   ultimoAcceso?: string;
   cantidadAccesos?: number;
+  /** Aclaraciones que el proveedor ya vio en el portal: id de la aclaración → fecha (ISO). */
+  aclaracionesVistas?: Record<string, string>;
+}
+
+/**
+ * Aclaración o modificación de las bases publicada por la UCT durante el proceso (`licitaciones/{id}/aclaraciones`).
+ * La ven todos los invitados en el portal; si cambia la fecha de cierre, la licitación se actualiza al publicarla.
+ */
+export interface AclaracionLicitacion {
+  id: string;
+  numero: number;
+  titulo: string;
+  texto: string;
+  fecha: string;
+  publicadaPor: string;
+  archivo?: { nombre: string; url: string };
+  cambioCierre?: { fechaAnterior: string; fechaNueva: string; horaAnterior?: string; horaNueva?: string };
 }
 
 /**
