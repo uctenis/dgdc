@@ -30,7 +30,7 @@ service cloud.firestore {
       return request.time.toMillis() <= get(/databases/$(database)/documents/licitaciones/$(licId)).data.get('limiteOfertasMs', 9999999999999);
     }
 
-    // Ofertas selladas: el personal interno solo lee las propuestas después de la hora de cierre
+    // Ofertas selladas (hoy DESACTIVADO; ver match /propuestas): el personal interno solo leería las propuestas después de la hora de cierre
     // (sin hora de cierre definida, no hay sello). Nota: en la prueba local "Probar como este proveedor"
     // se usa la sesión interna, así que con esta regla esa prueba no puede releer su oferta antes del cierre.
     function ofertasAbiertas(licId) {
@@ -129,7 +129,8 @@ service cloud.firestore {
       // Cada proveedor solo lee y escribe SU propuesta, y no puede modificarla una vez enviada
       // (salvo dejar constancia de la confirmación por correo).
       match /propuestas/{provId} {
-        allow read: if (esInterno() && ofertasAbiertas(licId)) || (esProveedor() && provId == miProveedorId());
+        // Sello de ofertas DESACTIVADO (2026-09-30). Para activarlo: esInterno() && ofertasAbiertas(licId).
+        allow read: if esInterno() || (esProveedor() && provId == miProveedorId());
         allow create: if esInterno()
           || (invitadoALicitacion(licId) && provId == miProveedorId()
               && request.resource.data.proveedorUid == request.auth.uid

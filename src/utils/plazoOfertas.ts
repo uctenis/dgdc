@@ -37,10 +37,17 @@ export function plazoOfertasVencido(lic: CampoPlazo, ahora: Date = new Date()): 
 }
 
 /**
+ * Sello de ofertas DESACTIVADO (decisión del 2026-09-30): se reevalúa después de usar el portal con proveedores
+ * reales. Para activarlo, poner true aquí y aplicar el sello en las reglas de Firebase (ver reglas-sugeridas/LEEME.md).
+ */
+export const SELLO_OFERTAS_ACTIVO = false;
+
+/**
  * Ofertas selladas: mientras la recepción está abierta nadie de la UCT ve el contenido de las ofertas (montos ni
  * archivos), solo quién ya presentó. Sin fecha límite definida no hay sello.
  */
 export function ofertasSelladas(lic: CampoPlazo, ahora: Date = new Date()): boolean {
+  if (!SELLO_OFERTAS_ACTIVO) return false;
   const limite = fechaLimiteOfertas(lic);
   return Boolean(limite) && ahora.getTime() <= (limite as Date).getTime();
 }

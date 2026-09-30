@@ -22,8 +22,9 @@ service firebase.storage {
 
     // Ofertas: cada proveedor solo sube y lee dentro de SU carpeta (no puede listar ni ver las de otros).
     match /licitaciones/{licId}/ofertas/{provId}/{archivo=**} {
-      // Selladas: el personal interno solo descarga las ofertas después del cierre.
-      allow get: if (esInterno() && request.time.toMillis() > firestore.get(/databases/(default)/documents/licitaciones/$(licId)).data.get('limiteOfertasMs', 0))
+      // Sello de ofertas DESACTIVADO (2026-09-30). Para activarlo, cambiar esInterno() por:
+      //   (esInterno() && request.time.toMillis() > firestore.get(/databases/(default)/documents/licitaciones/$(licId)).data.get('limiteOfertasMs', 0))
+      allow get: if esInterno()
         || (proveedorInvitado(licId) && provId == miProveedorId());
       // Solo se puede subir hasta la hora de cierre (reloj del servidor).
       allow create: if esInterno()

@@ -102,7 +102,8 @@ export function LicitacionWorkspacePage({
   // Registro de apertura: se fija una sola vez, con lo recibido hasta el cierre.
   useEffect(() => {
     const limite = fechaLimiteOfertas(licitacion);
-    if (sellada || !limite || licitacion.aperturaOfertas || propuestasPortal === null) return;
+    // Solo después de la hora de cierre (con o sin sello), al primer ingreso a la licitación.
+    if (sellada || !limite || Date.now() <= limite.getTime() || licitacion.aperturaOfertas || propuestasPortal === null) return;
     const ofertasAbiertas = propuestasPortal.filter(p => !p.fechaEnvio || new Date(p.fechaEnvio).getTime() <= limite.getTime());
     void registrarAperturaOfertas(licitacion.id, {
       fechaCierre: limite.toISOString(),
