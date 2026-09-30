@@ -1,7 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { connectFirestoreEmulator, getFirestore, initializeFirestore, memoryLocalCache, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import { connectAuthEmulator, getAuth, GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
-import { connectStorageEmulator, getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBRcvt7iWJIUiNNVE87ZA_3MhdATJbicFc",
@@ -20,11 +19,11 @@ const app = initializeApp(firebaseConfig);
 // descargado y se sincronizan después; sirve varias pestañas a la vez. En el portal de proveedores (equipos
 // ajenos, a veces compartidos) ni en la inscripción de proveedores se deja copia en el equipo: solo memoria.
 const esPortalProveedores = typeof window !== 'undefined'
-  && (window.location.pathname.includes('/portal/') || window.location.pathname.includes('/proveedores/inscripcion'));
+  && ['/portal/', '/proveedores/inscripcion', '/archivo/'].some(r => window.location.pathname.includes(r));
 
 /**
- * SOLO pruebas locales: con VITE_EMULADORES=true la app usa los emuladores de Firebase (base de datos, ingreso y
- * archivos de prueba en este computador, con las reglas de reglas-sugeridas/) en vez del proyecto real.
+ * SOLO pruebas locales: con VITE_EMULADORES=true la app usa los emuladores de Firebase (base de datos e ingreso de
+ * prueba en este computador, con las reglas de reglas-sugeridas/) en vez del proyecto real.
  */
 const usarEmuladores = import.meta.env.DEV && import.meta.env.VITE_EMULADORES === 'true';
 
@@ -41,13 +40,11 @@ export const db = (() => {
   }
 })();
 export const auth = getAuth(app);
-export const storage = getStorage(app);
 
 if (usarEmuladores) {
   try {
     connectFirestoreEmulator(db, '127.0.0.1', 8080);
     connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
-    connectStorageEmulator(storage, '127.0.0.1', 9199);
   } catch { /* ya conectados (recarga en caliente) */ }
   // Ingreso de prueba sin ventana de Google: el emulador acepta una credencial de Google simulada.
   (window as unknown as { __ingresoPrueba: (email: string) => Promise<unknown> }).__ingresoPrueba = email =>

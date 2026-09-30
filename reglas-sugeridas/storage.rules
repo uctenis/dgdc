@@ -1,6 +1,8 @@
 rules_version = '2';
 
-// REGLAS SUGERIDAS — no están desplegadas. Léase LEEME.md antes de aplicarlas.
+// NO SE USAN (2026-09-30): el proyecto no tiene Firebase Storage (exige plan de pago). Los archivos se guardan en
+// Firestore, colección `archivos` (ver firestore.rules y src/services/archivosService.ts). Se conservan por si algún
+// día se activa Storage.
 service firebase.storage {
   match /b/{bucket}/o {
 

@@ -1,6 +1,5 @@
 import { guardarConfigCompartida } from './configCompartida';
-import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
-import { storage } from '../lib/firebase';
+import { borrarArchivo, subirArchivo, type AccesoArchivo } from './archivosService';
 import type { Proveedor, LicitacionProyecto, Cotizacion, ConfiguracionFirmas } from '../types';
 import { INITIAL_PROVEEDORES, INITIAL_LICITACIONES, INITIAL_COTIZACIONES, INITIAL_CONFIG_FIRMAS } from '../data/initialData';
 import { formatearRUT } from '../utils/rutUtils';
@@ -79,72 +78,57 @@ export const storageService = {
   },
 };
 
-/**
- * Sube un archivo de propuesta y retorna la URL de descarga.
- * Ruta: propuestas/{licitacionId}/{proveedorId}/{filename}
- */
+// ── Archivos ─────────────────────────────────────────────────────────────
+// Firebase Storage exige plan de pago, así que los archivos se guardan en Firestore (ver archivosService.ts).
+// Estas funciones mantienen su forma de siempre: reciben el archivo y devuelven el enlace para abrirlo.
+
+/** Oferta de un proveedor (la ven la UCT y ese proveedor). */
 export function uploadPropuesta(
   licitacionId: string,
   proveedorId: string,
   file: File,
   onProgress: (pct: number) => void
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const ext = file.name.split('.').pop();
-    const filename = `propuesta_${Date.now()}.${ext}`;
-    const storageRef = ref(storage, `propuestas/${licitacionId}/${proveedorId}/${filename}`);
-
-    const task = uploadBytesResumable(storageRef, file);
-
-    task.on(
-      'state_changed',
-      snapshot => {
-        onProgress(Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100));
-      },
-      error => reject(error),
-      async () => {
-        const url = await getDownloadURL(task.snapshot.ref);
-        resolve(url);
-      }
-    );
-  });
+  return subirArchivo(file, { tipo: 'oferta', licitacionId, proveedorId }, onProgress);
 }
 
-/** Sube la imagen de la firma manuscrita enrolada por un usuario y retorna la URL de descarga. */
-export function uploadFirmaImagen(uid: string, file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const ext = file.name.split('.').pop() || 'png';
-    const storageRef = ref(storage, `firmas/${uid}.${ext}`);
-    const task = uploadBytesResumable(storageRef, file);
-    task.on(
-      'state_changed',
-      () => {},
-      reject,
-      async () => resolve(await getDownloadURL(task.snapshot.ref))
-    );
-  });
+/**
+ * Firma manuscrita enrolada por un usuario: imagen liviana (PNG, máx. 600 px) que se guarda directamente en su
+ * perfil como data URL, así se estampa en las actas sin depender de otro almacenamiento.
+ */
+export async function uploadFirmaImagen(_uid: string, file: File): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error('No se pudo leer la imagen de la firma.'));
+      i.src = url;
+    });
+    const escala = Math.min(1, 600 / Math.max(img.width, img.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(img.width * escala);
+    canvas.height = Math.round(img.height * escala);
+    canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/png');
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
-/** Sube un documento/antecedente de la Ficha de Proyecto a Firebase Storage y retorna la URL de descarga. */
+/** Documento o antecedente de la Ficha de Proyecto (solo personal UCT). */
 export function uploadProyectoDocumento(
-  proyectoId: string,
+  _proyectoId: string,
   file: File,
   onProgress?: (pct: number) => void
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const nombreSeguro = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const storageRef = ref(storage, `proyectos/${proyectoId}/documentos/${Date.now()}_${nombreSeguro}`);
-    const task = uploadBytesResumable(storageRef, file);
-    task.on(
-      'state_changed',
-      snapshot => onProgress?.(Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)),
-      reject,
-      async () => resolve(await getDownloadURL(task.snapshot.ref))
-    );
-  });
+  return subirArchivo(file, { tipo: 'interno' }, onProgress);
 }
 
-/** Respaldo persistente para documentos administrativos cuando Drive no está disponible. */
+/**
+ * Documento de una licitación. Los antecedentes (bases, planos, aclaraciones) los ven todos los invitados; las
+ * ofertas, solo la UCT y el proveedor de la subcarpeta; el resto, solo la UCT.
+ */
 export function uploadLicitacionDocument(
   licitacionId: string,
   categoria: 'ofertas' | 'ordenes-compra' | 'estados-pago' | 'antecedentes' | 'garantias',
@@ -153,54 +137,28 @@ export function uploadLicitacionDocument(
   /** Subcarpeta (ej. el id del proveedor): así cada proveedor solo escribe en la suya. */
   subcarpeta?: string
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const nombreSeguro = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const storageRef = ref(storage, `licitaciones/${licitacionId}/${categoria}/${subcarpeta ? `${subcarpeta}/` : ''}${Date.now()}_${nombreSeguro}`);
-    const task = uploadBytesResumable(storageRef, file);
-    task.on(
-      'state_changed',
-      snapshot => onProgress?.(Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)),
-      reject,
-      async () => resolve(await getDownloadURL(task.snapshot.ref))
-    );
-  });
+  const acceso: AccesoArchivo = categoria === 'antecedentes'
+    ? { tipo: 'invitados', licitacionId }
+    : categoria === 'ofertas' && subcarpeta
+      ? { tipo: 'oferta', licitacionId, proveedorId: subcarpeta }
+      : { tipo: 'interno' };
+  return subirArchivo(file, acceso, onProgress);
 }
 
-/** Documentos de la carpeta del proveedor (F30, vigencia, seguros...): proveedores/{id}/documentos/. */
-export function uploadDocumentoProveedor(proveedorId: string, file: File, onProgress?: (pct: number) => void): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const nombreSeguro = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const task = uploadBytesResumable(ref(storage, `proveedores/${proveedorId}/documentos/${Date.now()}_${nombreSeguro}`), file);
-    task.on(
-      'state_changed',
-      snapshot => onProgress?.(Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)),
-      reject,
-      async () => resolve(await getDownloadURL(task.snapshot.ref))
-    );
-  });
+/** Documentos de la carpeta del proveedor (F30, vigencia, seguros...): solo personal UCT. */
+export function uploadDocumentoProveedor(_proveedorId: string, file: File, onProgress?: (pct: number) => void): Promise<string> {
+  return subirArchivo(file, { tipo: 'interno' }, onProgress);
 }
 
-/** Requisitos de la inscripción de un proveedor: inscripciones/{código}/{requisito}_... (se suben sin sesión). */
-export function uploadDocumentoInscripcion(codigo: string, requisito: string, file: File, onProgress?: (pct: number) => void): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const nombreSeguro = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const task = uploadBytesResumable(ref(storage, `inscripciones/${codigo}/${requisito}_${Date.now()}_${nombreSeguro}`), file);
-    task.on(
-      'state_changed',
-      snapshot => onProgress?.(Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)),
-      reject,
-      async () => resolve(await getDownloadURL(task.snapshot.ref))
-    );
-  });
+/** Requisitos de la inscripción de un proveedor (se suben sin sesión, con el código del enlace). */
+export function uploadDocumentoInscripcion(codigo: string, _requisito: string, file: File, onProgress?: (pct: number) => void): Promise<string> {
+  return subirArchivo(file, { tipo: 'inscripcion', codigo }, onProgress);
 }
 
-/**
- * Elimina un archivo de Storage dado su URL completa.
- */
+/** Elimina un archivo dado su enlace (silencioso si no existe). */
 export async function deletePropuestaFile(url: string): Promise<void> {
   try {
-    const fileRef = ref(storage, url);
-    await deleteObject(fileRef);
+    await borrarArchivo(url);
   } catch {
     // Silencioso si el archivo no existe
   }

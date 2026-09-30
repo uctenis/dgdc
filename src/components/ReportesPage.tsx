@@ -7,6 +7,7 @@ import { auditarLicitacion, type AuditoriaLicitacion } from '../utils/auditoriaR
 import { generarReporteAuditoriaExcel } from '../utils/reporteExcelExport';
 import { IndicadoresGestion } from './IndicadoresGestion';
 import { RegistroCambios } from './RegistroCambios';
+import { EspacioArchivos } from './EspacioArchivos';
 
 interface ReportesPageProps {
   licitaciones: LicitacionProyecto[];
@@ -85,6 +86,8 @@ export function ReportesPage({ licitaciones, cotizaciones }: ReportesPageProps) 
       <IndicadoresGestion licitaciones={licitaciones} proyectos={proyectos} />
 
       <RegistroCambios />
+
+      <EspacioArchivos />
 
       <h3 className="text-sm font-black text-slate-800 pt-2">Auditoría de expedientes</h3>
 

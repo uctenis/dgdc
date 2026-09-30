@@ -1,3 +1,4 @@
+import { ImagenArchivo } from './ImagenArchivo';
 import { FileSignature, Printer, X, Receipt } from 'lucide-react';
 import type { Cotizacion, EstadoPago, LicitacionProyecto } from '../types';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
@@ -171,7 +172,7 @@ export function EstadoPagoDocumentModal({ licitacion, oferta, estadoPago, estado
               <div className="mt-2 grid grid-cols-4 gap-2">
                 {estadoPago.fotos.map((foto, i) => (
                   <a key={i} href={foto.url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded border border-slate-300">
-                    <img src={foto.url} alt={foto.nombre || `Foto ${i + 1}`} className="h-20 w-full object-cover" />
+                    <ImagenArchivo src={foto.url} alt={foto.nombre || `Foto ${i + 1}`} className="h-20 w-full object-cover" />
                   </a>
                 ))}
               </div>
@@ -185,7 +186,7 @@ export function EstadoPagoDocumentModal({ licitacion, oferta, estadoPago, estado
                 {estadoPago.observacionesDetalle.map((obs, i) => (
                   <div key={i} className="flex gap-3 rounded border border-slate-200 p-2">
                     <a href={obs.fotoURL} target="_blank" rel="noreferrer" className="block shrink-0 overflow-hidden rounded border border-slate-300">
-                      <img src={obs.fotoURL} alt={obs.fotoNombre || `Observación ${i + 1}`} className="h-16 w-16 object-cover" />
+                      <ImagenArchivo src={obs.fotoURL} alt={obs.fotoNombre || `Observación ${i + 1}`} className="h-16 w-16 object-cover" />
                     </a>
                     <p className="leading-relaxed">{obs.texto}</p>
                   </div>

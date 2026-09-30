@@ -1,3 +1,4 @@
+import { obtenerBlobArchivo } from '../services/archivosService';
 import { useMemo, useState } from 'react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
@@ -316,9 +317,7 @@ function TarjetaPendiente({ licitacion: l, oferta, onVerActa, onRegistrada }: { 
     const fallidos: DocumentoPaquete[] = [];
     await Promise.all(docs.map(async d => {
       try {
-        const resp = await fetch(d.url);
-        if (!resp.ok) throw new Error(String(resp.status));
-        zip.file(d.nombre, await resp.blob());
+        zip.file(d.nombre, (await obtenerBlobArchivo(d.url)).blob);
       } catch {
         fallidos.push(d);
       }

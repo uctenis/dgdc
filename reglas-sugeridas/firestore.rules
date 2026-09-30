@@ -196,7 +196,7 @@ service cloud.firestore {
     // (Las licitaciones y sus subcolecciones tienen sus propias reglas arriba: un comodín aquí abriría las
     // ofertas selladas, porque en Firebase basta que UNA regla permita el acceso.)
     match /{coleccion}/{document=**} {
-      allow read, write: if esInterno() && coleccion != 'licitaciones' && coleccion != 'auditoria' && coleccion != 'inscripcionesProveedores';
+      allow read, write: if esInterno() && coleccion != 'licitaciones' && coleccion != 'auditoria' && coleccion != 'inscripcionesProveedores' && coleccion != 'archivos';
     }
 
     // Inscripción de proveedores por invitación: el id del documento es el código secreto del enlace personal.
@@ -209,6 +209,50 @@ service cloud.firestore {
         || (resource.data.estado in ['Invitada', 'Observada']
             && request.resource.data.estado in [resource.data.estado, 'Enviada']
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['datos', 'documentos', 'sustentabilidad', 'estado', 'fechaEnvio']));
+    }
+
+    // ── Archivos (reemplazan a Firebase Storage, que exige plan de pago) ───────
+    // archivos/{id}: datos del archivo y quién puede verlo; archivos/{id}/partes/{n}: el contenido en pedazos.
+    function inscripcionAbierta(codigo) {
+      return exists(/databases/$(database)/documents/inscripcionesProveedores/$(codigo))
+        && get(/databases/$(database)/documents/inscripcionesProveedores/$(codigo)).data.estado in ['Invitada', 'Observada'];
+    }
+    // Quién puede ABRIR el archivo, según sus datos.
+    function puedeVerArchivo(a) {
+      return esInterno()
+        || (a.acceso == 'invitados' && invitadoALicitacion(a.licitacionId))
+        || (a.acceso == 'oferta' && esProveedor() && a.proveedorId == miProveedorId())
+        || (a.acceso == 'inscripcion' && inscripcionAbierta(a.inscripcion));
+    }
+    // Quién puede SUBIRLO: la UCT cualquiera; el proveedor, solo su oferta dentro del plazo; la empresa que se
+    // inscribe, solo con su inscripción abierta.
+    function puedeSubirArchivo(a) {
+      return esInterno()
+        || (a.acceso == 'oferta' && invitadoALicitacion(a.licitacionId) && a.proveedorId == miProveedorId()
+            && a.subidoPorUid == request.auth.uid && dentroDePlazo(a.licitacionId))
+        || (a.acceso == 'inscripcion' && inscripcionAbierta(a.inscripcion));
+    }
+    function metaArchivo(id) { return get(/databases/$(database)/documents/archivos/$(id)).data; }
+
+    match /archivos/{id} {
+      allow get: if puedeVerArchivo(resource.data);
+      allow list: if esInterno();
+      allow create: if request.resource.data.completo == false
+        && request.resource.data.tamano is int && request.resource.data.tamano <= 15 * 1024 * 1024
+        && request.resource.data.acceso in ['interno', 'invitados', 'oferta', 'inscripcion']
+        && puedeSubirArchivo(request.resource.data);
+      // Al terminar de subir, quien lo subió lo marca completo; nada más cambia. Borrar es solo de la UCT.
+      allow update: if resource.data.completo == false && puedeSubirArchivo(resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['completo']);
+      allow delete: if esInterno();
+
+      match /partes/{n} {
+        allow read: if puedeVerArchivo(metaArchivo(id));
+        allow create: if metaArchivo(id).completo == false && puedeSubirArchivo(metaArchivo(id))
+          && request.resource.data.datos is string && request.resource.data.datos.size() <= 1000000;
+        allow update: if false;
+        allow delete: if esInterno();
+      }
     }
 
     // Registro de cambios: cada entrada queda a nombre de quien la escribe y nadie la edita ni la borra.

@@ -59,6 +59,7 @@ const IndicadoresDemo = lazy(() => import('./pages/IndicadoresDemo').then(m => (
 const PreciosUnitariosPage = lazy(() => import('./components/PreciosUnitariosPage').then(m => ({ default: m.PreciosUnitariosPage })));
 const PreciosDemo = lazy(() => import('./pages/PreciosDemo').then(m => ({ default: m.PreciosDemo })));
 const InscripcionProveedorPage = lazy(() => import('./pages/InscripcionProveedorPage').then(m => ({ default: m.InscripcionProveedorPage })));
+const ArchivoPage = lazy(() => import('./pages/ArchivoPage').then(m => ({ default: m.ArchivoPage })));
 const PortalDemo = lazy(() => import('./pages/PortalDemo').then(m => ({ default: m.PortalDemo })));
 const LicitacionWorkspacePage = lazy(() => import('./components/LicitacionWorkspacePage').then(m => ({ default: m.LicitacionWorkspacePage })));
 
@@ -544,6 +545,8 @@ export function App() {
           <Route path="/libro-obra/:id" element={<BloqueaProveedor><ProtectedInternalRoute><LibroObraMovilPage /></ProtectedInternalRoute></BloqueaProveedor>} />
 
           {/* Provider routes */}
+          {/* Archivos guardados en el sistema: las reglas de Firebase deciden quién puede abrirlos. */}
+          <Route path="/archivo/:id" element={<ArchivoPage />} />
           {/* Inscripción de proveedores: solo con el enlace personal que envía la UCT (sin cuenta). */}
           <Route path="/proveedores/inscripcion" element={<InscripcionProveedorPage />} />
           <Route path="/portal/login" element={<PortalAccesoRestringido />} />
