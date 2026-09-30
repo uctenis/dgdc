@@ -1,3 +1,4 @@
+import { motivoNoHabil, proponerCalendario, PLAZOS_CALENDARIO } from '../utils/diasHabiles';
 import React, { useState, useMemo } from 'react';
 import type { LicitacionProyecto, Proveedor, ProyectoMaestro, Cotizacion, ConfiguracionFirmas } from '../types';
 import type { TabId as LicitacionTabId } from './LicitacionWorkspacePage';
@@ -166,10 +167,19 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     return d.toISOString().split('T')[0];
   };
 
-  const [fechaVisitaTerreno, setFechaVisitaTerreno] = useState(getFutureDate(5));
-  const [fechaRecepcionConsultas, setFechaRecepcionConsultas] = useState(getFutureDate(8));
-  const [fechaRespuestaConsultas, setFechaRespuestaConsultas] = useState(getFutureDate(10));
-  const [fechaEvaluacion, setFechaEvaluacion] = useState(getFutureDate(12));
+  // Calendario tipo en días hábiles (sin fines de semana ni feriados de Chile) desde hoy.
+  const calendarioTipo = () => proponerCalendario(getFutureDate(0));
+  const [fechaVisitaTerreno, setFechaVisitaTerreno] = useState(() => calendarioTipo().visita);
+  const [fechaRecepcionConsultas, setFechaRecepcionConsultas] = useState(() => calendarioTipo().consultas);
+  const [fechaRespuestaConsultas, setFechaRespuestaConsultas] = useState(() => calendarioTipo().respuestas);
+  const [fechaEvaluacion, setFechaEvaluacion] = useState(() => calendarioTipo().entrega);
+  const aplicarCalendarioTipo = () => {
+    const c = calendarioTipo();
+    setFechaVisitaTerreno(c.visita);
+    setFechaRecepcionConsultas(c.consultas);
+    setFechaRespuestaConsultas(c.respuestas);
+    setFechaEvaluacion(c.entrega);
+  };
   const [horaLimiteOfertas, setHoraLimiteOfertas] = useState(HORA_LIMITE_POR_DEFECTO);
 
   const handleOpenAdd = () => {
@@ -187,10 +197,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     setResponsableEmail('');
     setTipoObra('');
     setRubro('');
-    setFechaVisitaTerreno(getFutureDate(5));
-    setFechaRecepcionConsultas(getFutureDate(8));
-    setFechaRespuestaConsultas(getFutureDate(10));
-    setFechaEvaluacion(getFutureDate(12));
+    aplicarCalendarioTipo();
     setHoraLimiteOfertas(HORA_LIMITE_POR_DEFECTO);
     setSelectedMasterProyectoId(null);
     // Abre primero el selector de la Lista de Proyectos
@@ -212,9 +219,9 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
     setResponsableEmail(lic.responsableEmail || '');
     setTipoObra(lic.tipoObra || '');
     setRubro(lic.rubro || '');
-    setFechaVisitaTerreno(lic.fechaVisitaTerreno || getFutureDate(5));
-    setFechaRecepcionConsultas(lic.fechaRecepcionConsultas || getFutureDate(8));
-    setFechaRespuestaConsultas(lic.fechaRespuestaConsultas || getFutureDate(10));
+    setFechaVisitaTerreno(lic.fechaVisitaTerreno || calendarioTipo().visita);
+    setFechaRecepcionConsultas(lic.fechaRecepcionConsultas || calendarioTipo().consultas);
+    setFechaRespuestaConsultas(lic.fechaRespuestaConsultas || calendarioTipo().respuestas);
     setFechaEvaluacion(lic.fechaEvaluacion);
     setHoraLimiteOfertas(lic.horaLimiteOfertas || HORA_LIMITE_POR_DEFECTO);
     setShowModal(true);
@@ -891,10 +898,20 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
 
               {/* Calendario de la Licitación */}
               <div className="bg-sky-50/60 p-3.5 rounded-xl border border-sky-100 space-y-2">
-                <span className="text-[11px] font-bold text-sky-900 block flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5 text-sky-600" />
-                  Calendario de la Licitación (Hitos Obligatorios)
-                </span>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold text-sky-900 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-sky-600" />
+                    Calendario de la Licitación (Hitos Obligatorios)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={aplicarCalendarioTipo}
+                    className="text-[10px] font-bold text-sky-700 bg-white border border-sky-200 hover:bg-sky-50 rounded-lg px-2.5 py-1"
+                    title={`Visita a ${PLAZOS_CALENDARIO.visitaTerreno} días hábiles de hoy; consultas ${PLAZOS_CALENDARIO.recepcionConsultas} después; respuestas ${PLAZOS_CALENDARIO.respuestaConsultas} después; cierre ${PLAZOS_CALENDARIO.entregaPropuestas} después. Sin fines de semana ni feriados.`}
+                  >
+                    Proponer fechas en días hábiles
+                  </button>
+                </div>
 
                 {/* Vista previa del orden de hitos mientras se editan las fechas */}
                 {(() => {
@@ -964,6 +981,19 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                     <AlertTriangle className="w-3 h-3" /> Orden inválido: deben avanzar 1 → 2 → 3 → 4. No podrá guardar hasta corregirlo.
                   </p>
                 )}
+                {([
+                  ['Visita a terreno', fechaVisitaTerreno],
+                  ['Recepción de consultas', fechaRecepcionConsultas],
+                  ['Respuesta de consultas', fechaRespuestaConsultas],
+                  ['Entrega de propuestas', fechaEvaluacion],
+                ] as const).map(([hito, f]) => {
+                  const motivo = f ? motivoNoHabil(f) : undefined;
+                  return motivo ? (
+                    <p key={hito} className="text-[10px] text-amber-800 font-semibold flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3" /> {hito} cae en día no hábil ({motivo}).
+                    </p>
+                  ) : null;
+                })}
               </div>
 
               <div className="grid grid-cols-2 gap-4">

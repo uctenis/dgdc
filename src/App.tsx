@@ -4,6 +4,7 @@ import { Navbar } from './components/Navbar';
 import type { TabId } from './components/LicitacionWorkspacePage';
 import { ConsultasPendientesAlerta } from './components/ConsultasPendientesAlerta';
 import { VencimientosAlerta } from './components/VencimientosAlerta';
+import { BuscadorGeneral } from './components/BuscadorGeneral';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { EVENTO_CONFIG_ACTUALIZADA } from './services/configCompartida';
@@ -97,6 +98,18 @@ function AdminApp() {
    * para avisar en pantalla — sin esto, la lista simplemente aparece vacía o desactualizada
    * sin que nadie note que algo falló. */
   const [errorCargaDatos, setErrorCargaDatos] = useState<string | null>(null);
+
+  // Buscador general (Ctrl+K / ⌘K)
+  const [buscadorAbierto, setBuscadorAbierto] = useState(false);
+  const [busquedaProveedor, setBusquedaProveedor] = useState('');
+  useEffect(() => {
+    if (soloBandejaOP) return;
+    const atajo = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setBuscadorAbierto(true); }
+    };
+    window.addEventListener('keydown', atajo);
+    return () => window.removeEventListener('keydown', atajo);
+  }, [soloBandejaOP]);
 
   const handleOpenFicha = (p: LicitacionProyecto | ProyectoMaestro) => {
     if ('nombreProyecto' in p) {
@@ -279,6 +292,16 @@ function AdminApp() {
       <Navbar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
+        onBuscar={soloBandejaOP ? undefined : () => setBuscadorAbierto(true)}
+      />
+      <BuscadorGeneral
+        abierto={buscadorAbierto}
+        onCerrar={() => setBuscadorAbierto(false)}
+        licitaciones={licitaciones}
+        proveedores={proveedores}
+        onAbrirLicitacion={l => handleOpenFicha(l)}
+        onAbrirProyecto={p => handleOpenFicha(p)}
+        onAbrirProveedor={p => { setBusquedaProveedor(p.razonSocial); setActiveTab('proveedores'); }}
       />
 
       {/* Main Content Area */}
@@ -417,6 +440,7 @@ function AdminApp() {
             onAddProveedor={handleAddProveedor}
             onUpdateProveedor={handleUpdateProveedor}
             onDeleteProveedor={handleDeleteProveedor}
+            busquedaInicial={busquedaProveedor}
           />
         )}
 

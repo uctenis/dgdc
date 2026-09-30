@@ -13,6 +13,7 @@ import {
   TrendingUp,
   ClipboardList,
   HardHat,
+  Search,
   Menu,
   X,
 } from 'lucide-react';
@@ -21,9 +22,11 @@ import { useAuth } from '../context/AuthContext';
 interface NavbarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  /** Abre el buscador general (Ctrl+K). */
+  onBuscar?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
+export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onBuscar }) => {
   const { user, profile, isAdmin, isSecretaria, logout } = useAuth();
   const allTabs = [
     { id: 'proyectos-maestros', label: 'Cartera de Proyectos 2026', icon: FileText },
@@ -97,6 +100,19 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
 
           {/* ── Actions ────────────────────────────────────────────────── */}
           <div className="flex items-center gap-2 shrink-0">
+            {onBuscar && (
+              <button
+                type="button"
+                onClick={onBuscar}
+                title="Buscar en todo el sistema (Ctrl+K)"
+                aria-label="Buscar"
+                className="flex items-center gap-2 rounded-lg bg-white/10 hover:bg-white/15 p-2.5 lg:px-3 lg:py-2 text-slate-200 text-xs transition"
+              >
+                <Search className="h-4 w-4" />
+                <span className="hidden lg:inline">Buscar</span>
+                <kbd className="hidden lg:inline text-[10px] text-slate-400 border border-white/20 rounded px-1">Ctrl K</kbd>
+              </button>
+            )}
             {isAdmin && <button
               onClick={() => { void import('../services/templateGenerator').then(m => m.generarPlantillaCotizacionExcel()); }}
               title="Descargar plantilla Excel oficial para enviar a proveedores"

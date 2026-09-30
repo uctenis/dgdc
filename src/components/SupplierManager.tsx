@@ -35,6 +35,8 @@ interface SupplierManagerProps {
   onAddProveedor: (prov: Omit<Proveedor, 'id' | 'fechaRegistro'>) => void | Promise<void>;
   onUpdateProveedor: (id: string, prov: Partial<Proveedor>) => void | Promise<void>;
   onDeleteProveedor: (id: string) => void;
+  /** Texto con que se abre la búsqueda (ej. al elegir un proveedor en el buscador general). */
+  busquedaInicial?: string;
 }
 
 export const SupplierManager: React.FC<SupplierManagerProps> = ({
@@ -43,8 +45,10 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
   onAddProveedor,
   onUpdateProveedor,
   onDeleteProveedor,
+  busquedaInicial,
 }) => {
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(busquedaInicial || '');
+  useEffect(() => { if (busquedaInicial) setSearchTerm(busquedaInicial); }, [busquedaInicial]);
   const [filtroRubro, setFiltroRubro] = useState('Todos');
   const [soloIncompletos, setSoloIncompletos] = useState(false);
   const [showModal, setShowModal] = useState(false);
