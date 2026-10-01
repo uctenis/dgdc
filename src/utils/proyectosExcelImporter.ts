@@ -1,7 +1,7 @@
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
-import type { ProyectoMaestro } from '../types';
+import type { ItemItemizadoProyecto, ProyectoMaestro } from '../types';
 import { getRubrosList } from '../data/rubrosData';
 
 export interface FilaProyectoImportada {
@@ -24,6 +24,9 @@ export interface FilaProyectoImportada {
     fechaInicio?: string;
     fechaTermino?: string;
     presupuestoAprobado: boolean;
+    /** Partidas del presupuesto estimativo, si el archivo trae la hoja "Partidas" con las de este proyecto. */
+    itemizado?: ItemItemizadoProyecto[];
+    itemizadoMarkup?: { gastosGeneralesPct: number; utilidadPct: number };
   };
   errores: string[];
 }
@@ -150,6 +153,61 @@ function normalizarModalidad(v: unknown): ProyectoMaestro['modalidadContrato'] {
   return 'Suma Alzada';
 }
 
+const numeroDeCelda = (v: unknown): number =>
+  typeof v === 'number' ? v : Number(String(v ?? '').replace(/\./g, '').replace(',', '.').replace(/[^\d.]/g, '')) || 0;
+
+/**
+ * Hoja opcional "Partidas": el presupuesto estimativo de cada proyecto, una partida por fila (Proyecto, Capítulo,
+ * Ítem, Descripción, Unidad, Cantidad, P. Unitario). Se enlaza al proyecto por su nombre, tal como está escrito
+ * en la hoja de proyectos. Devuelve las partidas agrupadas por nombre de proyecto (en minúsculas).
+ */
+function leerHojaPartidas(workbook: XLSX.WorkBook): Map<string, ItemItemizadoProyecto[]> {
+  const porProyecto = new Map<string, ItemItemizadoProyecto[]>();
+  const nombreHoja = workbook.SheetNames.find(n => normalizarEncabezado(n).includes('partida'));
+  if (!nombreHoja) return porProyecto;
+
+  const rows: unknown[][] = XLSX.utils.sheet_to_json(workbook.Sheets[nombreHoja], { header: 1, defval: '' });
+  const headerRow = rows[0] || [];
+  const idx = {
+    proyecto: buscarColumna(headerRow, 'proyecto'),
+    fase: buscarColumna(headerRow, 'capítulo', 'capitulo', 'fase'),
+    item: buscarColumna(headerRow, 'ítem', 'item'),
+    descripcion: buscarColumna(headerRow, 'descrip'),
+    unidad: buscarColumna(headerRow, 'unidad'),
+    cantidad: buscarColumna(headerRow, 'cantidad'),
+    unitario: buscarColumna(headerRow, 'unitario'),
+  };
+  if (idx.proyecto < 0 || idx.descripcion < 0 || idx.cantidad < 0 || idx.unitario < 0) return porProyecto;
+
+  const sello = Date.now();
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    const get = (i: number) => (i >= 0 ? String(row?.[i] ?? '').trim() : '');
+    const proyecto = get(idx.proyecto).toLowerCase();
+    const descripcion = get(idx.descripcion);
+    if (!proyecto || !descripcion) continue;
+
+    const cantidad = numeroDeCelda(row[idx.cantidad]);
+    const precioUnitario = numeroDeCelda(row[idx.unitario]);
+    const partidas = porProyecto.get(proyecto) || [];
+    partidas.push({
+      id: `partida-excel-${sello}-${r}`,
+      item: get(idx.item) || String(partidas.length + 1),
+      descripcion,
+      unidad: get(idx.unidad) || 'un',
+      cantidad,
+      precioUnitario,
+      precioTotal: Math.round(cantidad * precioUnitario),
+      origen: 'Excel',
+      fase: get(idx.fase) || undefined,
+      // Viene de un presupuesto armado fuera del sistema: queda como referencia hasta que se valide en la ficha.
+      precioReferencial: true,
+    });
+    porProyecto.set(proyecto, partidas);
+  }
+  return porProyecto;
+}
+
 export async function parseProyectosExcel(file: File): Promise<{
   filas: FilaProyectoImportada[];
   erroresGenerales: string[];
@@ -184,7 +242,11 @@ export async function parseProyectosExcel(file: File): Promise<{
     fechaInicio: buscarColumna(headerRow, 'inicio'),
     fechaTermino: buscarColumna(headerRow, 'término', 'termino', 'fecha fin', 'fecha final'),
     presupuestoAprobado: buscarColumna(headerRow, 'aprobado'),
+    gastosGeneralesPct: buscarColumna(headerRow, 'gastos generales'),
+    utilidadPct: buscarColumna(headerRow, 'utilidad'),
   };
+  const partidasPorProyecto = leerHojaPartidas(workbook);
+  const proyectosConPartidas = new Set<string>();
 
   if (idx.nombre < 0) {
     erroresGenerales.push('No se encontró la columna "Nombre del Proyecto" en la primera fila. Use la plantilla oficial.');
@@ -209,6 +271,9 @@ export async function parseProyectosExcel(file: File): Promise<{
     if (responsableEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(responsableEmail)) {
       errores.push(`Email de responsable inválido: "${responsableEmail}".`);
     }
+
+    const itemizado = partidasPorProyecto.get(nombre.toLowerCase());
+    if (itemizado) proyectosConPartidas.add(nombre.toLowerCase());
 
     const fechaInicio = parsearFecha(idx.fechaInicio >= 0 ? row[idx.fechaInicio] : undefined);
     const fechaTermino = parsearFecha(idx.fechaTermino >= 0 ? row[idx.fechaTermino] : undefined);
@@ -236,12 +301,24 @@ export async function parseProyectosExcel(file: File): Promise<{
         fechaInicio,
         fechaTermino,
         presupuestoAprobado: normalizarSiNo(idx.presupuestoAprobado >= 0 ? row[idx.presupuestoAprobado] : ''),
+        itemizado,
+        itemizadoMarkup: itemizado
+          ? {
+              gastosGeneralesPct: idx.gastosGeneralesPct >= 0 ? numeroDeCelda(row[idx.gastosGeneralesPct]) : 0,
+              utilidadPct: idx.utilidadPct >= 0 ? numeroDeCelda(row[idx.utilidadPct]) : 0,
+            }
+          : undefined,
       },
       errores,
     });
   }
 
   if (!filas.length) erroresGenerales.push('No se encontraron filas con datos bajo el encabezado.');
+
+  const sinProyecto = [...partidasPorProyecto.keys()].filter(n => !proyectosConPartidas.has(n));
+  if (sinProyecto.length) {
+    erroresGenerales.push(`La hoja "Partidas" trae partidas de proyectos que no están en la hoja de proyectos (el nombre debe ser idéntico): ${sinProyecto.join('; ')}.`);
+  }
 
   return { filas, erroresGenerales };
 }

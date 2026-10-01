@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   BookOpen, Plus, Trash2, Search,
   X, DollarSign, Calendar, MapPin, Building, User,
-  FileText, Paperclip, FolderPlus, ScrollText, Hammer, ShieldCheck, Clock, Sparkles, Loader2
+  FileText, Paperclip, FolderPlus, ScrollText, Hammer, ShieldCheck, Clock, Sparkles, Loader2, Upload
 } from 'lucide-react';
 import {
   subscribeToProyectos,
@@ -34,7 +34,8 @@ import { RevisionCarteraModal } from './RevisionCarteraModal';
 import { PremiumDatePicker } from './PremiumDatePicker';
 import { useAuth } from '../context/AuthContext';
 import { anioDeCartera, aniosDeCartera, presupuestoDelAnio, resumenRevisionCartera, leerAnioCarteraElegido, guardarAnioCarteraElegido } from '../utils/carteraAnual';
-import type { ProyectoMaestro, LicitacionProyecto, Proveedor, ConfiguracionFirmas } from '../types';
+import { itemizadoDesdeImportado, totalItemizadoConIva, resumenPartidasParaIA } from '../utils/presupuestoImportado';
+import type { ProyectoMaestro, LicitacionProyecto, Proveedor, ConfiguracionFirmas, ItemItemizadoProyecto } from '../types';
 
 interface ProyectosMaestrosProps {
   onSelectProyecto?: (p: ProyectoMaestro) => void;
@@ -119,14 +120,28 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   const [descripcionPropuestaIA, setDescripcionPropuestaIA] = useState<string | null>(null);
   const [errorDescripcionIA, setErrorDescripcionIA] = useState<string | null>(null);
 
+  // Presupuesto estimativo adjunto al crear el proyecto (Excel o PDF): sus partidas quedan como el itemizado del
+  // proyecto y son la fuente con que la IA sugiere la descripción y el fundamento.
+  const [presupuestoAdjunto, setPresupuestoAdjunto] = useState<{
+    archivo: string;
+    itemizado: ItemItemizadoProyecto[];
+    markup: { gastosGeneralesPct: number; utilidadPct: number };
+    total: number;
+  } | null>(null);
+  const [leyendoPresupuesto, setLeyendoPresupuesto] = useState(false);
+  const [errorPresupuesto, setErrorPresupuesto] = useState<string | null>(null);
+
   useEffect(() => {
     if (!showModal) {
       setDescripcionPropuestaIA(null);
       setErrorDescripcionIA(null);
+      setPresupuestoAdjunto(null);
+      setErrorPresupuesto(null);
     }
   }, [showModal]);
 
-  const mejorarDescripcion = async () => {
+  // `itemizado` se pasa al llamar apenas se adjunta el presupuesto, cuando el estado aún no se actualiza.
+  const mejorarDescripcion = async (itemizado: ItemItemizadoProyecto[] | undefined = presupuestoAdjunto?.itemizado) => {
     setErrorDescripcionIA(null);
     setMejorandoDescripcion(true);
     try {
@@ -134,6 +149,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
       const propuesta = await mejorarDescripcionProyectoConIA({
         descripcion: form.descripcion,
         nombre: form.nombre,
+        partidas: resumenPartidasParaIA(itemizado),
         tipoObra: form.tipoObra,
         rubro: form.rubro,
         uso: form.uso,
@@ -155,7 +171,35 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
     }
   };
 
-  // Fundamento asistido por IA: toma la descripción y los argumentos ya escritos en el cuadro del fundamento.
+  const adjuntarPresupuesto = async (file: File) => {
+    setErrorPresupuesto(null);
+    setLeyendoPresupuesto(true);
+    const esPdf = file.name.toLowerCase().endsWith('.pdf');
+    try {
+      const resultado = esPdf
+        ? await (await import('../utils/pdfParser')).parsePresupuestoPdf(file)
+        : await (await import('../utils/excelParser')).parsePresupuestoExcel(file);
+      if (resultado.items.length === 0) {
+        setErrorPresupuesto(resultado.advertencias[0] || 'No se encontraron partidas reconocibles en el archivo.');
+        return;
+      }
+      const importado = itemizadoDesdeImportado(resultado, esPdf ? 'PDF' : 'Excel');
+      const markup = { gastosGeneralesPct: importado.gastosGeneralesPct || 0, utilidadPct: importado.utilidadPct || 0 };
+      const total = totalItemizadoConIva(importado.items, markup, configFirmas?.parametrosSgc?.tasaIva ?? 19);
+      setPresupuestoAdjunto({ archivo: file.name, itemizado: importado.items, markup, total });
+      // El total del presupuesto pasa a ser el Presupuesto Estimado solo si aún no se escribió uno.
+      if (total > 0) setForm(f => (f.valorAprox > 0 ? f : { ...f, valorAprox: total }));
+      // Con el cuadro de la descripción vacío, se sugiere de inmediato una a partir de las partidas.
+      if (isAIConfigured() && !form.descripcion.trim()) void mejorarDescripcion(importado.items);
+    } catch (err) {
+      console.error('Error leyendo el presupuesto estimativo:', err);
+      setErrorPresupuesto(`No se pudo leer el archivo. Verifique que sea un ${esPdf ? 'PDF' : 'Excel (.xlsx/.xls)'} válido.`);
+    } finally {
+      setLeyendoPresupuesto(false);
+    }
+  };
+
+  // Fundamento asistido por IA: toma la descripción, el presupuesto adjunto y los argumentos ya escritos en el cuadro del fundamento.
   const [redactandoFundamento, setRedactandoFundamento] = useState(false);
   const redactarFundamento = async () => {
     setErrorDescripcionIA(null);
@@ -171,6 +215,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
         ubicacion: [form.edificioSigla ? etiquetaEdificio(form.edificioSigla) : '', campus?.nombre, campus?.ciudad].filter(Boolean).join(', '),
         valorEstimado: form.valorAprox,
         anio: anioCartera,
+        partidas: resumenPartidasParaIA(presupuestoAdjunto?.itemizado, { conMontos: true }),
       });
       setForm(f => ({ ...f, fundamento }));
     } catch (err) {
@@ -343,6 +388,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           responsableEmail: form.responsableEmail,
           documentosAntecedentes: form.documentosAntecedentes,
           anioPresupuesto: anioCartera,
+          ...(presupuestoAdjunto ? { itemizado: presupuestoAdjunto.itemizado, itemizadoMarkup: presupuestoAdjunto.markup } : {}),
         });
         // Las Bases no se abren al crear: se preparan después, desde la ficha del proyecto.
       }
@@ -1189,16 +1235,70 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                     />
                   </div>
 
+                  {!editingId && (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-slate-700">Presupuesto Estimativo (opcional)</p>
+                          <p className="text-[10px] text-slate-500">
+                            Excel o PDF con las partidas (Ítem, Descripción, Unidad, Cantidad, P. Unitario). Quedan como el itemizado del proyecto y sirven para sugerir la descripción y el fundamento.
+                          </p>
+                        </div>
+                        <label className={`flex items-center gap-1.5 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-bold px-2.5 py-1.5 rounded-lg text-[11px] shrink-0 ${leyendoPresupuesto ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}`}>
+                          {leyendoPresupuesto ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                          {leyendoPresupuesto ? 'Leyendo…' : presupuestoAdjunto ? 'Cambiar archivo' : 'Adjuntar presupuesto'}
+                          <input
+                            type="file"
+                            accept=".xlsx,.xls,.pdf"
+                            hidden
+                            onChange={e => {
+                              const file = e.target.files?.[0];
+                              e.target.value = '';
+                              if (file) void adjuntarPresupuesto(file);
+                            }}
+                          />
+                        </label>
+                      </div>
+                      {errorPresupuesto && <p className="mt-2 text-[11px] text-amber-700">{errorPresupuesto}</p>}
+                      {presupuestoAdjunto && (
+                        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-600">
+                          <span className="flex items-center gap-1 font-semibold text-slate-700 min-w-0">
+                            <Paperclip className="w-3.5 h-3.5 shrink-0" />
+                            <span className="truncate">{presupuestoAdjunto.archivo}</span>
+                          </span>
+                          <span>{presupuestoAdjunto.itemizado.length} partidas · {formatoMonedaCLP(presupuestoAdjunto.total)} con IVA</span>
+                          {presupuestoAdjunto.total > 0 && presupuestoAdjunto.total !== form.valorAprox && (
+                            <button
+                              type="button"
+                              onClick={() => setForm(f => ({ ...f, valorAprox: presupuestoAdjunto.total }))}
+                              className="font-bold text-indigo-700 hover:text-indigo-900 underline"
+                            >
+                              Usar como Presupuesto Estimado
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setPresupuestoAdjunto(null)}
+                            className="font-bold text-slate-500 hover:text-rose-700 underline"
+                          >
+                            Quitar
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div>
                     <div className="flex items-center justify-between gap-2 mb-1">
                       <label className="block font-semibold text-slate-700">Descripción del Requerimiento Institucional</label>
                       <button
                         type="button"
-                        onClick={mejorarDescripcion}
-                        disabled={mejorandoDescripcion || (!form.nombre.trim() && form.descripcion.trim().length < 10) || !isAIConfigured()}
+                        onClick={() => mejorarDescripcion()}
+                        disabled={mejorandoDescripcion || (!presupuestoAdjunto && !form.nombre.trim() && form.descripcion.trim().length < 10) || !isAIConfigured()}
                         title={
                           !isAIConfigured() ? 'Configure VITE_GEMINI_API_KEY o VITE_OPENAI_API_KEY para habilitar esta función'
-                            : !form.nombre.trim() && form.descripcion.trim().length < 10 ? 'Escriba primero el nombre del proyecto o una descripción breve'
+                            : !presupuestoAdjunto && !form.nombre.trim() && form.descripcion.trim().length < 10 ? 'Escriba primero el nombre del proyecto o una descripción breve, o adjunte el presupuesto estimativo'
+                            : presupuestoAdjunto ? 'La IA usa las partidas del presupuesto adjunto, el título, el campus/edificio y lo que usted escribió para describir el alcance, sin inventar cifras ni mencionar precios. Usted decide si usa la propuesta.'
                             : 'La IA usa el título, el campus/edificio y lo que usted escribió para precisar el alcance con fundamento técnico, sin inventar cifras. Usted decide si usa la propuesta.'
                         }
                         className="flex items-center gap-1.5 bg-violet-50 hover:bg-violet-100 disabled:opacity-50 disabled:cursor-not-allowed border border-violet-200 text-violet-800 font-bold px-2.5 py-1 rounded-lg text-[11px] shrink-0"
@@ -1235,7 +1335,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                           </button>
                           <button
                             type="button"
-                            onClick={mejorarDescripcion}
+                            onClick={() => mejorarDescripcion()}
                             disabled={mejorandoDescripcion}
                             className="px-3 py-1.5 bg-white hover:bg-violet-50 disabled:opacity-50 border border-violet-200 text-violet-800 rounded-lg text-[11px] font-bold"
                           >
@@ -1264,7 +1364,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                           type="button"
                           onClick={redactarFundamento}
                           disabled={redactandoFundamento || !form.nombre.trim()}
-                          title="Redacta el fundamento a partir de la descripción y de los argumentos escritos en este cuadro"
+                          title={`Redacta el fundamento a partir de la descripción${presupuestoAdjunto ? ', del presupuesto adjunto' : ''} y de los argumentos escritos en este cuadro`}
                           className="flex items-center gap-1 text-[11px] font-bold text-violet-700 hover:text-violet-900 disabled:opacity-50"
                         >
                           {redactandoFundamento ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}

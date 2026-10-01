@@ -205,6 +205,7 @@ export async function rewriteTextWithAI(text: string, style = 'técnico y concis
  * Mejora la Descripción del Requerimiento de un proyecto con fundamento técnico: precisa el alcance,
  * los trabajos, materiales/sistemas y normativa chilena aplicable, a partir de lo que escribió el
  * usuario y los datos del proyecto. No inventa cifras (m2, montos, plazos) que el usuario no dio.
+ * Si el proyecto tiene presupuesto estimativo, sus partidas son la fuente del alcance.
  */
 export async function mejorarDescripcionProyectoConIA(params: {
   descripcion: string;
@@ -213,6 +214,8 @@ export async function mejorarDescripcionProyectoConIA(params: {
   rubro?: string;
   uso?: string;
   ubicacion?: string;
+  /** Partidas del presupuesto estimativo, SIN precios (ver resumenPartidasParaIA): la descripción va a las Bases. */
+  partidas?: string;
 }): Promise<string> {
   const contexto = [
     params.nombre ? `Título del proyecto (define QUÉ se va a hacer): "${params.nombre}"` : '',
@@ -223,6 +226,7 @@ export async function mejorarDescripcionProyectoConIA(params: {
   ].filter(Boolean).join('\n');
 
   const descripcionUsuario = params.descripcion.trim();
+  const partidas = params.partidas?.trim();
 
   const prompt = `Eres un profesional de la Subdirección de Infraestructura de una universidad chilena (Universidad Católica de Temuco), experto en obras civiles, instalaciones y mantención de edificios. Debes ${descripcionUsuario ? 'mejorar' : 'redactar'} la "Descripción del Requerimiento Institucional" de un proyecto, que luego se usará en las Bases de licitación.
 
@@ -232,16 +236,21 @@ ${contexto}
 ${descripcionUsuario ? `Descripción escrita por el usuario:
 """
 ${descripcionUsuario}
-"""` : 'El usuario aún no escribió una descripción: redáctala a partir del título y el lugar.'}
-
+"""` : `El usuario aún no escribió una descripción: redáctala a partir ${partidas ? 'del presupuesto estimativo, el título y el lugar' : 'del título y el lugar'}.`}
+${partidas ? `
+Presupuesto estimativo del proyecto (partidas con su cantidad; es la fuente más precisa de lo que se va a ejecutar):
+"""
+${partidas}
+"""
+` : ''}
 Usa el título y el lugar como referencia principal: interpreta qué solución indica el título, en qué tipo de recinto y ciudad se ejecuta (clima de la zona, condiciones de uso del recinto, si es un edificio universitario en funcionamiento) y ajusta las consideraciones técnicas a ese contexto concreto. Nombra el recinto y el campus en la descripción.
 
 Redacta una descripción ${descripcionUsuario ? 'mejorada ' : ''}que:
-- ${descripcionUsuario ? 'Conserve TODA la información que dio el usuario y su intención; no cambies el alcance.' : 'Se limite al alcance que indica el título; no agregues trabajos ajenos a él.'}
-- Precise el alcance con fundamento técnico: trabajos a ejecutar, materiales o sistemas típicos para este tipo de solución, y consideraciones técnicas relevantes (seguridad, compatibilidad con lo existente, mantención, eficiencia).
+- ${descripcionUsuario ? 'Conserve TODA la información que dio el usuario y su intención; no cambies el alcance.' : partidas ? 'Se limite al alcance que muestran las partidas del presupuesto; no agregues trabajos que no estén en ellas.' : 'Se limite al alcance que indica el título; no agregues trabajos ajenos a él.'}
+${partidas ? '- Resuma los trabajos del presupuesto agrupándolos por tipo de trabajo, sin enumerar las partidas una a una. Puede citar las cantidades del presupuesto (superficies, metros, unidades) cuando ayuden a dimensionar la obra. NO mencione precios ni montos.\n' : ''}- Precise el alcance con fundamento técnico: trabajos a ejecutar, materiales o sistemas típicos para este tipo de solución, y consideraciones técnicas relevantes (seguridad, compatibilidad con lo existente, mantención, eficiencia).
 - Mencione normativa chilena aplicable solo si corresponde con certeza (ej. OGUC, NCh, normas SEC), sin inventar números de norma dudosos.
 - Incluya una breve justificación de la necesidad institucional.
-- NO inventes cifras que el usuario no dio (superficies, cantidades, montos, plazos, marcas); si son relevantes, indícalas como "a definir" o "según levantamiento en terreno".
+- NO inventes cifras que ${partidas ? 'no estén en la descripción del usuario ni en el presupuesto' : 'el usuario no dio'} (superficies, cantidades, montos, plazos, marcas); si son relevantes, indícalas como "a definir" o "según levantamiento en terreno".
 - Use lenguaje técnico, formal e impersonal, en español de Chile, en 1 a 3 párrafos (máximo ~180 palabras), sin títulos, viñetas ni markdown.
 
 Responde solo con el texto de la descripción mejorada.`;
@@ -265,7 +274,10 @@ export async function redactarFundamentoProyectoConIA(params: {
   prioridad?: string;
   valorEstimado?: number;
   anio?: number;
+  /** Partidas del presupuesto estimativo con sus montos (ver resumenPartidasParaIA): el fundamento es interno. */
+  partidas?: string;
 }): Promise<string> {
+  const partidas = params.partidas?.trim();
   const contexto = [
     `Proyecto: "${params.nombre}"`,
     params.ubicacion ? `Ubicación: ${params.ubicacion}` : '',
@@ -284,17 +296,22 @@ ${contexto}
 ${params.descripcion?.trim() ? `Descripción del requerimiento:
 """
 ${params.descripcion.trim()}
-"""` : 'El proyecto aún no tiene descripción: básate en el nombre y la ubicación.'}
-
+"""` : `El proyecto aún no tiene descripción: básate en ${partidas ? 'el presupuesto estimativo, el nombre y la ubicación' : 'el nombre y la ubicación'}.`}
+${partidas ? `
+Presupuesto estimativo del proyecto (partidas con su cantidad y monto neto; muestra en qué se gasta el dinero):
+"""
+${partidas}
+"""
+` : ''}
 ${argumentos ? `Argumentos que el responsable quiere incorporar (son la base del fundamento; consérvalos todos):
 """
 ${argumentos}
-"""` : 'El responsable no entregó argumentos propios: dedúcelos solo de la descripción.'}
+"""` : `El responsable no entregó argumentos propios: dedúcelos solo de la descripción${partidas ? ' y del presupuesto' : ''}.`}
 
 Redacta un fundamento que:
 - Explique la necesidad que resuelve y a quiénes beneficia (estudiantes, académicos, funcionarios, comunidad).
 - Indique por qué corresponde hacerlo en este período y qué riesgo o costo tiene postergarlo (seguridad, continuidad de la docencia, deterioro, normativa), solo si se desprende de los datos.
-- Relacione el monto con el beneficio, sin repetir la descripción técnica.
+- Relacione el monto con el beneficio, sin repetir la descripción técnica.${partidas ? '\n- Indique en qué se concentra la inversión según el presupuesto (los trabajos de mayor peso), sin listar partidas ni detallar precios unitarios.' : ''}
 - NO invente cifras, cantidades de usuarios, fechas, incidentes ni exigencias normativas que no estén en los datos; si un dato sería útil y falta, no lo menciones.
 - Use lenguaje formal, directo y persuasivo, en español de Chile, en un solo párrafo de 60 a 110 palabras, sin títulos, viñetas ni markdown.
 

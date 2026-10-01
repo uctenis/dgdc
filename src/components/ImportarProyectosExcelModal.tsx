@@ -79,6 +79,7 @@ export function ImportarProyectosExcelModal({ onClose, onImportado, anio }: Impo
             : { aprobado: false },
           documentosAntecedentes: [],
           anioPresupuesto: anio,
+          ...(f.datos.itemizado ? { itemizado: f.datos.itemizado, itemizadoMarkup: f.datos.itemizadoMarkup } : {}),
         });
         ok++;
       } catch (err) {
@@ -154,6 +155,7 @@ export function ImportarProyectosExcelModal({ onClose, onImportado, anio }: Impo
                           <th className="p-2 text-left">Fila</th>
                           <th className="p-2 text-left">Nombre</th>
                           <th className="p-2 text-right">Presupuesto</th>
+                          <th className="p-2 text-right">Partidas</th>
                           <th className="p-2 text-left">Campus</th>
                           <th className="p-2 text-left">Ventana</th>
                           <th className="p-2 text-center">Ppto.</th>
@@ -166,6 +168,7 @@ export function ImportarProyectosExcelModal({ onClose, onImportado, anio }: Impo
                             <td className="p-2 font-mono text-slate-400">{f.fila}</td>
                             <td className="p-2 font-semibold text-slate-800">{f.datos.nombre || '—'}</td>
                             <td className="p-2 text-right">{formatoMonedaCLP(f.datos.valorAprox)}</td>
+                            <td className="p-2 text-right text-slate-500">{f.datos.itemizado?.length || '—'}</td>
                             <td className="p-2">{f.datos.campusSigla || '—'}</td>
                             <td className="p-2 text-[10px] text-slate-500 whitespace-nowrap">
                               {f.datos.fechaInicio ? new Date(f.datos.fechaInicio).toLocaleDateString('es-CL') : '—'}

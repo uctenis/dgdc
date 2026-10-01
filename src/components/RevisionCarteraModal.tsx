@@ -6,6 +6,7 @@ import { setDecisionPresupuesto, updateProyectoMaestro } from '../services/fires
 import { ANIO_CARTERA_INICIAL, compararConBaseAjuste, decisionDeCartera, presupuestoDelAnio, resumenRevisionCartera, type DecisionCartera } from '../utils/carteraAnual';
 import { redactarFundamentoProyectoConIA, isAIConfigured, mensajeErrorIA } from '../services/aiService';
 import { obtenerCampusPorSigla, ubicacionProyecto } from '../data/campusData';
+import { resumenPartidasParaIA } from '../utils/presupuestoImportado';
 import { HistorialRevisionLista } from './HistorialRevisionProyecto';
 import { TraspasoCarteraPanel } from './TraspasoCarteraPanel';
 import { useAuth } from '../context/AuthContext';
@@ -62,7 +63,7 @@ export function RevisionCarteraModal({ anio, proyectos, configFirmas, onSaveConf
     void ejecutar(p.id, () => updateProyectoMaestro(p.id, { fundamento: nuevo.trim() }));
   };
 
-  // Fundamento asistido por IA: parte de la descripción y de los argumentos ya escritos en el cuadro.
+  // Fundamento asistido por IA: parte de la descripción, del presupuesto estimativo y de los argumentos ya escritos en el cuadro.
   const redactarFundamento = async (p: ProyectoMaestro) => {
     setRedactando(p.id);
     setError('');
@@ -78,6 +79,7 @@ export function RevisionCarteraModal({ anio, proyectos, configFirmas, onSaveConf
         prioridad: p.prioridad,
         valorEstimado: p.valorAprox,
         anio,
+        partidas: resumenPartidasParaIA(p.itemizado, { conMontos: true }),
       });
       setPropuestas(x => ({ ...x, [p.id]: propuesta }));
     } catch (err) {

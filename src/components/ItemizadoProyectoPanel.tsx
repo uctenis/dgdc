@@ -10,6 +10,7 @@ import { agruparPorFase, renumerarPartidasCorrelativas, SIN_FASE } from '../util
 import { generarItemizadoExcel } from '../services/itemizadoExporter';
 import { parsePresupuestoExcel, type ParsedPresupuestoImportado } from '../utils/excelParser';
 import { parsePresupuestoPdf } from '../utils/pdfParser';
+import { itemizadoDesdeImportado } from '../utils/presupuestoImportado';
 import { PresupuestoPrecisoIAModal } from './PresupuestoPrecisoIAModal';
 import { CalculadoraGastosGeneralesModal } from './CalculadoraGastosGeneralesModal';
 import { calcularGastosGenerales, plazoSugeridoMeses, type ParametrosCalculoGG } from '../utils/gastosGenerales';
@@ -312,37 +313,22 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
       const origen = esPdf ? ('PDF' as const) : ('Excel' as const);
       // Se presentan igual que cualquier otra partida del itemizado: mismo esquema de columnas,
       // agrupadas y numeradas por fase junto con el resto de la página (ver agruparPorFase).
-      const itemsNuevos = resultado.items.map((it, i) => ({
-        id: `partida-${origen.toLowerCase()}-${Date.now()}-${i}`,
-        item: it.item || String(i + 1),
-        descripcion: it.descripcion,
-        unidad: it.unidad,
-        cantidad: it.cantidad,
-        precioUnitario: it.precioUnitario,
-        precioTotal: Math.round(it.cantidad * it.precioUnitario),
-        origen,
-        fase: it.fase,
-        // Viene de un archivo externo (posiblemente armado con otra IA): se deja como referencia,
-        // igual que "Presupuesto Preciso con IA", hasta que el usuario la valide o reemplace.
-        precioReferencial: true,
-      }));
-      setItems(itemsNuevos);
+      // Vienen de un archivo externo (posiblemente armado con otra IA): quedan como referencia, igual que
+      // "Presupuesto Preciso con IA", hasta que el usuario las valide o reemplace.
+      const importado = itemizadoDesdeImportado(resultado, origen);
+      setItems(importado.items);
 
       // Si el archivo trae Gastos Generales y/o Utilidad en su resumen final, se recalculan como
       // % (en vez de perderlos) para que el Total con IVA del sistema pueda calzar con el del
       // archivo original, siguiendo el mismo esquema en cascada (ver más abajo).
-      const costoDirectoNuevo = itemsNuevos.reduce((sum, it) => sum + (it.precioTotal || 0), 0);
       const mensajesMarkup: string[] = [];
-      if (costoDirectoNuevo > 0 && resultado.gastosGeneralesDetectados) {
-        const pct = Math.round((resultado.gastosGeneralesDetectados / costoDirectoNuevo) * 10000) / 100;
-        setGastosGeneralesPct(pct);
+      if (importado.gastosGeneralesPct !== undefined) {
+        setGastosGeneralesPct(importado.gastosGeneralesPct);
         setCalculoGG(undefined);
-        mensajesMarkup.push(`Gastos Generales detectados: ${pct}% del Costo Directo (${formatoMonedaCLP(resultado.gastosGeneralesDetectados)}).`);
-        if (costoDirectoNuevo && resultado.utilidadDetectada) {
-          const baseUtilidad = costoDirectoNuevo + resultado.gastosGeneralesDetectados;
-          const pctUtilidad = Math.round((resultado.utilidadDetectada / baseUtilidad) * 10000) / 100;
-          setUtilidadPct(pctUtilidad);
-          mensajesMarkup.push(`Utilidad detectada: ${pctUtilidad}% de Costo Directo + Gastos Generales (${formatoMonedaCLP(resultado.utilidadDetectada)}).`);
+        mensajesMarkup.push(`Gastos Generales detectados: ${importado.gastosGeneralesPct}% del Costo Directo (${formatoMonedaCLP(resultado.gastosGeneralesDetectados || 0)}).`);
+        if (importado.utilidadPct !== undefined) {
+          setUtilidadPct(importado.utilidadPct);
+          mensajesMarkup.push(`Utilidad detectada: ${importado.utilidadPct}% de Costo Directo + Gastos Generales (${formatoMonedaCLP(resultado.utilidadDetectada || 0)}).`);
         }
       }
 
