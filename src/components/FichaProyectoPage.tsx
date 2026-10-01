@@ -29,6 +29,7 @@ import { PremiumDatePicker } from './PremiumDatePicker';
 import { BasesLicitacionModal } from './BasesLicitacionModal';
 import { EETTProyectoPanel } from './EETTProyectoPanel';
 import { DocumentosDrivePanel } from './DocumentosDrivePanel';
+import { HistorialRevisionProyecto } from './HistorialRevisionProyecto';
 import { RubroSelect } from './RubroSelect';
 import { rubroAlCambiarTipo } from '../data/tiposObraData';
 import { getTiposObraList } from '../data/tiposObraData';
@@ -1365,6 +1366,8 @@ Para confirmar, escriba el código del proyecto: ${codigoConfirmacion}`
           </button>
         ))}
       </div>
+
+      {proyectoMaestroEfectivo && <HistorialRevisionProyecto proyecto={proyectoMaestroEfectivo} mostrarHistorial={tabActiva === 'bitacora'} />}
 
       {proyectoMaestroEfectivo && (
         <div hidden={tabActiva !== 'presupuesto'}>

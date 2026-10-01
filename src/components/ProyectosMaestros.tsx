@@ -10,12 +10,12 @@ import {
   subscribeToProveedores,
   addProyectoMaestro,
   updateProyectoMaestro,
-  setAprobacionPresupuesto,
+  setDecisionPresupuesto,
 } from '../services/firestoreService';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
 import { corregirOrtografiaEspanol, corregirTextoAvanzado, normalizarNombreProyecto, ATRIBUTOS_ORTOGRAFIA_ES } from '../utils/spellCorrector';
-import { mejorarDescripcionProyectoConIA, isAIConfigured, mensajeErrorIA } from '../services/aiService';
+import { mejorarDescripcionProyectoConIA, redactarFundamentoProyectoConIA, isAIConfigured, mensajeErrorIA } from '../services/aiService';
 import { getCampusList, obtenerEdificiosDeCampus, obtenerCampusPorSigla, obtenerInfoEdificio, etiquetaEdificio, descripcionEdificioParaIA } from '../data/campusData';
 import { esCarpetaDrive } from '../utils/driveLinks';
 import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
@@ -152,6 +152,32 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
       setErrorDescripcionIA(mensajeErrorIA(err));
     } finally {
       setMejorandoDescripcion(false);
+    }
+  };
+
+  // Fundamento asistido por IA: toma la descripción y los argumentos ya escritos en el cuadro del fundamento.
+  const [redactandoFundamento, setRedactandoFundamento] = useState(false);
+  const redactarFundamento = async () => {
+    setErrorDescripcionIA(null);
+    setRedactandoFundamento(true);
+    try {
+      const campus = form.campusSigla ? obtenerCampusPorSigla(form.campusSigla) : undefined;
+      const fundamento = await redactarFundamentoProyectoConIA({
+        nombre: form.nombre,
+        descripcion: form.descripcion,
+        argumentos: form.fundamento,
+        tipoObra: form.tipoObra,
+        uso: form.uso,
+        ubicacion: [form.edificioSigla ? etiquetaEdificio(form.edificioSigla) : '', campus?.nombre, campus?.ciudad].filter(Boolean).join(', '),
+        valorEstimado: form.valorAprox,
+        anio: anioCartera,
+      });
+      setForm(f => ({ ...f, fundamento }));
+    } catch (err) {
+      console.error('Error redactando el fundamento con IA:', err);
+      setErrorDescripcionIA(mensajeErrorIA(err));
+    } finally {
+      setRedactandoFundamento(false);
     }
   };
 
@@ -367,7 +393,8 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   const handleToggleAprobacionPresupuesto = async (p: ProyectoMaestro) => {
     if (!isAdmin) return;
     const yaAprobado = Boolean(p.presupuesto?.aprobado);
-    await setAprobacionPresupuesto(p.id, !yaAprobado, {
+    // Misma vía que la Revisión de cartera, para que la decisión quede en el historial del proyecto.
+    await setDecisionPresupuesto(p.id, yaAprobado ? 'pendiente' : 'aprobado', {
       nombre: profile?.displayName || user?.displayName,
       email: user?.email,
     });
@@ -930,7 +957,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                                 : `bg-white text-slate-400 border-slate-200 ${isAdmin ? 'hover:bg-slate-50 hover:text-slate-600' : ''}`
                             }`}
                           >
-                            {p.presupuesto?.aprobado ? '✓ Aprob. Ppto' : p.presupuesto?.rechazado ? '✗ Rechazado' : isAdmin ? 'Aprobar Ppto' : 'Sin aprobar'}
+                            {p.presupuesto?.aprobado ? '✓ Aprob. Ppto' : p.presupuesto?.rechazado ? '✗ Rechazado' : p.presupuesto?.observado ? '! Observado' : isAdmin ? 'Aprobar Ppto' : 'Sin aprobar'}
                           </button>
                         </div>
                       </td>
@@ -1230,7 +1257,21 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                   </div>
 
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Fundamento del Proyecto</label>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <label className="block font-semibold text-slate-700">Fundamento del Proyecto</label>
+                      {isAIConfigured() && (
+                        <button
+                          type="button"
+                          onClick={redactarFundamento}
+                          disabled={redactandoFundamento || !form.nombre.trim()}
+                          title="Redacta el fundamento a partir de la descripción y de los argumentos escritos en este cuadro"
+                          className="flex items-center gap-1 text-[11px] font-bold text-violet-700 hover:text-violet-900 disabled:opacity-50"
+                        >
+                          {redactandoFundamento ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                          {redactandoFundamento ? 'Redactando…' : 'Redactar con IA'}
+                        </button>
+                      )}
+                    </div>
                     <textarea
                       rows={2}
                       {...ATRIBUTOS_ORTOGRAFIA_ES}

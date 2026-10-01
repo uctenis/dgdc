@@ -246,7 +246,14 @@ export interface ProyectoMaestro {
     /** true = revisado y rechazado para la cartera de su año (queda como candidato a la del año siguiente).
      * Sin `aprobado` ni `rechazado`, el proyecto está propuesto y pendiente de revisión. */
     rechazado?: boolean;
-    /** Observación de quien decidió (por qué se aprobó o rechazó). */
+    /** true = devuelto con observaciones (ej. bajar el valor quitando partidas o reduciendo la envergadura):
+     * el responsable ajusta el itemizado y lo reenvía a revisión. */
+    observado?: boolean;
+    /** true = el responsable ya ajustó el proyecto observado y lo reenvió; espera una nueva decisión. */
+    ajustado?: boolean;
+    /** Valor e itemizado con que el proyecto llegó a la revisión, para mostrar qué cambió con el ajuste. */
+    baseAjuste?: { valor: number; partidas: { id: string; descripcion: string; precioTotal: number }[] };
+    /** Observación de quien decidió (por qué se aprobó, observó o rechazó). */
     observacion?: string;
     fecha?: string;
     aprobadoPorNombre?: string;
@@ -254,6 +261,8 @@ export interface ProyectoMaestro {
   };
   /** Fundamento con que se defiende el proyecto en la revisión de la cartera (necesidad, beneficio, urgencia). */
   fundamento?: string;
+  /** Historial de la revisión de cartera: decisiones, observaciones y ajustes de valor e itemizado, en orden. */
+  historialRevision?: RevisionCarteraEntrada[];
 
   // Ubicación y Metadatos Institucionales (Filtros Avanzados)
   campusSigla?: string;      // ej: CSF, CJP, CRC
@@ -328,7 +337,26 @@ export interface ProyectoMaestro {
   documentosDrive?: DocumentoDrive[];
 }
 
-export const TIPOS_DOCUMENTO_DRIVE = ['Plano', 'EETT', 'Bases', 'Presupuesto', 'Carta Gantt', 'Otro'] as const;
+/** Un paso de la revisión de cartera de un proyecto (ver ProyectoMaestro.historialRevision). */
+export interface RevisionCarteraEntrada {
+  fecha: string;
+  /** Cartera en revisión. */
+  anio: number;
+  /** `ajuste` = el responsable modificó el proyecto observado y lo reenvió. */
+  decision: 'aprobado' | 'rechazado' | 'observado' | 'pendiente' | 'ajuste';
+  usuario?: string;
+  observacion?: string;
+  /** Presupuesto estimado del proyecto en ese momento. */
+  valor: number;
+  /** Valor con que había llegado a la revisión, si cambió. */
+  valorAnterior?: number;
+  /** Partidas del itemizado que cambiaron respecto de lo presentado (descripciones). */
+  partidasEliminadas?: string[];
+  partidasAgregadas?: string[];
+  partidasModificadas?: string[];
+}
+
+export const TIPOS_DOCUMENTO_DRIVE =['Plano', 'EETT', 'Bases', 'Presupuesto', 'Carta Gantt', 'Otro'] as const;
 
 export interface DocumentoDrive {
   id: string;

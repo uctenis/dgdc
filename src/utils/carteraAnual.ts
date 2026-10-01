@@ -31,12 +31,42 @@ export function presupuestoDelAnio(config: ConfiguracionFirmas | undefined, anio
   return anio === ANIO_CARTERA_INICIAL ? config?.presupuestoAnualAprobado || 0 : 0;
 }
 
-export type DecisionCartera = 'aprobado' | 'rechazado' | 'pendiente';
+export type DecisionCartera = 'aprobado' | 'rechazado' | 'observado' | 'pendiente';
 
 /** Resultado de la revisión de cartera para un proyecto. */
 export function decisionDeCartera(p: Pick<ProyectoMaestro, 'presupuesto'>): DecisionCartera {
   if (p.presupuesto?.aprobado) return 'aprobado';
-  return p.presupuesto?.rechazado ? 'rechazado' : 'pendiente';
+  if (p.presupuesto?.rechazado) return 'rechazado';
+  return p.presupuesto?.observado ? 'observado' : 'pendiente';
+}
+
+type PartidaBase = { id: string; descripcion: string; precioTotal: number };
+
+/** Itemizado reducido a lo que se compara en la revisión (se guarda al observar el proyecto). */
+export function partidasParaComparar(p: Pick<ProyectoMaestro, 'itemizado'>): PartidaBase[] {
+  return (p.itemizado || []).map(i => ({ id: i.id, descripcion: i.descripcion || i.item || 'Partida sin nombre', precioTotal: i.precioTotal || 0 }));
+}
+
+/** Qué cambió en el proyecto respecto de lo presentado a revisión: valor y partidas eliminadas, agregadas o con otro monto. */
+export function compararConBaseAjuste(p: Pick<ProyectoMaestro, 'presupuesto' | 'valorAprox' | 'itemizado'>) {
+  const base = p.presupuesto?.baseAjuste;
+  if (!base) return undefined;
+  const actuales = partidasParaComparar(p);
+  const porId = new Map(actuales.map(a => [a.id, a]));
+  const idsBase = new Set(base.partidas.map(b => b.id));
+  const eliminadas = base.partidas.filter(b => !porId.has(b.id)).map(b => b.descripcion);
+  const agregadas = actuales.filter(a => !idsBase.has(a.id)).map(a => a.descripcion);
+  const modificadas = base.partidas.filter(b => porId.has(b.id) && porId.get(b.id)!.precioTotal !== b.precioTotal).map(b => b.descripcion);
+  const valor = p.valorAprox || 0;
+  return {
+    valorAnterior: base.valor,
+    valor,
+    diferencia: valor - base.valor,
+    eliminadas,
+    agregadas,
+    modificadas,
+    hayCambios: valor !== base.valor || eliminadas.length + agregadas.length + modificadas.length > 0,
+  };
 }
 
 /** Totales de la revisión: cuánto se propuso y cuánto quedó aprobado, rechazado y por revisar (montos estimados). */
@@ -48,6 +78,7 @@ export function resumenRevisionCartera(proyectos: Pick<ProyectoMaestro, 'presupu
   return {
     propuesto: { cantidad: proyectos.length, monto: proyectos.reduce((s, p) => s + (p.valorAprox || 0), 0) },
     aprobado: grupo('aprobado'),
+    observado: grupo('observado'),
     rechazado: grupo('rechazado'),
     pendiente: grupo('pendiente'),
   };

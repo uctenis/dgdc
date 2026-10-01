@@ -25,7 +25,7 @@ import { db } from '../lib/firebase';
 import { diferencias, registrarCambio } from './auditoriaService';
 import { REQUISITOS_INSCRIPCION } from '../data/inscripcionProveedores';
 import { renombrarSiglaEdificio } from '../data/campusData';
-import { ANIO_CARTERA_INICIAL } from '../utils/carteraAnual';
+import { ANIO_CARTERA_INICIAL, anioDeCartera, compararConBaseAjuste, decisionDeCartera, partidasParaComparar, type DecisionCartera } from '../utils/carteraAnual';
 import { formatearRUT } from '../utils/rutUtils';
 import { normalizarNombreProyecto } from '../utils/spellCorrector';
 import { plazoOfertasVencido, fechaLimiteOfertas, textoLimiteOfertas } from '../utils/plazoOfertas';
@@ -34,6 +34,7 @@ import type {
   Proveedor,
   HistorialObra,
   ProyectoMaestro,
+  RevisionCarteraEntrada,
   LicitacionProyecto,
   InvitadoLicitacion,
   Cotizacion,
@@ -438,30 +439,96 @@ export async function setAprobacionPresupuesto(
   });
 }
 
-/** Decisión de la revisión de cartera sobre un proyecto: aprobado, rechazado o de vuelta a pendiente. */
+const ETIQUETA_DECISION = { aprobado: 'Aprobado', rechazado: 'Rechazado', observado: 'Observado', pendiente: 'Por revisar' } as const;
+
+/**
+ * Decisión de la revisión de cartera sobre un proyecto. Cada decisión queda en el historial del proyecto con el
+ * valor de ese momento; al observarlo se guarda además con qué valor e itemizado llegó, para mostrar después
+ * qué se ajustó (partidas eliminadas, montos rebajados).
+ */
 export async function setDecisionPresupuesto(
   id: string,
-  decision: 'aprobado' | 'rechazado' | 'pendiente',
+  decision: DecisionCartera,
   usuario: { nombre?: string | null; email?: string | null },
   observacion?: string
 ): Promise<void> {
-  const antes = await leerDatos('proyectos', id);
-  const presupuesto = decision === 'pendiente'
-    ? { aprobado: false }
+  const snap = await getDoc(doc(db, 'proyectos', id));
+  if (!snap.exists()) throw new Error('PROYECTO_NO_EXISTE');
+  const proyecto = { id, ...(snap.data() as Omit<ProyectoMaestro, 'id'>) };
+  const previa = decisionDeCartera(proyecto);
+  const ajuste = compararConBaseAjuste(proyecto);
+  const nota = observacion?.trim() || undefined;
+  // La base del ajuste se conserva mientras el proyecto siga en revisión; se suelta al aprobar o rechazar.
+  const baseAjuste = decision === 'observado'
+    ? proyecto.presupuesto?.baseAjuste || { valor: proyecto.valorAprox || 0, partidas: partidasParaComparar(proyecto) }
+    : decision === 'pendiente' ? proyecto.presupuesto?.baseAjuste : undefined;
+  const presupuesto: NonNullable<ProyectoMaestro['presupuesto']> = decision === 'pendiente'
+    ? { aprobado: false, baseAjuste }
     : {
         aprobado: decision === 'aprobado',
         rechazado: decision === 'rechazado',
-        observacion: observacion?.trim() || undefined,
+        observado: decision === 'observado',
+        baseAjuste,
+        observacion: nota,
         fecha: new Date().toISOString(),
         aprobadoPorNombre: usuario.nombre || undefined,
         aprobadoPorEmail: usuario.email || undefined,
       };
-  await updateDoc(doc(db, 'proyectos', id), { presupuesto, _updatedAt: serverTimestamp() });
-  const estado = (p?: { aprobado?: boolean; rechazado?: boolean }) => (p?.aprobado ? 'Aprobado' : p?.rechazado ? 'Rechazado' : 'Pendiente');
+  const entrada: RevisionCarteraEntrada = {
+    fecha: new Date().toISOString(),
+    anio: anioDeCartera(proyecto),
+    decision,
+    usuario: usuario.email || usuario.nombre || undefined,
+    observacion: nota,
+    valor: proyecto.valorAprox || 0,
+    ...(ajuste?.hayCambios && decision !== 'observado' ? cambiosDelAjuste(ajuste) : {}),
+  };
+  await updateDoc(doc(db, 'proyectos', id), {
+    presupuesto,
+    historialRevision: [...(proyecto.historialRevision || []), entrada],
+    _updatedAt: serverTimestamp(),
+  });
   registrarCambio({
-    accion: 'Modificó', entidad: 'Proyecto', entidadId: id, nombre: texto(antes?.nombre),
-    cambios: { 'revisión de cartera': { antes: estado(antes?.presupuesto as { aprobado?: boolean; rechazado?: boolean } | undefined), despues: estado(presupuesto) } },
-    detalle: observacion?.trim() || undefined,
+    accion: 'Modificó', entidad: 'Proyecto', entidadId: id, nombre: proyecto.nombre,
+    cambios: { 'revisión de cartera': { antes: ETIQUETA_DECISION[previa], despues: ETIQUETA_DECISION[decision] } },
+    detalle: nota,
+  });
+}
+
+const cambiosDelAjuste = (ajuste: NonNullable<ReturnType<typeof compararConBaseAjuste>>) => ({
+  ...(ajuste.diferencia !== 0 ? { valorAnterior: ajuste.valorAnterior } : {}),
+  ...(ajuste.eliminadas.length ? { partidasEliminadas: ajuste.eliminadas } : {}),
+  ...(ajuste.agregadas.length ? { partidasAgregadas: ajuste.agregadas } : {}),
+  ...(ajuste.modificadas.length ? { partidasModificadas: ajuste.modificadas } : {}),
+});
+
+/**
+ * El responsable ajustó un proyecto observado (itemizado, valor) y lo reenvía a revisión: el ajuste queda en el
+ * historial con lo que cambió respecto de lo presentado, y el proyecto vuelve a esperar una decisión.
+ */
+export async function reenviarProyectoAjustado(id: string, usuario: { email?: string | null }, nota?: string): Promise<void> {
+  const snap = await getDoc(doc(db, 'proyectos', id));
+  if (!snap.exists()) throw new Error('PROYECTO_NO_EXISTE');
+  const proyecto = { id, ...(snap.data() as Omit<ProyectoMaestro, 'id'>) };
+  const ajuste = compararConBaseAjuste(proyecto);
+  const entrada: RevisionCarteraEntrada = {
+    fecha: new Date().toISOString(),
+    anio: anioDeCartera(proyecto),
+    decision: 'ajuste',
+    usuario: usuario.email || undefined,
+    observacion: nota?.trim() || undefined,
+    valor: proyecto.valorAprox || 0,
+    ...(ajuste?.hayCambios ? cambiosDelAjuste(ajuste) : {}),
+  };
+  await updateDoc(doc(db, 'proyectos', id), {
+    presupuesto: { ...(proyecto.presupuesto || {}), aprobado: false, rechazado: false, observado: false, ajustado: true },
+    historialRevision: [...(proyecto.historialRevision || []), entrada],
+    _updatedAt: serverTimestamp(),
+  });
+  registrarCambio({
+    accion: 'Modificó', entidad: 'Proyecto', entidadId: id, nombre: proyecto.nombre,
+    cambios: { 'revisión de cartera': { antes: 'Observado', despues: 'Ajustado, por revisar' } },
+    detalle: nota?.trim() || undefined,
   });
 }
 

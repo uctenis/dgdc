@@ -250,6 +250,60 @@ Responde solo con el texto de la descripción mejorada.`;
   return texto.replace(/^["“]|["”]$/g, '').trim();
 }
 
+/**
+ * Redacta el Fundamento con que un proyecto se defiende en la revisión de la cartera anual, a partir de su
+ * descripción y de los argumentos que escribió el usuario. No inventa cifras ni hechos que no estén en los datos.
+ */
+export async function redactarFundamentoProyectoConIA(params: {
+  nombre: string;
+  descripcion?: string;
+  /** Argumentos o ideas sueltas que el usuario quiere incorporar (puede ser el fundamento ya escrito). */
+  argumentos?: string;
+  tipoObra?: string;
+  uso?: string;
+  ubicacion?: string;
+  prioridad?: string;
+  valorEstimado?: number;
+  anio?: number;
+}): Promise<string> {
+  const contexto = [
+    `Proyecto: "${params.nombre}"`,
+    params.ubicacion ? `Ubicación: ${params.ubicacion}` : '',
+    params.tipoObra ? `Tipo de obra: ${params.tipoObra}` : '',
+    params.uso ? `Uso del espacio: ${params.uso}` : '',
+    params.prioridad ? `Prioridad asignada: ${params.prioridad}` : '',
+    params.valorEstimado ? `Presupuesto estimado: $${Math.round(params.valorEstimado).toLocaleString('es-CL')} (IVA incluido)` : '',
+  ].filter(Boolean).join('\n');
+  const argumentos = params.argumentos?.trim();
+
+  const prompt = `Eres un profesional de la Subdirección de Infraestructura de la Universidad Católica de Temuco. Debes redactar el FUNDAMENTO con que este proyecto se defenderá ante quienes aprueban la cartera de inversiones${params.anio ? ` ${params.anio}` : ''} y su presupuesto.
+
+Datos del proyecto:
+${contexto}
+
+${params.descripcion?.trim() ? `Descripción del requerimiento:
+"""
+${params.descripcion.trim()}
+"""` : 'El proyecto aún no tiene descripción: básate en el nombre y la ubicación.'}
+
+${argumentos ? `Argumentos que el responsable quiere incorporar (son la base del fundamento; consérvalos todos):
+"""
+${argumentos}
+"""` : 'El responsable no entregó argumentos propios: dedúcelos solo de la descripción.'}
+
+Redacta un fundamento que:
+- Explique la necesidad que resuelve y a quiénes beneficia (estudiantes, académicos, funcionarios, comunidad).
+- Indique por qué corresponde hacerlo en este período y qué riesgo o costo tiene postergarlo (seguridad, continuidad de la docencia, deterioro, normativa), solo si se desprende de los datos.
+- Relacione el monto con el beneficio, sin repetir la descripción técnica.
+- NO invente cifras, cantidades de usuarios, fechas, incidentes ni exigencias normativas que no estén en los datos; si un dato sería útil y falta, no lo menciones.
+- Use lenguaje formal, directo y persuasivo, en español de Chile, en un solo párrafo de 60 a 110 palabras, sin títulos, viñetas ni markdown.
+
+Responde solo con el texto del fundamento.`;
+
+  const texto = await llamarIA(prompt, 800);
+  return texto.replace(/^["“]|["”]$/g, '').trim();
+}
+
 // ─── RUBRO DE PROVEEDORES (reclasificación asistida) ─────────────────────────
 
 /**

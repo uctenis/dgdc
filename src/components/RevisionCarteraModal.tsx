@@ -1,9 +1,12 @@
 import { useState } from 'react';
-import { X, CheckCircle2, XCircle, Clock, Lock, ClipboardCheck } from 'lucide-react';
+import { X, CheckCircle2, XCircle, Clock, Lock, ClipboardCheck, AlertTriangle, Sparkles, Loader2 } from 'lucide-react';
 import type { ConfiguracionFirmas, ProyectoMaestro } from '../types';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { setDecisionPresupuesto, updateProyectoMaestro } from '../services/firestoreService';
-import { ANIO_CARTERA_INICIAL, decisionDeCartera, presupuestoDelAnio, resumenRevisionCartera, type DecisionCartera } from '../utils/carteraAnual';
+import { ANIO_CARTERA_INICIAL, compararConBaseAjuste, decisionDeCartera, presupuestoDelAnio, resumenRevisionCartera, type DecisionCartera } from '../utils/carteraAnual';
+import { redactarFundamentoProyectoConIA, isAIConfigured, mensajeErrorIA } from '../services/aiService';
+import { obtenerCampusPorSigla, ubicacionProyecto } from '../data/campusData';
+import { HistorialRevisionLista } from './HistorialRevisionProyecto';
 import { useAuth } from '../context/AuthContext';
 
 interface RevisionCarteraModalProps {
@@ -15,7 +18,10 @@ interface RevisionCarteraModalProps {
   onClose: () => void;
 }
 
-const ORDEN: Record<DecisionCartera, number> = { pendiente: 0, aprobado: 1, rechazado: 2 };
+const ORDEN: Record<DecisionCartera, number> = { pendiente: 0, observado: 1, aprobado: 2, rechazado: 3 };
+const ETIQUETA: Record<DecisionCartera, string> = { pendiente: 'Por revisar', observado: 'Observado', aprobado: 'Aprobado', rechazado: 'Rechazado' };
+const COLOR: Record<DecisionCartera, string> = { pendiente: 'text-amber-700', observado: 'text-orange-700', aprobado: 'text-emerald-700', rechazado: 'text-rose-700' };
+const FONDO: Record<DecisionCartera, string> = { pendiente: 'border-slate-200 bg-white', observado: 'border-orange-300 bg-orange-50/40', aprobado: 'border-emerald-300 bg-emerald-50/40', rechazado: 'border-rose-300 bg-rose-50/40' };
 
 /**
  * Revisión de la cartera del año: cada proyecto se defiende con su fundamento y se aprueba o rechaza. Al cerrar la
@@ -26,6 +32,9 @@ export function RevisionCarteraModal({ anio, proyectos, configFirmas, onSaveConf
   const [textos, setTextos] = useState<Record<string, { fundamento?: string; observacion?: string }>>({});
   const [guardando, setGuardando] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [redactando, setRedactando] = useState<string | null>(null);
+  const [propuestas, setPropuestas] = useState<Record<string, string>>({});
+  const [historialAbierto, setHistorialAbierto] = useState<string | null>(null);
 
   const resumen = resumenRevisionCartera(proyectos);
   const cierre = configFirmas?.revisionesCartera?.[String(anio)];
@@ -51,15 +60,53 @@ export function RevisionCarteraModal({ anio, proyectos, configFirmas, onSaveConf
     void ejecutar(p.id, () => updateProyectoMaestro(p.id, { fundamento: nuevo.trim() }));
   };
 
+  // Fundamento asistido por IA: parte de la descripción y de los argumentos ya escritos en el cuadro.
+  const redactarFundamento = async (p: ProyectoMaestro) => {
+    setRedactando(p.id);
+    setError('');
+    try {
+      const campus = p.campusSigla ? obtenerCampusPorSigla(p.campusSigla) : undefined;
+      const propuesta = await redactarFundamentoProyectoConIA({
+        nombre: p.nombre,
+        descripcion: p.descripcion,
+        argumentos: textos[p.id]?.fundamento ?? p.fundamento,
+        tipoObra: p.tipoObra,
+        uso: p.uso,
+        ubicacion: [ubicacionProyecto(p), campus?.ciudad].filter(Boolean).join(', '),
+        prioridad: p.prioridad,
+        valorEstimado: p.valorAprox,
+        anio,
+      });
+      setPropuestas(x => ({ ...x, [p.id]: propuesta }));
+    } catch (err) {
+      console.error('Error redactando el fundamento con IA:', err);
+      setError(mensajeErrorIA(err));
+    } finally {
+      setRedactando(null);
+    }
+  };
+
+  const usarPropuesta = (p: ProyectoMaestro) => {
+    const texto = propuestas[p.id];
+    setTextos(t => ({ ...t, [p.id]: { ...t[p.id], fundamento: texto } }));
+    setPropuestas(x => { const { [p.id]: _usada, ...resto } = x; return resto; });
+    void ejecutar(p.id, () => updateProyectoMaestro(p.id, { fundamento: texto }));
+  };
+
   const decidir = (p: ProyectoMaestro, decision: DecisionCartera) => {
     const observacion = textos[p.id]?.observacion ?? p.presupuesto?.observacion;
+    if (decision === 'observado' && !observacion?.trim()) {
+      setError('Para observar un proyecto escriba la observación: qué debe ajustarse (por ejemplo, bajar el valor quitando partidas).');
+      return;
+    }
     void ejecutar(p.id, () => setDecisionPresupuesto(p.id, decision, { nombre: profile?.displayName || user?.displayName, email: user?.email }, observacion));
   };
 
   const cerrarRevision = () => {
     if (!configFirmas || !onSaveConfig) return;
-    const aviso = resumen.pendiente.cantidad > 0
-      ? `Quedan ${resumen.pendiente.cantidad} proyecto(s) sin revisar: no entran al presupuesto.\n\n`
+    const sinDecidir = resumen.pendiente.cantidad + resumen.observado.cantidad;
+    const aviso = sinDecidir > 0
+      ? `Quedan ${sinDecidir} proyecto(s) por revisar u observados: no entran al presupuesto.\n\n`
       : '';
     if (!confirm(`${aviso}El Presupuesto Anual Aprobado ${anio} quedará en ${formatoMonedaCLP(resumen.aprobado.monto)} (${resumen.aprobado.cantidad} proyecto(s) aprobados). ¿Cerrar la revisión?`)) return;
     onSaveConfig({
@@ -85,13 +132,13 @@ export function RevisionCarteraModal({ anio, proyectos, configFirmas, onSaveConf
               <ClipboardCheck className="w-4 h-4 text-indigo-600" /> Revisión de la cartera y presupuesto anual
             </h3>
             <p className="text-slate-500 mt-0.5">
-              Cada proyecto se defiende con su fundamento y se aprueba o rechaza. Al cerrar la revisión, la suma de los aprobados queda como Presupuesto Anual Aprobado {anio}.
+              Cada proyecto se defiende con su fundamento y se aprueba, se observa (para ajustar su valor o alcance) o se rechaza. Al cerrar la revisión, la suma de los aprobados queda como Presupuesto Anual Aprobado {anio}.
             </p>
           </div>
           <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition shrink-0"><X className="w-5 h-5" /></button>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 shrink-0">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 shrink-0">
           <div className={`${tarjeta} bg-slate-50 border-slate-200`}>
             <span className="block text-[9px] font-bold uppercase text-slate-400">Propuesto</span>
             <span className="block text-sm font-black text-slate-700 tabular-nums">{formatoMonedaCLP(resumen.propuesto.monto)}</span>
@@ -101,6 +148,11 @@ export function RevisionCarteraModal({ anio, proyectos, configFirmas, onSaveConf
             <span className="block text-[9px] font-bold uppercase text-emerald-600">Aprobado</span>
             <span className="block text-sm font-black text-emerald-800 tabular-nums">{formatoMonedaCLP(resumen.aprobado.monto)}</span>
             <span className="text-[10px] text-slate-500">{resumen.aprobado.cantidad} proyecto(s)</span>
+          </div>
+          <div className={`${tarjeta} bg-orange-50 border-orange-200`}>
+            <span className="block text-[9px] font-bold uppercase text-orange-600">Observado</span>
+            <span className="block text-sm font-black text-orange-800 tabular-nums">{formatoMonedaCLP(resumen.observado.monto)}</span>
+            <span className="text-[10px] text-slate-500">{resumen.observado.cantidad} proyecto(s)</span>
           </div>
           <div className={`${tarjeta} bg-rose-50 border-rose-200`}>
             <span className="block text-[9px] font-bold uppercase text-rose-600">Rechazado</span>
@@ -146,8 +198,10 @@ export function RevisionCarteraModal({ anio, proyectos, configFirmas, onSaveConf
           {ordenados.map(p => {
             const decision = decisionDeCartera(p);
             const ocupado = guardando === p.id;
+            const ajuste = compararConBaseAjuste(p);
+            const historial = p.historialRevision || [];
             return (
-              <div key={p.id} className={`rounded-xl border p-3 space-y-2 ${decision === 'aprobado' ? 'border-emerald-300 bg-emerald-50/40' : decision === 'rechazado' ? 'border-rose-300 bg-rose-50/40' : 'border-slate-200 bg-white'}`}>
+              <div key={p.id} className={`rounded-xl border p-3 space-y-2 ${FONDO[decision]}`}>
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">
                     <strong className="text-slate-900 block">{p.nombre}</strong>
@@ -156,22 +210,51 @@ export function RevisionCarteraModal({ anio, proyectos, configFirmas, onSaveConf
                   </div>
                   <div className="text-right shrink-0">
                     <span className="block text-sm font-black text-slate-800 tabular-nums">{formatoMonedaCLP(p.valorAprox || 0)}</span>
-                    <span className={`inline-flex items-center gap-1 text-[10px] font-extrabold uppercase ${decision === 'aprobado' ? 'text-emerald-700' : decision === 'rechazado' ? 'text-rose-700' : 'text-amber-700'}`}>
-                      {decision === 'aprobado' ? <CheckCircle2 className="w-3 h-3" /> : decision === 'rechazado' ? <XCircle className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
-                      {decision === 'aprobado' ? 'Aprobado' : decision === 'rechazado' ? 'Rechazado' : 'Por revisar'}
+                    <span className={`inline-flex items-center gap-1 text-[10px] font-extrabold uppercase ${COLOR[decision]}`}>
+                      {decision === 'aprobado' ? <CheckCircle2 className="w-3 h-3" /> : decision === 'rechazado' ? <XCircle className="w-3 h-3" /> : decision === 'observado' ? <AlertTriangle className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+                      {decision === 'pendiente' && p.presupuesto?.ajustado ? 'Ajustado, por revisar' : ETIQUETA[decision]}
                     </span>
                   </div>
                 </div>
 
+                {ajuste && (
+                  <p className="rounded-lg border border-orange-200 bg-orange-50 px-2.5 py-1.5 text-[11px] text-orange-900">
+                    Presentado en <strong>{formatoMonedaCLP(ajuste.valorAnterior)}</strong>
+                    {ajuste.hayCambios ? (
+                      <>
+                        {' '}→ ahora <strong>{formatoMonedaCLP(ajuste.valor)}</strong>
+                        {ajuste.diferencia !== 0 && <> ({ajuste.diferencia < 0 ? 'baja' : 'sube'} {formatoMonedaCLP(Math.abs(ajuste.diferencia))})</>}
+                        {ajuste.eliminadas.length > 0 && <> · {ajuste.eliminadas.length} partida(s) eliminada(s)</>}
+                        {ajuste.modificadas.length > 0 && <> · {ajuste.modificadas.length} con otro monto</>}
+                        {ajuste.agregadas.length > 0 && <> · {ajuste.agregadas.length} agregada(s)</>}.
+                      </>
+                    ) : <>: aún sin ajustes en el valor ni en el itemizado.</>}
+                  </p>
+                )}
+
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
                   <label className="block">
-                    <span className="block font-bold text-slate-600 mb-0.5">Fundamento del proyecto</span>
+                    <span className="flex items-center justify-between gap-2 font-bold text-slate-600 mb-0.5">
+                      Fundamento del proyecto
+                      {isAIConfigured() && (
+                        <button
+                          type="button"
+                          disabled={redactando === p.id}
+                          onClick={e => { e.preventDefault(); void redactarFundamento(p); }}
+                          title="Redacta el fundamento a partir de la descripción del proyecto y de los argumentos escritos en este cuadro"
+                          className="inline-flex items-center gap-1 text-[10px] font-bold text-violet-700 hover:text-violet-900 disabled:opacity-50"
+                        >
+                          {redactando === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                          {redactando === p.id ? 'Redactando…' : 'Redactar con IA'}
+                        </button>
+                      )}
+                    </span>
                     <textarea
                       rows={2}
                       value={textos[p.id]?.fundamento ?? p.fundamento ?? ''}
                       onChange={e => setTextos(t => ({ ...t, [p.id]: { ...t[p.id], fundamento: e.target.value } }))}
                       onBlur={() => guardarFundamento(p)}
-                      placeholder="Necesidad que resuelve, beneficio y urgencia. Se guarda al salir del cuadro."
+                      placeholder="Necesidad que resuelve, beneficio y urgencia. Puede escribir solo los argumentos y pedir la redacción a la IA. Se guarda al salir del cuadro."
                       className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
                     />
                   </label>
@@ -182,17 +265,38 @@ export function RevisionCarteraModal({ anio, proyectos, configFirmas, onSaveConf
                       disabled={!isAdmin}
                       value={textos[p.id]?.observacion ?? p.presupuesto?.observacion ?? ''}
                       onChange={e => setTextos(t => ({ ...t, [p.id]: { ...t[p.id], observacion: e.target.value } }))}
-                      placeholder={isAdmin ? 'Por qué se aprueba o rechaza. Se guarda al presionar Aprobar o Rechazar.' : 'Sin observación.'}
+                      placeholder={isAdmin ? 'Por qué se aprueba o rechaza, o qué debe ajustarse (ej. bajar el valor quitando partidas). Se guarda al presionar el botón.' : 'Sin observación.'}
                       className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 bg-white disabled:bg-slate-50 disabled:text-slate-500"
                     />
                   </label>
                 </div>
+
+                {propuestas[p.id] && (
+                  <div className="rounded-lg border border-violet-200 bg-violet-50/60 p-2.5 space-y-2">
+                    <p className="text-[11px] font-bold text-violet-800 flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5" /> Propuesta de la IA — revísela antes de usarla</p>
+                    <p className="text-slate-700 whitespace-pre-line">{propuestas[p.id]}</p>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button type="button" onClick={() => setPropuestas(x => { const { [p.id]: _descartada, ...resto } = x; return resto; })} className="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 rounded-lg text-[11px] font-bold">Descartar</button>
+                      <button type="button" onClick={() => usarPropuesta(p)} className="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-[11px] font-bold">Usar este fundamento</button>
+                    </div>
+                  </div>
+                )}
+
+                {historial.length > 0 && (
+                  <div>
+                    <button type="button" onClick={() => setHistorialAbierto(a => (a === p.id ? null : p.id))} className="text-[11px] font-bold text-slate-500 hover:text-slate-800">
+                      {historialAbierto === p.id ? 'Ocultar historial' : `Ver historial de la revisión (${historial.length})`}
+                    </button>
+                    {historialAbierto === p.id && <div className="mt-1.5"><HistorialRevisionLista historial={historial} /></div>}
+                  </div>
+                )}
 
                 {isAdmin && (
                   <div className="flex flex-wrap items-center justify-end gap-2">
                     {decision !== 'pendiente' && (
                       <button type="button" disabled={ocupado} onClick={() => decidir(p, 'pendiente')} className="px-3 py-1.5 text-slate-600 hover:bg-slate-100 rounded-lg font-semibold disabled:opacity-50">Volver a "por revisar"</button>
                     )}
+                    <button type="button" disabled={ocupado} onClick={() => decidir(p, 'observado')} title="Devuelve el proyecto al responsable para que ajuste su valor o alcance" className={`px-3 py-1.5 rounded-lg font-bold border disabled:opacity-50 ${decision === 'observado' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-orange-700 border-orange-300 hover:bg-orange-50'}`}>Observar</button>
                     <button type="button" disabled={ocupado} onClick={() => decidir(p, 'rechazado')} className={`px-3 py-1.5 rounded-lg font-bold border disabled:opacity-50 ${decision === 'rechazado' ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-rose-700 border-rose-300 hover:bg-rose-50'}`}>Rechazar</button>
                     <button type="button" disabled={ocupado} onClick={() => decidir(p, 'aprobado')} className={`px-3 py-1.5 rounded-lg font-bold border disabled:opacity-50 ${decision === 'aprobado' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-emerald-700 border-emerald-300 hover:bg-emerald-50'}`}>Aprobar</button>
                   </div>
