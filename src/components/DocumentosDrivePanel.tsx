@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Cloud, ExternalLink, FolderOpen, Link2, Trash2 } from 'lucide-react';
 import { TIPOS_DOCUMENTO_DRIVE, type DocumentoDrive, type ProyectoMaestro } from '../types';
 import { updateProyectoMaestro } from '../services/firestoreService';
-import { obtenerInfoEdificio, etiquetaEdificio } from '../data/campusData';
+import { obtenerInfoEdificio, obtenerCampusPorSigla, etiquetaEdificio } from '../data/campusData';
 import { esCarpetaDrive, esEnlaceDrive } from '../utils/driveLinks';
 import { useAuth } from '../context/AuthContext';
 
@@ -17,7 +17,10 @@ interface DocumentosDrivePanelProps {
 export const DocumentosDrivePanel: React.FC<DocumentosDrivePanelProps> = ({ proyecto }) => {
   const { user } = useAuth();
   const edificio = obtenerInfoEdificio(proyecto.edificioSigla);
+  const driveCampus = (edificio?.campus || (proyecto.campusSigla ? obtenerCampusPorSigla(proyecto.campusSigla) : undefined))?.driveUrl;
   const documentos = proyecto.documentosDrive || [];
+  // Misma convención de las carpetas de proyecto que ya existen en Drive: "26_006 Nombre".
+  const nombreCarpetaSugerido = `${(proyecto.codigoProyecto || '').replace(/^20(?=\d\d_)/, '')} ${proyecto.nombre}`.trim();
 
   const [editandoCarpeta, setEditandoCarpeta] = useState(false);
   const [carpetaUrl, setCarpetaUrl] = useState(proyecto.driveCarpetaUrl || '');
@@ -116,6 +119,12 @@ export const DocumentosDrivePanel: React.FC<DocumentosDrivePanelProps> = ({ proy
             </p>
           )}
           <p className="text-[10px] text-slate-400">Planos existentes y antecedentes permanentes del edificio.</p>
+          {driveCampus && (
+            <a href={driveCampus} target="_blank" rel="noreferrer" className="text-[11px] font-semibold text-sky-700 hover:underline flex items-center gap-1.5 pt-1">
+              <FolderOpen className="w-3.5 h-3.5 shrink-0" />
+              Carpeta del campus {proyecto.campusSigla}
+            </a>
+          )}
         </div>
 
         <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 space-y-1">
@@ -150,7 +159,19 @@ export const DocumentosDrivePanel: React.FC<DocumentosDrivePanelProps> = ({ proy
               Asociar carpeta de Drive
             </button>
           )}
-          <p className="text-[10px] text-slate-400">Cree la carpeta dentro de la del edificio y pegue aquí su enlace.</p>
+          {!proyecto.driveCarpetaUrl && (
+            <p className="text-[10px] text-slate-500">
+              Cree la carpeta en Drive (en la del campus, como las demás, o en la del edificio) y pegue aquí su enlace. Nombre sugerido:{' '}
+              <button
+                type="button"
+                onClick={() => navigator.clipboard?.writeText(nombreCarpetaSugerido)}
+                title="Copiar nombre"
+                className="font-mono font-bold text-slate-700 hover:text-sky-700 underline decoration-dotted"
+              >
+                {nombreCarpetaSugerido}
+              </button>
+            </p>
+          )}
         </div>
       </div>
 

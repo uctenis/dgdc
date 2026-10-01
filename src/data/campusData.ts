@@ -4,6 +4,8 @@ export interface CampusInfo {
   nombre: string;
   ciudad: string;
   direccion?: string;
+  /** Enlace a la carpeta del campus en Google Drive. */
+  driveUrl?: string;
   edificios: string[];
   /** Datos de cada edificio, por sigla (ej. "CML01"). Opcional: un edificio puede no tener ficha aún. */
   edificiosInfo?: Record<string, EdificioInfo>;
@@ -340,6 +342,60 @@ export function saveCampusList(list: CampusInfo[]): void {
   } catch (e) {
     console.error('Error guardando catálogo de campus:', e);
   }
+}
+
+/** Archivo de carpetas de Drive que se importa en Configuración → Sedes & Campus (ver importarCarpetasDrive). */
+export interface CarpetasDriveArchivo {
+  campus: Record<string, { driveUrl?: string; edificios?: Record<string, { driveUrl?: string; nombre?: string }> }>;
+}
+
+const esCarpetaDeDrive = (url: unknown): url is string =>
+  typeof url === 'string' && /^https:\/\/drive\.google\.com\/drive\/folders\/[\w-]+/.test(url);
+
+/**
+ * Aplica al catálogo las carpetas de Drive de un archivo: enlaza cada campus y edificio, y agrega los edificios
+ * que falten. No pisa lo que ya está escrito (enlace o nombre): solo llena lo vacío. Los enlaces quedan en la
+ * configuración compartida (Firebase), no en el código, porque el repositorio es público.
+ */
+export function importarCarpetasDrive(lista: CampusInfo[], archivo: CarpetasDriveArchivo): {
+  lista: CampusInfo[];
+  campusEnlazados: number;
+  edificiosEnlazados: number;
+  edificiosAgregados: string[];
+  campusDesconocidos: string[];
+} {
+  const resumen = { campusEnlazados: 0, edificiosEnlazados: 0, edificiosAgregados: [] as string[], campusDesconocidos: [] as string[] };
+  const datos = archivo?.campus && typeof archivo.campus === 'object' ? archivo.campus : {};
+  resumen.campusDesconocidos = Object.keys(datos).filter(s => !lista.some(c => c.sigla === s.toUpperCase()));
+  const nueva = lista.map(campus => {
+    const dato = datos[campus.sigla];
+    if (!dato) return campus;
+    const edificios = [...campus.edificios];
+    const info = { ...(campus.edificiosInfo || {}) };
+    let driveUrl = campus.driveUrl;
+    if (!driveUrl && esCarpetaDeDrive(dato.driveUrl)) {
+      driveUrl = dato.driveUrl;
+      resumen.campusEnlazados++;
+    }
+    for (const [siglaRaw, ed] of Object.entries(dato.edificios || {})) {
+      const sigla = siglaRaw.trim().toUpperCase();
+      if (!/^[A-Z0-9-]{2,12}$/.test(sigla)) continue;
+      if (!edificios.includes(sigla)) {
+        edificios.push(sigla);
+        resumen.edificiosAgregados.push(sigla);
+      }
+      const actual = info[sigla] || {};
+      const enlazar = !actual.driveUrl && esCarpetaDeDrive(ed?.driveUrl);
+      if (enlazar) resumen.edificiosEnlazados++;
+      info[sigla] = {
+        ...actual,
+        ...(enlazar ? { driveUrl: ed.driveUrl } : {}),
+        ...(!actual.nombre && typeof ed?.nombre === 'string' && ed.nombre.trim() ? { nombre: ed.nombre.trim() } : {}),
+      };
+    }
+    return { ...campus, ...(driveUrl ? { driveUrl } : {}), edificios, edificiosInfo: info };
+  });
+  return { lista: nueva, ...resumen };
 }
 
 /** @deprecated usar getCampusList() — se mantiene como snapshot inicial de referencia. */

@@ -28,3 +28,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Enlaces a las carpetas del Drive de la Dirección: se cargan una vez en Configuración → Sedes & Campus
+# y viven en Firebase (el repositorio es público).
+carpetas-drive*.json

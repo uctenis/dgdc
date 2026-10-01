@@ -28,7 +28,7 @@ import {
   type RubroProveedor,
 } from '../data/rubrosData';
 import { obtenerEstadoConfigCompartida } from '../services/configCompartida';
-import { getCampusList, saveCampusList, ordenarSiglasEdificio, type CampusInfo, type EdificioInfo } from '../data/campusData';
+import { getCampusList, saveCampusList, ordenarSiglasEdificio, importarCarpetasDrive, type CampusInfo, type EdificioInfo, type CarpetasDriveArchivo } from '../data/campusData';
 import {
   Settings,
   Save,
@@ -378,6 +378,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       ...campusEditando,
       edificiosInfo: { ...(campusEditando.edificiosInfo || {}), [sigla]: { ...actual, ...cambios } },
     });
+  };
+
+  // Importa el archivo con las carpetas de Drive de campus y edificios (los enlaces viven en Firebase, no en el código).
+  const handleImportarCarpetasDrive = async (file: File) => {
+    try {
+      const r = importarCarpetasDrive(campusList, JSON.parse(await file.text()) as CarpetasDriveArchivo);
+      if (r.campusEnlazados + r.edificiosEnlazados + r.edificiosAgregados.length === 0) {
+        alert('El archivo no trae carpetas nuevas: no se cambió nada.');
+        return;
+      }
+      const resumen = [
+        `Campus enlazados: ${r.campusEnlazados}`,
+        `Edificios enlazados: ${r.edificiosEnlazados}`,
+        `Edificios nuevos que se agregan: ${r.edificiosAgregados.length ? r.edificiosAgregados.join(', ') : 'ninguno'}`,
+        ...(r.campusDesconocidos.length ? [`Campus del archivo que no existen en el catálogo (se omiten): ${r.campusDesconocidos.join(', ')}`] : []),
+      ].join('\n');
+      if (!confirm(`${resumen}\n\nNo se modifica ningún enlace ni nombre ya escrito. ¿Guardar?`)) return;
+      setCampusList(r.lista);
+      saveCampusList(r.lista);
+      setHasChanges(true);
+      if (!isAdmin) alert('Guardado solo en este navegador: para que llegue a todo el equipo debe importarlo el administrador del sistema.');
+    } catch (err) {
+      console.error('Error importando carpetas de Drive:', err);
+      alert('No se pudo leer el archivo. Debe ser el archivo .json de carpetas de Drive.');
+    }
   };
 
   // Pegar filas copiadas desde Excel/Sheets: Sigla | Nombre | Facultad/Unidad | Superficie m² | Uso
@@ -2285,6 +2310,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <span className="text-xs font-bold bg-sky-100 text-sky-900 px-3 py-1 rounded-full border border-sky-300">
                       {campusList.length} Sedes Registradas
                     </span>
+                    <label className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 font-bold rounded-xl border border-slate-300 shadow-sm transition flex items-center gap-1.5 cursor-pointer" title="Enlaza cada campus y edificio con su carpeta de Google Drive desde el archivo de carpetas">
+                      <Upload className="w-4 h-4" />
+                      <span>Importar carpetas de Drive</span>
+                      <input
+                        type="file"
+                        accept=".json,application/json"
+                        className="hidden"
+                        onChange={e => {
+                          const file = e.target.files?.[0];
+                          e.target.value = '';
+                          if (file) void handleImportarCarpetasDrive(file);
+                        }}
+                      />
+                    </label>
                     <button
                       type="button"
                       onClick={() => {
@@ -2363,6 +2402,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none font-medium"
                       />
                       <p className="text-[10px] text-slate-400 mt-1">Se usa para completar automáticamente el texto de Bases y Contratos de los proyectos de este campus.</p>
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-slate-700 mb-1">Carpeta del Campus en Google Drive</label>
+                      <input
+                        type="url"
+                        placeholder="https://drive.google.com/drive/folders/…"
+                        value={campusEditando.driveUrl || ''}
+                        onChange={e => setCampusEditando({ ...campusEditando, driveUrl: e.target.value.trim() })}
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none font-medium"
+                      />
                     </div>
 
                     <div>

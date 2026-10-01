@@ -1261,7 +1261,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                       className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
                     />
                     <p className="text-[10px] text-slate-400 mt-1">
-                      Los planos se quedan en Drive: el sistema guarda solo el enlace. Cree la carpeta del proyecto dentro de la del edificio
+                      Los planos se quedan en Drive: el sistema guarda solo el enlace. Cree la carpeta del proyecto en Drive, junto a las del edificio
                       {(() => {
                         const driveEdificio = obtenerInfoEdificio(form.edificioSigla)?.driveUrl;
                         return driveEdificio
