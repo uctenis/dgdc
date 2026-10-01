@@ -28,7 +28,7 @@ import {
   type RubroProveedor,
 } from '../data/rubrosData';
 import { obtenerEstadoConfigCompartida } from '../services/configCompartida';
-import { getCampusList, saveCampusList, ordenarSiglasEdificio, importarCarpetasDrive, type CampusInfo, type EdificioInfo, type CarpetasDriveArchivo } from '../data/campusData';
+import { getCampusList, saveCampusList, ordenarSiglasEdificio, importarCarpetasDrive, renombrarSiglaCampus, type CampusInfo, type EdificioInfo, type CarpetasDriveArchivo } from '../data/campusData';
 import {
   Settings,
   Save,
@@ -59,7 +59,7 @@ import {
 } from 'lucide-react';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { uploadFirmaImagen } from '../services/storageService';
-import { updateUserProfile } from '../services/firestoreService';
+import { updateUserProfile, migrarSiglaCampus } from '../services/firestoreService';
 import {
   getPlantillaBasesPorFamilia,
   guardarPlantillaBasesPorFamilia,
@@ -378,6 +378,41 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       ...campusEditando,
       edificiosInfo: { ...(campusEditando.edificiosInfo || {}), [sigla]: { ...actual, ...cambios } },
     });
+  };
+
+  // Cambia la sigla de un campus (ej. CHS → CSL) en el catálogo y en los proyectos y licitaciones que la usan.
+  const handleCambiarSiglaCampus = async () => {
+    const antigua = campusEditando.sigla;
+    const actual = campusList.find(c => c.sigla === antigua);
+    const nueva = (prompt(`Sigla del campus (deje ${antigua} si solo cambia el nombre):`, antigua) || '').trim().toUpperCase();
+    if (!nueva) return;
+    if (!/^[A-Z]{2,5}$/.test(nueva)) {
+      alert('La sigla debe tener entre 2 y 5 letras.');
+      return;
+    }
+    if (nueva !== antigua && campusList.some(c => c.sigla === nueva)) {
+      alert(`Ya existe un campus con la sigla ${nueva}.`);
+      return;
+    }
+    const nombre = (prompt('Nombre del campus:', campusEditando.nombre) || '').trim() || campusEditando.nombre;
+    if (nueva === antigua && nombre === actual?.nombre) return;
+    const cambio = nueva === antigua
+      ? `El campus ${antigua} pasará a llamarse "${nombre}" en el catálogo y en todos sus proyectos y licitaciones.`
+      : `Se cambiará ${antigua} por ${nueva} ("${nombre}") en el catálogo, en sus edificios (${antigua}01 → ${nueva}01) y en todos los proyectos y licitaciones de ese campus.`;
+    if (!confirm(`${cambio} ¿Continuar?`)) return;
+    try {
+      const r = await migrarSiglaCampus(antigua, nueva, nombre);
+      const actualizada = renombrarSiglaCampus(campusList, antigua, nueva, nombre);
+      setCampusList(actualizada);
+      saveCampusList(actualizada);
+      setCampusEditando(CAMPUS_VACIO);
+      setIsEditingCampus(false);
+      setHasChanges(true);
+      alert(`Listo: ${nueva} · ${nombre}. Se actualizaron ${r.proyectos} proyecto(s) y ${r.licitaciones} licitación(es).`);
+    } catch (err) {
+      console.error('Error cambiando la sigla del campus:', err);
+      alert('No se pudo cambiar la sigla: no se modificó el catálogo. Intente nuevamente.');
+    }
   };
 
   // Importa el archivo con las carpetas de Drive de campus y edificios (los enlaces viven en Firebase, no en el código).
@@ -2369,6 +2404,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           onChange={e => setCampusEditando({ ...campusEditando, sigla: e.target.value.toUpperCase() })}
                           className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none font-bold text-slate-900 disabled:bg-slate-100 disabled:text-slate-500"
                         />
+                        {isEditingCampus && isAdmin && (
+                          <button type="button" onClick={handleCambiarSiglaCampus} className="mt-1 text-[11px] font-bold text-sky-700 hover:underline">
+                            Cambiar sigla o nombre (actualiza también los proyectos)
+                          </button>
+                        )}
                       </div>
                       <div>
                         <label className="block font-bold text-slate-700 mb-1">Nombre del Campus *</label>

@@ -133,12 +133,12 @@ export const INITIAL_CAMPUS_UCT: CampusInfo[] = [
     ]
   },
   {
-    "sigla": "CHS",
-    "nombre": "Campus Prieto Norte",
+    "sigla": "CSL",
+    "nombre": "Campus Nuestra Señora de Lourdes",
     "ciudad": "Temuco",
     "edificios": [
-      "CHS01",
-      "CHS02"
+      "CSL01",
+      "CSL02"
     ]
   },
   {
@@ -275,8 +275,8 @@ export const INITIAL_CAMPUS_UCT: CampusInfo[] = [
   },
   {
     "sigla": "CLE",
-    "nombre": "CLE Nuestra Señora de Lourdes",
-    "ciudad": "Temuco",
+    "nombre": "Parque Industrial Lautaro",
+    "ciudad": "Lautaro",
     "edificios": [
       "CLE"
     ]
@@ -396,6 +396,24 @@ export function importarCarpetasDrive(lista: CampusInfo[], archivo: CarpetasDriv
     return { ...campus, ...(driveUrl ? { driveUrl } : {}), edificios, edificiosInfo: info };
   });
   return { lista: nueva, ...resumen };
+}
+
+/** Sigla de un edificio tras cambiar la de su campus (los edificios la llevan de prefijo: CHS01 → CSL01). */
+export function renombrarSiglaEdificio(siglaEdificio: string, antigua: string, nueva: string): string {
+  return siglaEdificio.startsWith(antigua) ? nueva + siglaEdificio.slice(antigua.length) : siglaEdificio;
+}
+
+/** Cambia la sigla de un campus y la de sus edificios, conservando sus fichas. Los proyectos se migran aparte
+ * (ver migrarSiglaCampus en firestoreService). */
+export function renombrarSiglaCampus(lista: CampusInfo[], antigua: string, nueva: string, nombre?: string): CampusInfo[] {
+  return lista.map(campus => {
+    if (campus.sigla !== antigua) return campus;
+    const edificios = [...new Set(campus.edificios.map(e => renombrarSiglaEdificio(e, antigua, nueva)))];
+    const edificiosInfo = Object.fromEntries(
+      Object.entries(campus.edificiosInfo || {}).map(([sigla, info]) => [renombrarSiglaEdificio(sigla, antigua, nueva), info])
+    );
+    return { ...campus, sigla: nueva, nombre: nombre?.trim() || campus.nombre, edificios, edificiosInfo };
+  });
 }
 
 /** @deprecated usar getCampusList() — se mantiene como snapshot inicial de referencia. */
