@@ -3,6 +3,7 @@ import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
 import type { ItemItemizadoProyecto, ProyectoMaestro } from '../types';
 import { getRubrosList } from '../data/rubrosData';
+import { asignarFasesEstandar } from './itemizadoOrganizer';
 
 export interface FilaProyectoImportada {
   fila: number; // número de fila en el Excel (para referenciar errores)
@@ -205,6 +206,8 @@ function leerHojaPartidas(workbook: XLSX.WorkBook): Map<string, ItemItemizadoPro
     });
     porProyecto.set(proyecto, partidas);
   }
+  // Los capítulos del presupuesto se llevan a las fases del sistema, para no reasignar cada partida a mano.
+  for (const [proyecto, partidas] of porProyecto) porProyecto.set(proyecto, asignarFasesEstandar(partidas));
   return porProyecto;
 }
 

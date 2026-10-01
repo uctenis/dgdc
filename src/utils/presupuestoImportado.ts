@@ -1,5 +1,6 @@
 import type { ItemItemizadoProyecto } from '../types';
 import type { ParsedPresupuestoImportado } from './excelParser';
+import { asignarFasesEstandar } from './itemizadoOrganizer';
 
 /** Itemizado listo para guardar en el proyecto, a partir de un Excel o PDF de presupuesto ya leído. */
 export interface ItemizadoImportado {
@@ -17,7 +18,8 @@ export interface ItemizadoImportado {
  */
 export function itemizadoDesdeImportado(resultado: ParsedPresupuestoImportado, origen: 'Excel' | 'PDF'): ItemizadoImportado {
   const sello = Date.now();
-  const items: ItemItemizadoProyecto[] = resultado.items.map((it, i) => ({
+  // Los capítulos del archivo se llevan a las fases del sistema, para no reasignar cada partida a mano.
+  const items: ItemItemizadoProyecto[] = asignarFasesEstandar(resultado.items.map((it, i) => ({
     id: `partida-${origen.toLowerCase()}-${sello}-${i}`,
     item: it.item || String(i + 1),
     descripcion: it.descripcion,
@@ -28,7 +30,7 @@ export function itemizadoDesdeImportado(resultado: ParsedPresupuestoImportado, o
     origen,
     fase: it.fase,
     precioReferencial: true,
-  }));
+  })));
 
   const costoDirecto = items.reduce((sum, it) => sum + (it.precioTotal || 0), 0);
   if (costoDirecto <= 0 || !resultado.gastosGeneralesDetectados) return { items };

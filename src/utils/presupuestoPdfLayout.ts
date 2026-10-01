@@ -353,7 +353,9 @@ function leerPorContenido(paginas: TextoPosicionado[][]): PresupuestoLeido {
         continue;
       }
 
+      // Un renglón con un monto es una nota de precios, no la continuación de la descripción.
       if (abierta
+        && !/\$\s?\d/.test(textoLinea)
         && abierta.y - y <= SALTO_MAXIMO_RENGLON
         && abierta.sangrias.some(x => Math.abs(x - linea[0].x) <= DESVIO_MAXIMO_SANGRIA)) {
         abierta.partida.descripcion = `${abierta.partida.descripcion} ${textoLinea}`;

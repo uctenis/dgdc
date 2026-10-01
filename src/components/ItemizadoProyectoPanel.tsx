@@ -6,7 +6,7 @@ import { updateProyectoMaestro } from '../services/firestoreService';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { sugerirItemizadoConIA, isAIConfigured, type ItemItemizadoPrecisoSugeridoIA, mensajeErrorIA } from '../services/aiService';
 import { formatearEnteroConMiles, desformatearEntero, formatearNumeroConMiles, desformatearNumero } from '../utils/rutUtils';
-import { agruparPorFase, renumerarPartidasCorrelativas, SIN_FASE } from '../utils/itemizadoOrganizer';
+import { agruparPorFase, asignarFasesEstandar, renumerarPartidasCorrelativas, SIN_FASE } from '../utils/itemizadoOrganizer';
 import { generarItemizadoExcel } from '../services/itemizadoExporter';
 import { parsePresupuestoExcel, type ParsedPresupuestoImportado } from '../utils/excelParser';
 import { parsePresupuestoPdf } from '../utils/pdfParser';
@@ -151,6 +151,12 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
   const montoIva = Math.round(subtotalNeto * (tasaIva / 100));
   const totalConIva = subtotalNeto + montoIva;
   const gruposPorFase = useMemo(() => agruparPorFase(items), [items]);
+  // Partidas sin fase, o con un capítulo propio del archivo del que se cargaron (no es una fase del sistema).
+  const partidasSinFaseEstandar = items.filter(it => !it.fase || !(FASES_ITEMIZADO as readonly string[]).includes(it.fase)).length;
+  const asignarFases = () => {
+    setItems(actuales => asignarFasesEstandar(actuales));
+    setHayCambios(true);
+  };
 
   // Un presupuesto a costo directo sin Gastos Generales ni Utilidad subestima el monto real: si
   // ambos están en 0, se estiman automáticamente (una vez por proyecto) con los valores sugeridos
@@ -512,6 +518,22 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
         <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-[11px] text-slate-600">
           <Lock className="w-3.5 h-3.5 shrink-0 text-slate-400" />
           <span>Presupuesto en <strong>modo lectura</strong>. Para modificar partidas, cantidades o precios presione <strong>Editar presupuesto</strong>.</span>
+        </div>
+      )}
+
+      {partidasSinFaseEstandar > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 text-[11px] text-violet-900">
+          <span>
+            <strong>{partidasSinFaseEstandar}</strong> partida(s) no están en una fase del sistema (Instalación de Faenas, Desarme y Retiro, Obra Gruesa, Instalaciones, Terminaciones, Aseo y Entrega).
+          </span>
+          <button
+            type="button"
+            onClick={asignarFases}
+            title="Ubica cada partida en la fase que corresponde según su descripción. Después puede cambiar cualquiera a mano."
+            className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white font-bold px-3 py-1.5 rounded-lg shrink-0"
+          >
+            <ListChecks className="w-3.5 h-3.5" /> Asignar fases automáticamente
+          </button>
         </div>
       )}
 
