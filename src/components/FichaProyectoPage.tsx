@@ -844,7 +844,7 @@ Para confirmar, escriba el código del proyecto: ${codigoConfirmacion}`
             title="Volver a la lista"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>← Volver</span>
+            <span>Volver</span>
           </button>
         )}
         

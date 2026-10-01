@@ -412,7 +412,7 @@ function AdminApp() {
         {activeTab === 'ficha-proyecto' && proyectoParaFicha && (
           <FichaProyectoPage
             proyecto={proyectoParaFicha}
-            onBack={() => setActiveTab('licitaciones')}
+            onBack={() => setActiveTab('proyectos-maestros')}
             configFirmas={configFirmas}
           />
         )}
