@@ -1811,7 +1811,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
       )}
 
       {importarExcelAbierto && (
-        <ImportarProyectosExcelModal anio={anioCartera} onClose={() => setImportarExcelAbierto(false)} />
+        <ImportarProyectosExcelModal anio={anioCartera} proyectos={proyectosAnio} onClose={() => setImportarExcelAbierto(false)} />
       )}
     </div>
   );

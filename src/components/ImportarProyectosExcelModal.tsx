@@ -1,19 +1,25 @@
 import { useState } from 'react';
 import { X, Download, Upload, Loader2, CheckCircle2, AlertTriangle, FileSpreadsheet } from 'lucide-react';
 import { generarPlantillaProyectosExcel, parseProyectosExcel, type FilaProyectoImportada } from '../utils/proyectosExcelImporter';
-import { addProyectoMaestro } from '../services/firestoreService';
+import { addProyectoMaestro, updateProyectoMaestro } from '../services/firestoreService';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { obtenerCampusPorSigla } from '../data/campusData';
 import { useAuth } from '../context/AuthContext';
+import { normalizarNombreProyecto } from '../utils/spellCorrector';
+import type { ProyectoMaestro } from '../types';
 
 interface ImportarProyectosExcelModalProps {
   onClose: () => void;
   onImportado?: () => void;
   /** Cartera (año presupuestario) a la que se agregan los proyectos. */
   anio: number;
+  /** Proyectos que ya están en esa cartera: una fila con el mismo nombre no se crea de nuevo. */
+  proyectos: ProyectoMaestro[];
 }
 
-export function ImportarProyectosExcelModal({ onClose, onImportado, anio }: ImportarProyectosExcelModalProps) {
+const claveNombre = (nombre: string) => normalizarNombreProyecto(nombre).trim().toLowerCase();
+
+export function ImportarProyectosExcelModal({ onClose, onImportado, anio, proyectos }: ImportarProyectosExcelModalProps) {
   // Solo el administrador puede aprobar presupuestos: si importa otro usuario, la columna se ignora.
   const { isAdmin } = useAuth();
   const [filas, setFilas] = useState<FilaProyectoImportada[]>([]);
@@ -21,10 +27,20 @@ export function ImportarProyectosExcelModal({ onClose, onImportado, anio }: Impo
   const [analizando, setAnalizando] = useState(false);
   const [importando, setImportando] = useState(false);
   const [progreso, setProgreso] = useState(0);
-  const [resultado, setResultado] = useState<{ ok: number; fallidos: number } | null>(null);
+  const [resultado, setResultado] = useState<{ ok: number; completados: number; fallidos: number } | null>(null);
 
-  const validas = filas.filter(f => f.errores.length === 0);
+  const sinError = filas.filter(f => f.errores.length === 0);
   const conError = filas.filter(f => f.errores.length > 0);
+  // Un proyecto que ya está en la cartera (mismo nombre) no se duplica: si aún no tiene itemizado y el archivo
+  // trae sus partidas, se le agregan; si no, la fila se omite.
+  const existente = (f: FilaProyectoImportada) => proyectos.find(p => claveNombre(p.nombre) === claveNombre(f.datos.nombre));
+  const seCompleta = (f: FilaProyectoImportada) => {
+    const p = existente(f);
+    return Boolean(p && !p.itemizado?.length && f.datos.itemizado?.length);
+  };
+  const nuevas = sinError.filter(f => !existente(f));
+  const porCompletar = sinError.filter(seCompleta);
+  const validas = [...nuevas, ...porCompletar];
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -46,13 +62,25 @@ export function ImportarProyectosExcelModal({ onClose, onImportado, anio }: Impo
 
   const importar = async () => {
     if (!validas.length) return;
-    if (!confirm(`¿Confirma agregar ${validas.length} proyecto(s) nuevo(s) a la Cartera ${anio}?`)) return;
+    const acciones = [
+      nuevas.length ? `agregar ${nuevas.length} proyecto(s) nuevo(s) a la Cartera ${anio}` : '',
+      porCompletar.length ? `cargar el presupuesto estimativo de ${porCompletar.length} proyecto(s) que ya están en ella` : '',
+    ].filter(Boolean).join(' y ');
+    if (!confirm(`¿Confirma ${acciones}?`)) return;
     setImportando(true);
     let ok = 0;
+    let completados = 0;
     let fallidos = 0;
     for (let i = 0; i < validas.length; i++) {
       const f = validas[i];
       try {
+        const yaEsta = existente(f);
+        if (yaEsta) {
+          await updateProyectoMaestro(yaEsta.id, { itemizado: f.datos.itemizado, itemizadoMarkup: f.datos.itemizadoMarkup });
+          completados++;
+          setProgreso(Math.round(((i + 1) / validas.length) * 100));
+          continue;
+        }
         await addProyectoMaestro({
           codigoCP: f.datos.codigoCP,
           codigoOP: '',
@@ -88,7 +116,7 @@ export function ImportarProyectosExcelModal({ onClose, onImportado, anio }: Impo
       }
       setProgreso(Math.round(((i + 1) / validas.length) * 100));
     }
-    setResultado({ ok, fallidos });
+    setResultado({ ok, completados, fallidos });
     setImportando(false);
     onImportado?.();
   };
@@ -113,6 +141,7 @@ export function ImportarProyectosExcelModal({ onClose, onImportado, anio }: Impo
             <div className={`rounded-xl p-5 border text-sm ${resultado.fallidos ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-emerald-50 border-emerald-200 text-emerald-900'}`}>
               <p className="font-bold flex items-center gap-2"><CheckCircle2 className="w-5 h-5" /> Importación completada</p>
               <p className="mt-1">{resultado.ok} proyecto(s) agregado(s) a la Cartera {anio}.</p>
+              {resultado.completados > 0 && <p className="mt-1">{resultado.completados} proyecto(s) que ya estaban recibieron su presupuesto estimativo.</p>}
               {resultado.fallidos > 0 && <p className="mt-1 text-rose-700">{resultado.fallidos} fila(s) fallaron al guardar — revise la consola del navegador.</p>}
               <button onClick={onClose} className="mt-4 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold">Cerrar</button>
             </div>
@@ -144,7 +173,9 @@ export function ImportarProyectosExcelModal({ onClose, onImportado, anio }: Impo
               {filas.length > 0 && (
                 <>
                   <div className="flex items-center gap-3 text-xs">
-                    <span className="flex items-center gap-1.5 font-bold text-emerald-700"><CheckCircle2 className="w-4 h-4" /> {validas.length} listas para importar</span>
+                    <span className="flex items-center gap-1.5 font-bold text-emerald-700"><CheckCircle2 className="w-4 h-4" /> {nuevas.length} listas para importar</span>
+                    {porCompletar.length > 0 && <span className="font-bold text-sky-700">{porCompletar.length} ya están: se carga su presupuesto</span>}
+                    {sinError.length > validas.length && <span className="font-bold text-slate-500">{sinError.length - validas.length} ya están: se omiten</span>}
                     {conError.length > 0 && <span className="flex items-center gap-1.5 font-bold text-rose-700"><AlertTriangle className="w-4 h-4" /> {conError.length} con errores</span>}
                   </div>
 
@@ -181,6 +212,10 @@ export function ImportarProyectosExcelModal({ onClose, onImportado, anio }: Impo
                             <td className="p-2">
                               {f.errores.length ? (
                                 <span className="text-rose-700 font-semibold" title={f.errores.join(' ')}>⚠ {f.errores[0]}</span>
+                              ) : seCompleta(f) ? (
+                                <span className="text-sky-700 font-semibold">Ya está: se cargan sus partidas</span>
+                              ) : existente(f) ? (
+                                <span className="text-slate-500 font-semibold">Ya está: se omite</span>
                               ) : (
                                 <span className="text-emerald-700 font-semibold">✓ Lista</span>
                               )}
@@ -203,7 +238,9 @@ export function ImportarProyectosExcelModal({ onClose, onImportado, anio }: Impo
                     className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2"
                   >
                     {importando ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
-                    {importando ? `Importando… ${progreso}%` : `Importar ${validas.length} proyecto(s) a la Cartera`}
+                    {importando ? `Importando… ${progreso}%`
+                      : nuevas.length === 0 && porCompletar.length > 0 ? `Cargar el presupuesto de ${porCompletar.length} proyecto(s)`
+                      : `Importar ${nuevas.length} proyecto(s) a la Cartera`}
                   </button>
                 </>
               )}
