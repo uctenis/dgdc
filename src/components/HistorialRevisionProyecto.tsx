@@ -12,6 +12,7 @@ const ETIQUETA: Record<RevisionCarteraEntrada['decision'], string> = {
   observado: 'Observado',
   pendiente: 'Vuelve a revisión',
   ajuste: 'Ajuste del responsable',
+  traspaso: 'Traspaso de cartera',
 };
 const COLOR: Record<RevisionCarteraEntrada['decision'], string> = {
   aprobado: 'bg-emerald-100 text-emerald-800 border-emerald-200',
@@ -19,6 +20,7 @@ const COLOR: Record<RevisionCarteraEntrada['decision'], string> = {
   observado: 'bg-orange-100 text-orange-800 border-orange-200',
   pendiente: 'bg-slate-100 text-slate-700 border-slate-200',
   ajuste: 'bg-sky-100 text-sky-800 border-sky-200',
+  traspaso: 'bg-indigo-100 text-indigo-800 border-indigo-200',
 };
 
 const lista = (titulo: string, partidas?: string[]) =>

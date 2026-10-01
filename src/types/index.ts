@@ -342,8 +342,8 @@ export interface RevisionCarteraEntrada {
   fecha: string;
   /** Cartera en revisión. */
   anio: number;
-  /** `ajuste` = el responsable modificó el proyecto observado y lo reenvió. */
-  decision: 'aprobado' | 'rechazado' | 'observado' | 'pendiente' | 'ajuste';
+  /** `ajuste` = el responsable modificó el proyecto observado y lo reenvió. `traspaso` = pasó a la cartera del año siguiente. */
+  decision: 'aprobado' | 'rechazado' | 'observado' | 'pendiente' | 'ajuste' | 'traspaso';
   usuario?: string;
   observacion?: string;
   /** Presupuesto estimado del proyecto en ese momento. */

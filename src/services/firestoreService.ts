@@ -503,6 +503,42 @@ const cambiosDelAjuste = (ajuste: NonNullable<ReturnType<typeof compararConBaseA
 });
 
 /**
+ * Pasa proyectos a la cartera de otro año (los que no se aprobaron quedan como candidatos del siguiente). El
+ * proyecto es el mismo: conserva código, ficha, itemizado y documentos; vuelve a quedar por revisar y el traspaso
+ * se anota en su historial.
+ */
+export async function traspasarProyectosDeCartera(ids: string[], anioDestino: number, usuario: { email?: string | null }): Promise<number> {
+  let traspasados = 0;
+  for (const id of ids) {
+    const snap = await getDoc(doc(db, 'proyectos', id));
+    if (!snap.exists()) continue;
+    const proyecto = { id, ...(snap.data() as Omit<ProyectoMaestro, 'id'>) };
+    const anioOrigen = anioDeCartera(proyecto);
+    if (anioOrigen === anioDestino) continue;
+    const entrada: RevisionCarteraEntrada = {
+      fecha: new Date().toISOString(),
+      anio: anioDestino,
+      decision: 'traspaso',
+      usuario: usuario.email || undefined,
+      observacion: `Pasa de la Cartera ${anioOrigen} (${ETIQUETA_DECISION[decisionDeCartera(proyecto)].toLowerCase()}) a la Cartera ${anioDestino}.`,
+      valor: proyecto.valorAprox || 0,
+    };
+    await updateDoc(doc(db, 'proyectos', id), {
+      anioPresupuesto: anioDestino,
+      presupuesto: { aprobado: false },
+      historialRevision: [...(proyecto.historialRevision || []), entrada],
+      _updatedAt: serverTimestamp(),
+    });
+    registrarCambio({
+      accion: 'Modificó', entidad: 'Proyecto', entidadId: id, nombre: proyecto.nombre,
+      cambios: { cartera: { antes: String(anioOrigen), despues: String(anioDestino) } },
+    });
+    traspasados++;
+  }
+  return traspasados;
+}
+
+/**
  * El responsable ajustó un proyecto observado (itemizado, valor) y lo reenvía a revisión: el ajuste queda en el
  * historial con lo que cambió respecto de lo presentado, y el proyecto vuelve a esperar una decisión.
  */

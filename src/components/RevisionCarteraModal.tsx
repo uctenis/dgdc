@@ -7,6 +7,7 @@ import { ANIO_CARTERA_INICIAL, compararConBaseAjuste, decisionDeCartera, presupu
 import { redactarFundamentoProyectoConIA, isAIConfigured, mensajeErrorIA } from '../services/aiService';
 import { obtenerCampusPorSigla, ubicacionProyecto } from '../data/campusData';
 import { HistorialRevisionLista } from './HistorialRevisionProyecto';
+import { TraspasoCarteraPanel } from './TraspasoCarteraPanel';
 import { useAuth } from '../context/AuthContext';
 
 interface RevisionCarteraModalProps {
@@ -35,6 +36,7 @@ export function RevisionCarteraModal({ anio, proyectos, configFirmas, onSaveConf
   const [redactando, setRedactando] = useState<string | null>(null);
   const [propuestas, setPropuestas] = useState<Record<string, string>>({});
   const [historialAbierto, setHistorialAbierto] = useState<string | null>(null);
+  const [traspasoAbierto, setTraspasoAbierto] = useState(false);
 
   const resumen = resumenRevisionCartera(proyectos);
   const cierre = configFirmas?.revisionesCartera?.[String(anio)];
@@ -184,6 +186,11 @@ export function RevisionCarteraModal({ anio, proyectos, configFirmas, onSaveConf
               <>Cartera <strong>en revisión</strong>: el presupuesto {anio} aún no está fijado.</>
             )}
           </p>
+          {isAdmin && !traspasoAbierto && (
+            <button type="button" onClick={() => setTraspasoAbierto(true)} title="Cierre anual: los proyectos no aprobados pasan a la cartera del año siguiente con su mismo código" className="px-3 py-2 bg-white hover:bg-indigo-50 text-indigo-800 border border-indigo-300 font-bold rounded-lg whitespace-nowrap">
+              Pasar proyectos a la Cartera {anio + 1}
+            </button>
+          )}
           {isAdmin && onSaveConfig && configFirmas && (
             <button type="button" onClick={cerrarRevision} disabled={resumen.aprobado.cantidad === 0} className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold rounded-lg shadow-sm whitespace-nowrap">
               {cierre ? 'Actualizar presupuesto con los aprobados' : `Cerrar revisión y fijar presupuesto ${anio}`}
@@ -193,6 +200,9 @@ export function RevisionCarteraModal({ anio, proyectos, configFirmas, onSaveConf
 
         {error && <p className="text-red-700 font-semibold shrink-0">{error}</p>}
 
+        {traspasoAbierto ? (
+          <TraspasoCarteraPanel anio={anio} proyectos={proyectos} onCerrar={() => setTraspasoAbierto(false)} />
+        ) : (
         <div className="flex-1 overflow-y-auto space-y-2 pr-1">
           {ordenados.length === 0 && <p className="text-center text-slate-400 py-8">La Cartera {anio} aún no tiene proyectos.</p>}
           {ordenados.map(p => {
@@ -206,6 +216,7 @@ export function RevisionCarteraModal({ anio, proyectos, configFirmas, onSaveConf
                   <div className="min-w-0">
                     <strong className="text-slate-900 block">{p.nombre}</strong>
                     <span className="text-[10px] text-slate-500 font-mono">{p.codigoProyecto}</span>
+                    {(p.historialRevision || []).some(h => h.decision === 'traspaso') && <span className="text-[10px] font-bold text-indigo-700"> · viene de una cartera anterior</span>}
                     <span className="text-[10px] text-slate-500"> · Prioridad {p.prioridad || 'Media'}{p.campusSigla ? ` · ${p.campusSigla}${p.edificioSigla ? ` ${p.edificioSigla}` : ''}` : ''}{p.responsableNombre ? ` · ${p.responsableNombre}` : ''}</span>
                   </div>
                   <div className="text-right shrink-0">
@@ -305,6 +316,7 @@ export function RevisionCarteraModal({ anio, proyectos, configFirmas, onSaveConf
             );
           })}
         </div>
+        )}
 
         {!isAdmin && <p className="text-[11px] text-slate-500 shrink-0">Puede completar el fundamento de los proyectos. Aprobar, rechazar y cerrar la revisión lo hace el administrador.</p>}
       </div>
