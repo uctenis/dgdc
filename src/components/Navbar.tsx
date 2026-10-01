@@ -29,20 +29,20 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onBuscar }) => {
   const { user, profile, isAdmin, isSecretaria, logout } = useAuth();
-  const allTabs = [
-    { id: 'proyectos-maestros', label: 'Cartera de Proyectos 2026', icon: FileText },
+  // `corto` es el rótulo de la barra de escritorio, para que todas las pestañas quepan sin desplazarse.
+  const allTabs: { id: string; label: string; corto?: string; icon: typeof FileText; adminOnly?: boolean; contextual?: boolean }[] = [
+    { id: 'proyectos-maestros', label: 'Cartera de Proyectos 2026', corto: 'Cartera 2026', icon: FileText },
     { id: 'avance-financiero', label: 'Avance Financiero', icon: TrendingUp },
     { id: 'licitaciones', label: 'Licitaciones', icon: FolderKanban },
     { id: 'mis-obras', label: 'Mis obras', icon: HardHat },
     { id: 'bandeja-op', label: 'Solicitudes OP', icon: ClipboardList, adminOnly: true },
     { id: 'proveedores',  label: 'Proveedores', icon: Building2, adminOnly: true },
     { id: 'cotizaciones', label: 'Cotizaciones', icon: FileSpreadsheet, contextual: true, adminOnly: true },
-    { id: 'ficha-proyecto', label: 'Ficha del Proyecto', icon: FileText, contextual: true },
+    { id: 'ficha-proyecto', label: 'Ficha del Proyecto', corto: 'Ficha', icon: FileText, contextual: true },
     { id: 'evaluacion',   label: 'Evaluación', icon: FileCheck2, contextual: true },
     { id: 'documentos',   label: 'Actas', icon: FileText, contextual: true },
-    { id: 'precios', label: 'Precios unitarios', icon: Calculator },
-    { id: 'reportes', label: 'Reportes y Auditoría', icon: BarChart3 },
-    { id: 'diagrama-sgc', label: 'Flujo 0021', icon: FileCheck2 },
+    { id: 'precios', label: 'Precios unitarios', corto: 'Precios', icon: Calculator },
+    { id: 'reportes', label: 'Reportes y Auditoría', corto: 'Reportes', icon: BarChart3 },
     { id: 'configuracion', label: 'Configuración', icon: Settings, adminOnly: true },
   ];
 
@@ -181,7 +181,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onBusca
         )}
 
         {/* ── Navigation Tabs ───────────────────────────────────────── */}
-        <nav className="hidden lg:flex gap-0.5 overflow-x-auto pb-0" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+        <nav className="hidden lg:flex overflow-hidden pb-0" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
           {tabs.map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -189,7 +189,8 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onBusca
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className="flex items-center gap-2 px-5 py-3 text-xs font-semibold whitespace-nowrap transition-all relative"
+                title={tab.label}
+                className="flex flex-auto min-w-0 items-center justify-center gap-1.5 px-2 xl:px-2.5 py-3 text-xs font-semibold whitespace-nowrap transition-all relative"
                 style={{
                   color: isActive ? '#38bdf8' : 'rgba(148,163,184,0.9)',
                   background: isActive ? 'rgba(56,189,248,0.08)' : 'transparent',
@@ -198,10 +199,10 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onBusca
                 }}
               >
                 <Icon
-                  className="w-3.5 h-3.5"
+                  className="hidden xl:block w-3.5 h-3.5 shrink-0"
                   style={{ color: isActive ? '#38bdf8' : 'rgba(148,163,184,0.7)' }}
                 />
-                <span>{tab.label}</span>
+                <span className="truncate">{tab.corto || tab.label}</span>
               </button>
             );
           })}

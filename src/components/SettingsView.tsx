@@ -2405,7 +2405,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl outline-none font-bold text-slate-900 disabled:bg-slate-100 disabled:text-slate-500"
                         />
                         {isEditingCampus && isAdmin && (
-                          <button type="button" onClick={handleCambiarSiglaCampus} className="mt-1 text-[11px] font-bold text-sky-700 hover:underline">
+                          <button type="button" onClick={handleCambiarSiglaCampus} className="mt-1.5 w-full px-2 py-1.5 text-[11px] font-bold text-sky-800 bg-white hover:bg-sky-100 border border-sky-300 rounded-lg transition">
                             Cambiar sigla o nombre (actualiza también los proyectos)
                           </button>
                         )}
