@@ -402,7 +402,7 @@ function AdminApp() {
         )}
 
         {activeTab === 'proyectos-maestros' && (
-          <ProyectosMaestros configFirmas={configFirmas} onOpenFicha={p => handleOpenFicha(p)} />
+          <ProyectosMaestros configFirmas={configFirmas} onSaveConfig={handleSaveConfigFirmas} onOpenFicha={p => handleOpenFicha(p)} />
         )}
 
         {activeTab === 'avance-financiero' && (

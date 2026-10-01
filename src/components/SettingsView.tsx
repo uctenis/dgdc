@@ -1163,7 +1163,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <span>Presupuesto Anual Aprobado, por Cartera</span>
                   </h4>
                   <p className="text-[11px] text-indigo-800">
-                    Techo institucional de cada año. La Cartera de Proyectos de ese año lo usa para avisar si el total comprometido/adjudicado se acerca o sobrepasa este monto — no es lo mismo que la suma de montos adjudicados por proyecto.
+                    Techo institucional de cada año. Se fija solo al cerrar la Revisión de cartera (suma de los proyectos aprobados); aquí puede corregirlo a mano si hace falta. La Cartera de ese año lo usa para avisar si lo comprometido se acerca o sobrepasa este monto.
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     {aniosPresupuesto.map(anio => (

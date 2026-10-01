@@ -438,6 +438,33 @@ export async function setAprobacionPresupuesto(
   });
 }
 
+/** Decisión de la revisión de cartera sobre un proyecto: aprobado, rechazado o de vuelta a pendiente. */
+export async function setDecisionPresupuesto(
+  id: string,
+  decision: 'aprobado' | 'rechazado' | 'pendiente',
+  usuario: { nombre?: string | null; email?: string | null },
+  observacion?: string
+): Promise<void> {
+  const antes = await leerDatos('proyectos', id);
+  const presupuesto = decision === 'pendiente'
+    ? { aprobado: false }
+    : {
+        aprobado: decision === 'aprobado',
+        rechazado: decision === 'rechazado',
+        observacion: observacion?.trim() || undefined,
+        fecha: new Date().toISOString(),
+        aprobadoPorNombre: usuario.nombre || undefined,
+        aprobadoPorEmail: usuario.email || undefined,
+      };
+  await updateDoc(doc(db, 'proyectos', id), { presupuesto, _updatedAt: serverTimestamp() });
+  const estado = (p?: { aprobado?: boolean; rechazado?: boolean }) => (p?.aprobado ? 'Aprobado' : p?.rechazado ? 'Rechazado' : 'Pendiente');
+  registrarCambio({
+    accion: 'Modificó', entidad: 'Proyecto', entidadId: id, nombre: texto(antes?.nombre),
+    cambios: { 'revisión de cartera': { antes: estado(antes?.presupuesto as { aprobado?: boolean; rechazado?: boolean } | undefined), despues: estado(presupuesto) } },
+    detalle: observacion?.trim() || undefined,
+  });
+}
+
 // Trae los Estados de Pago de varias licitaciones (subcolección por licitación) en paralelo.
 // Se usa para construir el Avance Financiero real de la Cartera sin depender de una
 // collection group query (evita depender de reglas de Firestore específicas para eso).

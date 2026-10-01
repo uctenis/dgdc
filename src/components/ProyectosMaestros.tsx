@@ -30,9 +30,10 @@ import { RepararCarteraModal, BotonRepararCartera } from './RepararCarteraModal'
 import { BasesLicitacionModal } from './BasesLicitacionModal';
 import { ContratoAdjudicacionModal } from './ContratoAdjudicacionModal';
 import { ImportarProyectosExcelModal } from './ImportarProyectosExcelModal';
+import { RevisionCarteraModal } from './RevisionCarteraModal';
 import { PremiumDatePicker } from './PremiumDatePicker';
 import { useAuth } from '../context/AuthContext';
-import { anioDeCartera, aniosDeCartera, presupuestoDelAnio, leerAnioCarteraElegido, guardarAnioCarteraElegido } from '../utils/carteraAnual';
+import { anioDeCartera, aniosDeCartera, presupuestoDelAnio, resumenRevisionCartera, leerAnioCarteraElegido, guardarAnioCarteraElegido } from '../utils/carteraAnual';
 import type { ProyectoMaestro, LicitacionProyecto, Proveedor, ConfiguracionFirmas } from '../types';
 
 interface ProyectosMaestrosProps {
@@ -40,6 +41,8 @@ interface ProyectosMaestrosProps {
   onOpenFicha?: (p: ProyectoMaestro) => void;
   modoSelector?: boolean;
   configFirmas?: ConfiguracionFirmas;
+  /** Guarda la configuración compartida (se usa al cerrar la revisión de cartera, que fija el presupuesto del año). */
+  onSaveConfig?: (cfg: ConfiguracionFirmas) => void;
 }
 
 const EMPTY_FORM = {
@@ -51,6 +54,7 @@ const EMPTY_FORM = {
   codigoProyecto: '2026_099',
   nombre: '',
   descripcion: '',
+  fundamento: '',
   valorAprox: 0,
   duracionEstimadaDias: 0,
   fechaInicio: '',
@@ -79,6 +83,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   onOpenFicha,
   modoSelector = false,
   configFirmas,
+  onSaveConfig,
 }) => {
   const { isAdmin, user, profile } = useAuth();
   const [proyectos, setProyectos] = useState<ProyectoMaestro[]>([]);
@@ -93,6 +98,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   const [contratoProyecto, setContratoProyecto] = useState<ProyectoMaestro | null>(null);
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [importarExcelAbierto, setImportarExcelAbierto] = useState(false);
+  const [revisionAbierta, setRevisionAbierta] = useState(false);
   const [search, setSearch] = useState('');
   const [filtroCampus, setFiltroCampus] = useState('Todos');
   const [filtroResponsable, setFiltroResponsable] = useState('Todos');
@@ -266,6 +272,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           codigoOC: form.codigoOC,
           nombre: normalizarNombreProyecto(form.nombre),
           descripcion: form.descripcion,
+          fundamento: form.fundamento.trim() || undefined,
           valorAprox: form.valorAprox,
           duracionEstimadaDias: form.duracionEstimadaDias || undefined,
           fechaInicio: form.fechaInicio || undefined,
@@ -292,6 +299,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           codigoOC: form.codigoOC,
           nombre: normalizarNombreProyecto(form.nombre),
           descripcion: form.descripcion,
+          fundamento: form.fundamento.trim() || undefined,
           valorAprox: form.valorAprox,
           duracionEstimadaDias: form.duracionEstimadaDias || undefined,
           fechaInicio: form.fechaInicio || undefined,
@@ -347,6 +355,9 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   // Techo institucional anual (distinto de la suma de montos adjudicados): lo que hay que
   // controlar para que la Cartera no se pase, comparado contra lo ya comprometido (estimado).
   const presupuestoAnualAprobado = presupuestoDelAnio(configFirmas, anioCartera);
+  // Revisión de la cartera: el presupuesto del año es la suma de los aprobados al cerrarla.
+  const revision = resumenRevisionCartera(proyectosAnio);
+  const cierreRevision = configFirmas?.revisionesCartera?.[String(anioCartera)];
   const pctPresupuestoUsado = presupuestoAnualAprobado > 0
     ? Math.round((totalPresupuestoAprobado / presupuestoAnualAprobado) * 100)
     : 0;
@@ -459,6 +470,14 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
             <div className="flex items-center gap-1.5 shrink-0">
               {isAdmin && <BotonRepararCartera onOpen={() => setRepararAbierto(true)} />}
               <button
+                onClick={() => setRevisionAbierta(true)}
+                className="flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-300 text-indigo-800 font-semibold px-2.5 py-1.5 rounded-lg text-[11px] shrink-0"
+                title="Fundamentar, aprobar o rechazar los proyectos de la cartera y fijar el presupuesto del año"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span className="hidden lg:inline">Revisión de cartera</span>
+              </button>
+              <button
                 onClick={() => setImportarExcelAbierto(true)}
                 className="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-semibold px-2.5 py-1.5 rounded-lg text-[11px] shrink-0"
                 title="Importar varios proyectos desde una planilla Excel"
@@ -479,23 +498,29 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
 
         {/* Totales financieros — franja propia para distinguirlos de la distribución por prioridad */}
         <div className="mt-2 pt-2 border-t border-slate-100 grid grid-cols-2 lg:grid-cols-4 gap-2">
-          <div
-            className="rounded-xl bg-indigo-50/60 border border-indigo-100 px-3 py-2"
-            title="Techo institucional anual, comparado solo contra los proyectos con Presupuesto Aprobado (columna Prioridad)"
+          <button
+            type="button"
+            onClick={() => setRevisionAbierta(true)}
+            className="text-left rounded-xl bg-indigo-50/60 hover:bg-indigo-100/70 border border-indigo-100 px-3 py-2 transition"
+            title="Presupuesto del año: se fija al cerrar la revisión de la cartera, con la suma de los proyectos aprobados. Clic para abrir la revisión."
           >
-            <span className="block text-[9px] font-bold uppercase tracking-wide text-indigo-400">Presupuesto anual</span>
+            <span className="block text-[9px] font-bold uppercase tracking-wide text-indigo-400">Presupuesto anual {anioCartera}</span>
             {presupuestoAnualAprobado > 0 ? (
               <>
                 <span className="block text-sm font-black text-indigo-900 tabular-nums">{formatoMonedaCLP(presupuestoAnualAprobado)}</span>
-                <span className={`block text-[10px] font-bold ${presupuestoColor}`}>{pctPresupuestoUsado}% comprometido</span>
+                <span className={`block text-[10px] font-bold ${presupuestoColor}`}>
+                  {pctPresupuestoUsado}% comprometido{cierreRevision ? ` · fijado el ${new Date(cierreRevision.fecha).toLocaleDateString('es-CL')}` : ''}
+                </span>
               </>
             ) : (
               <>
-                <span className="block text-sm font-black text-amber-700">Sin definir</span>
-                <span className="block text-[10px] text-amber-700">Configuración → Parámetros</span>
+                <span className="block text-sm font-black text-amber-700">En revisión</span>
+                <span className="block text-[10px] text-amber-700">
+                  {revision.pendiente.cantidad} por revisar · {revision.aprobado.cantidad} aprobado{revision.aprobado.cantidad === 1 ? '' : 's'}
+                </span>
               </>
             )}
-          </div>
+          </button>
           <div
             className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2"
             title="Suma de proyectos con Presupuesto Aprobado — son los que se proyectan mes a mes en Avance Financiero"
@@ -905,7 +930,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                                 : `bg-white text-slate-400 border-slate-200 ${isAdmin ? 'hover:bg-slate-50 hover:text-slate-600' : ''}`
                             }`}
                           >
-                            {p.presupuesto?.aprobado ? '✓ Aprob. Ppto' : isAdmin ? 'Aprobar Ppto' : 'Sin aprobar'}
+                            {p.presupuesto?.aprobado ? '✓ Aprob. Ppto' : p.presupuesto?.rechazado ? '✗ Rechazado' : isAdmin ? 'Aprobar Ppto' : 'Sin aprobar'}
                           </button>
                         </div>
                       </td>
@@ -1202,6 +1227,18 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                         </div>
                       </div>
                     )}
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">Fundamento del Proyecto</label>
+                    <textarea
+                      rows={2}
+                      {...ATRIBUTOS_ORTOGRAFIA_ES}
+                      placeholder="Por qué debe entrar al presupuesto: necesidad que resuelve, beneficio y urgencia. Se usa en la revisión de la cartera."
+                      value={form.fundamento}
+                      onChange={e => setForm(f => ({ ...f, fundamento: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+                    />
                   </div>
 
                   {/* Ubicación: Campus & Edificio */}
@@ -1626,6 +1663,10 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
 
       {contratoProyecto && (
         <ContratoAdjudicacionModal proyecto={contratoProyecto} proveedores={proveedores} onClose={() => setContratoProyecto(null)} />
+      )}
+
+      {revisionAbierta && (
+        <RevisionCarteraModal anio={anioCartera} proyectos={proyectosAnio} configFirmas={configFirmas} onSaveConfig={onSaveConfig} onClose={() => setRevisionAbierta(false)} />
       )}
 
       {importarExcelAbierto && (

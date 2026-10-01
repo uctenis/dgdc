@@ -31,6 +31,28 @@ export function presupuestoDelAnio(config: ConfiguracionFirmas | undefined, anio
   return anio === ANIO_CARTERA_INICIAL ? config?.presupuestoAnualAprobado || 0 : 0;
 }
 
+export type DecisionCartera = 'aprobado' | 'rechazado' | 'pendiente';
+
+/** Resultado de la revisión de cartera para un proyecto. */
+export function decisionDeCartera(p: Pick<ProyectoMaestro, 'presupuesto'>): DecisionCartera {
+  if (p.presupuesto?.aprobado) return 'aprobado';
+  return p.presupuesto?.rechazado ? 'rechazado' : 'pendiente';
+}
+
+/** Totales de la revisión: cuánto se propuso y cuánto quedó aprobado, rechazado y por revisar (montos estimados). */
+export function resumenRevisionCartera(proyectos: Pick<ProyectoMaestro, 'presupuesto' | 'valorAprox'>[]) {
+  const grupo = (d: DecisionCartera) => {
+    const lista = proyectos.filter(p => decisionDeCartera(p) === d);
+    return { cantidad: lista.length, monto: lista.reduce((s, p) => s + (p.valorAprox || 0), 0) };
+  };
+  return {
+    propuesto: { cantidad: proyectos.length, monto: proyectos.reduce((s, p) => s + (p.valorAprox || 0), 0) },
+    aprobado: grupo('aprobado'),
+    rechazado: grupo('rechazado'),
+    pendiente: grupo('pendiente'),
+  };
+}
+
 /** Cartera que el usuario estaba viendo (se recuerda en su navegador); por defecto, la del año en curso. */
 export function leerAnioCarteraElegido(): number {
   try {

@@ -243,10 +243,17 @@ export interface ProyectoMaestro {
    * comprometen el techo institucional (`presupuestoAnualAprobado`) en el Flujo de Caja / Avance Financiero. */
   presupuesto?: {
     aprobado: boolean;
+    /** true = revisado y rechazado para la cartera de su año (queda como candidato a la del año siguiente).
+     * Sin `aprobado` ni `rechazado`, el proyecto está propuesto y pendiente de revisión. */
+    rechazado?: boolean;
+    /** Observación de quien decidió (por qué se aprobó o rechazó). */
+    observacion?: string;
     fecha?: string;
     aprobadoPorNombre?: string;
     aprobadoPorEmail?: string;
   };
+  /** Fundamento con que se defiende el proyecto en la revisión de la cartera (necesidad, beneficio, urgencia). */
+  fundamento?: string;
 
   // Ubicación y Metadatos Institucionales (Filtros Avanzados)
   campusSigla?: string;      // ej: CSF, CJP, CRC
@@ -1011,6 +1018,8 @@ export interface ConfiguracionFirmas {
   presupuestoAnualAprobado?: number;
   /** Techo institucional por año de cartera ("2027" → monto). El campo anterior queda como respaldo de 2026. */
   presupuestosAnuales?: Record<string, number>;
+  /** Cierre de la revisión de cada cartera: el presupuesto del año es la suma de los proyectos aprobados ese día. */
+  revisionesCartera?: Record<string, { fecha: string; monto: number; proyectos: number; cerradaPor?: string }>;
 }
 
 // ─── HISTORIAL DE ENVÍOS DE INVITACIONES (licitaciones/{id}/envios) ────────
