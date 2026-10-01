@@ -58,6 +58,7 @@ import {
   DollarSign,
 } from 'lucide-react';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
+import { ANIO_CARTERA_INICIAL, presupuestoDelAnio } from '../utils/carteraAnual';
 import { uploadFirmaImagen } from '../services/storageService';
 import { updateUserProfile, migrarSiglaCampus } from '../services/firestoreService';
 import {
@@ -231,6 +232,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setCampusList(getCampusList());
     setHasChanges(false);
   }, [config]);
+
+  // Años con presupuesto editable: desde la cartera inicial hasta la del año siguiente, más los ya cargados.
+  const aniosPresupuesto = Array.from(new Set([
+    ...Array.from({ length: Math.max(1, new Date().getFullYear() + 1 - ANIO_CARTERA_INICIAL + 1) }, (_, i) => ANIO_CARTERA_INICIAL + i),
+    ...Object.keys(formData.presupuestosAnuales || {}).map(Number),
+  ])).sort((a, b) => a - b);
 
   // Manejadores de Ponderaciones
   const paramSgc = formData.parametrosSgc || {
@@ -1153,24 +1160,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <div className="bg-indigo-50 p-5 rounded-2xl border border-indigo-200 space-y-3">
                   <h4 className="font-bold text-indigo-950 text-sm flex items-center gap-2">
                     <DollarSign className="w-4 h-4 text-indigo-600" />
-                    <span>Presupuesto Anual Aprobado 2026</span>
+                    <span>Presupuesto Anual Aprobado, por Cartera</span>
                   </h4>
                   <p className="text-[11px] text-indigo-800">
-                    Techo institucional del año. La Cartera de Proyectos lo usa para avisar si el total comprometido/adjudicado se acerca o sobrepasa este monto — no es lo mismo que la suma de montos adjudicados por proyecto.
+                    Techo institucional de cada año. La Cartera de Proyectos de ese año lo usa para avisar si el total comprometido/adjudicado se acerca o sobrepasa este monto — no es lo mismo que la suma de montos adjudicados por proyecto.
                   </p>
-                  <div>
-                    <input
-                      type="number"
-                      value={formData.presupuestoAnualAprobado || 0}
-                      onChange={e =>
-                        updateFormData(prev => ({
-                          ...prev,
-                          presupuestoAnualAprobado: Number(e.target.value),
-                        }))
-                      }
-                      className="w-full px-3.5 py-2 border border-indigo-300 rounded-xl outline-none font-mono font-bold text-indigo-900 bg-white"
-                    />
-                    <span className="text-[10px] text-indigo-700 font-semibold">{formatoMonedaCLP(formData.presupuestoAnualAprobado || 0)}</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {aniosPresupuesto.map(anio => (
+                      <div key={anio}>
+                        <label className="block font-bold text-indigo-900 mb-1">Cartera {anio}</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={presupuestoDelAnio(formData, anio) || 0}
+                          onChange={e => {
+                            const monto = Number(e.target.value);
+                            updateFormData(prev => ({
+                              ...prev,
+                              presupuestosAnuales: { ...(prev.presupuestosAnuales || {}), [anio]: monto },
+                              ...(anio === ANIO_CARTERA_INICIAL ? { presupuestoAnualAprobado: monto } : {}),
+                            }));
+                          }}
+                          className="w-full px-3.5 py-2 border border-indigo-300 rounded-xl outline-none font-mono font-bold text-indigo-900 bg-white"
+                        />
+                        <span className="text-[10px] text-indigo-700 font-semibold">{formatoMonedaCLP(presupuestoDelAnio(formData, anio))}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
 

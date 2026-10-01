@@ -9,9 +9,11 @@ import { useAuth } from '../context/AuthContext';
 interface ImportarProyectosExcelModalProps {
   onClose: () => void;
   onImportado?: () => void;
+  /** Cartera (año presupuestario) a la que se agregan los proyectos. */
+  anio: number;
 }
 
-export function ImportarProyectosExcelModal({ onClose, onImportado }: ImportarProyectosExcelModalProps) {
+export function ImportarProyectosExcelModal({ onClose, onImportado, anio }: ImportarProyectosExcelModalProps) {
   // Solo el administrador puede aprobar presupuestos: si importa otro usuario, la columna se ignora.
   const { isAdmin } = useAuth();
   const [filas, setFilas] = useState<FilaProyectoImportada[]>([]);
@@ -44,7 +46,7 @@ export function ImportarProyectosExcelModal({ onClose, onImportado }: ImportarPr
 
   const importar = async () => {
     if (!validas.length) return;
-    if (!confirm(`¿Confirma agregar ${validas.length} proyecto(s) nuevo(s) a la Cartera 2026?`)) return;
+    if (!confirm(`¿Confirma agregar ${validas.length} proyecto(s) nuevo(s) a la Cartera ${anio}?`)) return;
     setImportando(true);
     let ok = 0;
     let fallidos = 0;
@@ -76,6 +78,7 @@ export function ImportarProyectosExcelModal({ onClose, onImportado }: ImportarPr
             ? { aprobado: true, fecha: new Date().toISOString(), aprobadoPorNombre: 'Importación Excel' }
             : { aprobado: false },
           documentosAntecedentes: [],
+          anioPresupuesto: anio,
         });
         ok++;
       } catch (err) {
@@ -108,7 +111,7 @@ export function ImportarProyectosExcelModal({ onClose, onImportado }: ImportarPr
           {resultado ? (
             <div className={`rounded-xl p-5 border text-sm ${resultado.fallidos ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-emerald-50 border-emerald-200 text-emerald-900'}`}>
               <p className="font-bold flex items-center gap-2"><CheckCircle2 className="w-5 h-5" /> Importación completada</p>
-              <p className="mt-1">{resultado.ok} proyecto(s) agregado(s) a la Cartera 2026.</p>
+              <p className="mt-1">{resultado.ok} proyecto(s) agregado(s) a la Cartera {anio}.</p>
               {resultado.fallidos > 0 && <p className="mt-1 text-rose-700">{resultado.fallidos} fila(s) fallaron al guardar — revise la consola del navegador.</p>}
               <button onClick={onClose} className="mt-4 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold">Cerrar</button>
             </div>

@@ -32,6 +32,7 @@ import { ContratoAdjudicacionModal } from './ContratoAdjudicacionModal';
 import { ImportarProyectosExcelModal } from './ImportarProyectosExcelModal';
 import { PremiumDatePicker } from './PremiumDatePicker';
 import { useAuth } from '../context/AuthContext';
+import { anioDeCartera, aniosDeCartera, presupuestoDelAnio, leerAnioCarteraElegido, guardarAnioCarteraElegido } from '../utils/carteraAnual';
 import type { ProyectoMaestro, LicitacionProyecto, Proveedor, ConfiguracionFirmas } from '../types';
 
 interface ProyectosMaestrosProps {
@@ -82,6 +83,9 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   const { isAdmin, user, profile } = useAuth();
   const [proyectos, setProyectos] = useState<ProyectoMaestro[]>([]);
   const [licitaciones, setLicitaciones] = useState<LicitacionProyecto[]>([]);
+  // Cartera (año presupuestario) que se está viendo: los totales, la tabla y los proyectos nuevos son de ese año.
+  const [anioCartera, setAnioCartera] = useState(leerAnioCarteraElegido);
+  const proyectosAnio = React.useMemo(() => proyectos.filter(p => anioDeCartera(p) === anioCartera), [proyectos, anioCartera]);
   const [loading, setLoading] = useState(true);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
   const [repararAbierto, setRepararAbierto] = useState(false);
@@ -304,6 +308,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           responsableNombre: form.responsableNombre,
           responsableEmail: form.responsableEmail,
           documentosAntecedentes: form.documentosAntecedentes,
+          anioPresupuesto: anioCartera,
         });
         // Las Bases no se abren al crear: se preparan después, desde la ficha del proyecto.
       }
@@ -322,26 +327,26 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   const [filtroLicitacion, setFiltroLicitacion] = useState<'Todos' | 'Con' | 'Sin'>('Todos');
 
   // Cálculos de Resumen por Prioridad y Financiero
-  const totalAltaVal = proyectos.filter(p => p.prioridad === 'Alta').reduce((sum, p) => sum + (p.valorAprox || 0), 0);
-  const totalAltaCount = proyectos.filter(p => p.prioridad === 'Alta').length;
+  const totalAltaVal = proyectosAnio.filter(p => p.prioridad === 'Alta').reduce((sum, p) => sum + (p.valorAprox || 0), 0);
+  const totalAltaCount = proyectosAnio.filter(p => p.prioridad === 'Alta').length;
 
-  const totalMediaVal = proyectos.filter(p => p.prioridad === 'Media' || !p.prioridad).reduce((sum, p) => sum + (p.valorAprox || 0), 0);
-  const totalMediaCount = proyectos.filter(p => p.prioridad === 'Media' || !p.prioridad).length;
+  const totalMediaVal = proyectosAnio.filter(p => p.prioridad === 'Media' || !p.prioridad).reduce((sum, p) => sum + (p.valorAprox || 0), 0);
+  const totalMediaCount = proyectosAnio.filter(p => p.prioridad === 'Media' || !p.prioridad).length;
 
-  const totalBajaVal = proyectos.filter(p => p.prioridad === 'Baja').reduce((sum, p) => sum + (p.valorAprox || 0), 0);
-  const totalBajaCount = proyectos.filter(p => p.prioridad === 'Baja').length;
+  const totalBajaVal = proyectosAnio.filter(p => p.prioridad === 'Baja').reduce((sum, p) => sum + (p.valorAprox || 0), 0);
+  const totalBajaCount = proyectosAnio.filter(p => p.prioridad === 'Baja').length;
 
-  const totalPresupuestoGeneral = proyectos.reduce((sum, p) => sum + (p.valorAprox || 0), 0);
-  const totalGastoEfectivoGeneral = proyectos.reduce((sum, p) => sum + (p.gastoEfectivo || 0), 0);
+  const totalPresupuestoGeneral = proyectosAnio.reduce((sum, p) => sum + (p.valorAprox || 0), 0);
+  const totalGastoEfectivoGeneral = proyectosAnio.reduce((sum, p) => sum + (p.gastoEfectivo || 0), 0);
 
   // Solo los proyectos con Presupuesto Aprobado comprometen el techo institucional — el resto
   // de la cartera (totalPresupuestoGeneral) queda "en espera" y no cuenta para ese control.
-  const proyectosAprobadosPpto = proyectos.filter(p => p.presupuesto?.aprobado);
+  const proyectosAprobadosPpto = proyectosAnio.filter(p => p.presupuesto?.aprobado);
   const totalPresupuestoAprobado = proyectosAprobadosPpto.reduce((sum, p) => sum + (p.montoAdjudicado || p.valorAprox || 0), 0);
 
   // Techo institucional anual (distinto de la suma de montos adjudicados): lo que hay que
   // controlar para que la Cartera no se pase, comparado contra lo ya comprometido (estimado).
-  const presupuestoAnualAprobado = configFirmas?.presupuestoAnualAprobado || 0;
+  const presupuestoAnualAprobado = presupuestoDelAnio(configFirmas, anioCartera);
   const pctPresupuestoUsado = presupuestoAnualAprobado > 0
     ? Math.round((totalPresupuestoAprobado / presupuestoAnualAprobado) * 100)
     : 0;
@@ -357,7 +362,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
     });
   };
 
-  const filtered = proyectos.filter(p => {
+  const filtered = proyectosAnio.filter(p => {
     const q = search.toLowerCase().trim();
     const matchSearch =
       !q ||
@@ -422,7 +427,15 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <h2 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 shrink-0">
             <BookOpen className="w-4 h-4 text-indigo-600" />
-            Cartera 2026
+            Cartera
+            <select
+              value={anioCartera}
+              onChange={e => { const a = Number(e.target.value); setAnioCartera(a); guardarAnioCarteraElegido(a); }}
+              title="Año de la cartera y de su presupuesto"
+              className="font-bold text-indigo-800 bg-indigo-50 border border-indigo-200 rounded-lg px-1.5 py-0.5 outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              {aniosDeCartera(proyectos).map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
           </h2>
 
           <div className="flex items-center gap-1 text-[10px] shrink-0">
@@ -494,7 +507,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           <div className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
             <span className="block text-[9px] font-bold uppercase tracking-wide text-slate-400">Cartera total</span>
             <span className="block text-sm font-black text-slate-700 tabular-nums">{formatoMonedaCLP(totalPresupuestoGeneral)}</span>
-            <span className="block text-[10px] text-slate-500">{proyectos.length} proyecto{proyectos.length === 1 ? '' : 's'}</span>
+            <span className="block text-[10px] text-slate-500">{proyectosAnio.length} proyecto{proyectosAnio.length === 1 ? '' : 's'}</span>
           </div>
           <div className="rounded-xl bg-emerald-50/60 border border-emerald-100 px-3 py-2">
             <span className="block text-[9px] font-bold uppercase tracking-wide text-emerald-600">Gasto efectivo pagado</span>
@@ -639,7 +652,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
       ) : filtered.length === 0 ? (
         <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
           <BookOpen className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-          <p className="text-slate-500 text-sm">No se encontraron proyectos en la Cartera 2026 con ese criterio de búsqueda.</p>
+          <p className="text-slate-500 text-sm">No se encontraron proyectos en la Cartera {anioCartera} con ese criterio de búsqueda.</p>
         </div>
       ) : (
         <>
@@ -995,10 +1008,10 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
             <div className="flex items-center justify-between border-b pb-4 shrink-0">
               <div>
                 <span className="text-[10px] font-extrabold uppercase bg-indigo-100 text-indigo-900 px-2.5 py-0.5 rounded">
-                  Cartera de Proyectos 2026 • Subdirección de Infraestructura
+                  Cartera de Proyectos {anioCartera} • Subdirección de Infraestructura
                 </span>
                 <h3 className="text-base font-bold text-slate-800 mt-1">
-                  {editingId ? `Editar Proyecto: ${form.nombre}` : 'Nuevo Proyecto en Cartera 2026'}
+                  {editingId ? `Editar Proyecto: ${form.nombre}` : `Nuevo Proyecto en Cartera ${anioCartera}`}
                 </h3>
               </div>
               <button onClick={() => setShowModal(false)} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition">
@@ -1429,7 +1442,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                       disabled={saving}
                       className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow-sm disabled:opacity-50"
                     >
-                      {saving ? 'Guardando...' : editingId ? 'Guardar Cambios' : 'Agregar Proyecto a Cartera 2026'}
+                      {saving ? 'Guardando...' : editingId ? 'Guardar Cambios' : `Agregar Proyecto a Cartera ${anioCartera}`}
                     </button>
                   </div>
                 </form>
@@ -1507,7 +1520,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                       <p className="text-[11px] text-emerald-800 mt-1">
                         {editingId
                           ? 'Se generan solas a partir de una plantilla según el Tipo de Obra del proyecto (pestaña Datos Generales) — no se adjunta un archivo aquí.'
-                          : 'Al hacer clic en "Agregar Proyecto a Cartera 2026" (botón abajo) se abrirán automáticamente, ya pre-cargadas según el Tipo de Obra que elijas en "Datos Generales".'}
+                          : 'Al hacer clic en "Agregar Proyecto a Cartera" (botón abajo) se abrirán automáticamente, ya pre-cargadas según el Tipo de Obra que elijas en "Datos Generales".'}
                       </p>
                     </div>
                     {editingId && (
@@ -1616,7 +1629,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
       )}
 
       {importarExcelAbierto && (
-        <ImportarProyectosExcelModal onClose={() => setImportarExcelAbierto(false)} />
+        <ImportarProyectosExcelModal anio={anioCartera} onClose={() => setImportarExcelAbierto(false)} />
       )}
     </div>
   );

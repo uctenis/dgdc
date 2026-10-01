@@ -12,6 +12,7 @@ import {
   calcularFechaTerminoEfectiva,
   type SemaforoAvance,
 } from '../utils/avanceFinanciero';
+import { aniosDeCartera, presupuestoDelAnio } from '../utils/carteraAnual';
 import type { ProyectoMaestro, LicitacionProyecto, EstadoPago, ConfiguracionFirmas } from '../types';
 
 interface AvanceFinancieroPageProps {
@@ -67,7 +68,7 @@ export const AvanceFinancieroPage: React.FC<AvanceFinancieroPageProps> = ({ conf
   }, [cargarEstadosPago]);
 
   const aniosDisponibles = useMemo(() => {
-    const anios = new Set<number>([anioActual]);
+    const anios = new Set<number>([anioActual, ...aniosDeCartera(proyectos)]);
     proyectos.filter(p => p.presupuesto?.aprobado).forEach(p => {
       if (p.fechaInicio) anios.add(new Date(p.fechaInicio).getFullYear());
       const fin = calcularFechaTerminoEfectiva(p);
@@ -89,7 +90,7 @@ export const AvanceFinancieroPage: React.FC<AvanceFinancieroPageProps> = ({ conf
   const proyectosAprobados = proyectos.filter(p => p.presupuesto?.aprobado);
   const sinProgramar = proyectosAprobados.filter(p => !p.fechaInicio || !calcularFechaTerminoEfectiva(p));
 
-  const presupuestoAnualAprobado = configFirmas?.presupuestoAnualAprobado || 0;
+  const presupuestoAnualAprobado = presupuestoDelAnio(configFirmas, anio);
   const totalProyectadoAnio = flujo.reduce((s, m) => s + m.proyectado, 0);
   const totalRealAnio = flujo.reduce((s, m) => s + m.real, 0);
   const totalAdjudicadoAprobados = proyectosAprobados.reduce((s, p) => s + (p.montoAdjudicado || 0), 0);

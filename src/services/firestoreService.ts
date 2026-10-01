@@ -25,6 +25,7 @@ import { db } from '../lib/firebase';
 import { diferencias, registrarCambio } from './auditoriaService';
 import { REQUISITOS_INSCRIPCION } from '../data/inscripcionProveedores';
 import { renombrarSiglaEdificio } from '../data/campusData';
+import { ANIO_CARTERA_INICIAL } from '../utils/carteraAnual';
 import { formatearRUT } from '../utils/rutUtils';
 import { normalizarNombreProyecto } from '../utils/spellCorrector';
 import { plazoOfertasVencido, fechaLimiteOfertas, textoLimiteOfertas } from '../utils/plazoOfertas';
@@ -308,25 +309,28 @@ async function addProyectoMaestroSinRegistro(
   // Usar counter para asignar correlativo único
   const counterRef = doc(db, '_counters', 'proyectos');
   let correlativo = 1;
+  // El código lleva el año de la CARTERA (no el de la fecha de creación) y un número que parte de 1 cada año.
+  // La cartera inicial sigue numerándose con el correlativo general, como hasta ahora.
+  const anio = data.anioPresupuesto || new Date().getFullYear();
+  let numeroEnAnio = 1;
 
   await runTransaction(db, async tx => {
     const counterSnap = await tx.get(counterRef);
-    if (counterSnap.exists()) {
-      correlativo = (counterSnap.data().last as number) + 1;
-      tx.update(counterRef, { last: increment(1) });
-    } else {
-      tx.set(counterRef, { last: 1 });
-    }
+    const previo = counterSnap.exists() ? counterSnap.data() : undefined;
+    correlativo = ((previo?.last as number) || 0) + 1;
+    numeroEnAnio = anio === ANIO_CARTERA_INICIAL ? correlativo : (((previo?.porAnio as Record<string, number> | undefined)?.[anio]) || 0) + 1;
+    const porAnio = anio === ANIO_CARTERA_INICIAL ? {} : { porAnio: { [anio]: numeroEnAnio } };
+    tx.set(counterRef, { last: correlativo, ...porAnio }, { merge: true });
   });
 
-  const year = new Date().getFullYear();
-  const codigoProyecto = `${year}_${String(correlativo).padStart(3, '0')}`;
+  const codigoProyecto = `${anio}_${String(numeroEnAnio).padStart(3, '0')}`;
 
   const ref = await addDoc(collection(db, 'proyectos'), {
     ...data,
     nombre: normalizarNombreProyecto(data.nombre),
     correlativo,
     codigoProyecto,
+    anioPresupuesto: anio,
     fechaCreacion: new Date().toISOString(),
     _createdAt: serverTimestamp(),
   });

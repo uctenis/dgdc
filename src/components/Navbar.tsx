@@ -31,7 +31,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onBusca
   const { user, profile, isAdmin, isSecretaria, logout } = useAuth();
   // `corto` es el rótulo de la barra de escritorio, para que todas las pestañas quepan sin desplazarse.
   const allTabs: { id: string; label: string; corto?: string; icon: typeof FileText; adminOnly?: boolean; contextual?: boolean }[] = [
-    { id: 'proyectos-maestros', label: 'Cartera de Proyectos 2026', corto: 'Cartera 2026', icon: FileText },
+    { id: 'proyectos-maestros', label: 'Cartera de Proyectos', corto: 'Cartera', icon: FileText },
     { id: 'avance-financiero', label: 'Avance Financiero', icon: TrendingUp },
     { id: 'licitaciones', label: 'Licitaciones', icon: FolderKanban },
     { id: 'mis-obras', label: 'Mis obras', icon: HardHat },

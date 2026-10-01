@@ -180,6 +180,9 @@ export interface ProyectoMaestro {
   codigoOP: string;          // OP-XXX
   codigoOT: string;          // OT-XXXX
   codigoProyecto: string;    // 2X_0XX
+  /** Cartera (año presupuestario) a la que pertenece. Si falta, se deduce del código (ver anioDeCartera).
+   * Puede ser posterior al año del código: un proyecto no aprobado pasa a la cartera siguiente con su código. */
+  anioPresupuesto?: number;
   ordenCompraNumero?: string; // NRO OC (ej: OC-6790 or 6790)
   codigoOC?: string;
   nombre: string;
@@ -1006,6 +1009,8 @@ export interface ConfiguracionFirmas {
   parametrosSgc?: ParametrosLicitacionSGC;
   /** Techo institucional anual (CLP) que la Cartera de Proyectos no debe sobrepasar — distinto del monto adjudicado, que es cuánto ya se comprometió contra ese techo. */
   presupuestoAnualAprobado?: number;
+  /** Techo institucional por año de cartera ("2027" → monto). El campo anterior queda como respaldo de 2026. */
+  presupuestosAnuales?: Record<string, number>;
 }
 
 // ─── HISTORIAL DE ENVÍOS DE INVITACIONES (licitaciones/{id}/envios) ────────
