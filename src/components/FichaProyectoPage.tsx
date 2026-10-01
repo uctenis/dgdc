@@ -28,6 +28,7 @@ import { CargaOrdenCompraModal } from './CargaOrdenCompraModal';
 import { PremiumDatePicker } from './PremiumDatePicker';
 import { BasesLicitacionModal } from './BasesLicitacionModal';
 import { EETTProyectoPanel } from './EETTProyectoPanel';
+import { DocumentosDrivePanel } from './DocumentosDrivePanel';
 import { RubroSelect } from './RubroSelect';
 import { rubroAlCambiarTipo } from '../data/tiposObraData';
 import { getTiposObraList } from '../data/tiposObraData';
@@ -289,8 +290,10 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
         nombre: d.nombre,
         tipo: normalizarTipoDocumento(d.tipo),
         archivoNombre: d.archivoNombre || `${d.nombre.replace(/\s+/g, '_')}.pdf`,
+        archivoURL: d.archivoURL,
         fechaCarga: d.fechaCarga || new Date().toLocaleDateString('es-CL'),
         cargadoPor: responsableNombre,
+        estado: d.archivoURL ? 'almacenado' as const : 'local' as const,
       }));
     }
     if ('antecedentesTecnicos' in proyecto && proyecto.antecedentesTecnicos && proyecto.antecedentesTecnicos.length > 0) {
@@ -327,11 +330,23 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
     if (remoto) setChecklistManual(remoto);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proyectoMaestroEfectivo?.id, licitacionEfectiva?.id]);
-  const checklistItems: ChecklistItem[] = checklistBase.map(item => ({
-    ...item,
-    completado: item.completado || checklistManual[item.id] === true,
-    manual: !item.completado && checklistManual[item.id] === true,
-  }));
+  // Un documento vinculado desde Drive respalda el ítem igual que uno cargado al sistema.
+  const tiposEnDrive = new Set((proyectoMaestroEfectivo?.documentosDrive || []).map(d => d.tipo));
+  const respaldadoEnDrive: Record<string, boolean> = {
+    'ch-01': tiposEnDrive.has('Bases'),
+    'ch-02': tiposEnDrive.has('EETT'),
+    'ch-03': tiposEnDrive.has('Plano'),
+    'ch-04': tiposEnDrive.has('Presupuesto'),
+    'ch-05': tiposEnDrive.has('Carta Gantt'),
+  };
+  const checklistItems: ChecklistItem[] = checklistBase.map(item => {
+    const conDocumento = item.completado || respaldadoEnDrive[item.id] === true;
+    return {
+      ...item,
+      completado: conDocumento || checklistManual[item.id] === true,
+      manual: !conDocumento && checklistManual[item.id] === true,
+    };
+  });
 
   /**
    * Valida automáticamente el checklist basado en documentos cargados
@@ -371,8 +386,10 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
           nombre: d.nombre,
           tipo: normalizarTipoDocumento(d.tipo),
           archivoNombre: d.archivoNombre || `${d.nombre.replace(/\s+/g, '_')}.pdf`,
+          archivoURL: d.archivoURL,
           fechaCarga: d.fechaCarga || new Date().toLocaleDateString('es-CL'),
           cargadoPor: responsableNombre,
+          estado: d.archivoURL ? 'almacenado' : 'local',
         });
       });
     }
@@ -570,7 +587,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
     const base = checklistBase.find(i => i.id === idCheck);
     if (!base) return;
     // Si ya está verificado por un documento real, no se toca: la marca manual solo aplica sin respaldo.
-    if (base.completado) return;
+    if (base.completado || respaldadoEnDrive[idCheck]) return;
     const marcando = checklistManual[idCheck] !== true;
     if (marcando && !confirm(`¿Confirma marcar "${base.label.replace(/^\d+\.\s*/, '')}" como cumplido SIN documento adjunto (por ejemplo, porque este proyecto no cuenta con ello)? Quedará registrado como marcado manualmente.`)) return;
     const siguiente = { ...checklistManual, [idCheck]: marcando };
@@ -703,6 +720,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
           nombre: d.nombre,
           tipo: (d.tipo.includes('Plano') ? 'Plano' : 'Documento') as any,
           archivoNombre: d.archivoNombre,
+          archivoURL: d.archivoURL,
           fechaCarga: d.fechaCarga,
           driveFileId: d.driveFileId,
           driveLink: d.driveLink,
@@ -1538,6 +1556,8 @@ Para confirmar, escriba el código del proyecto: ${codigoConfirmacion}`
             </div>
           )}
 
+          {proyectoMaestroEfectivo && <DocumentosDrivePanel proyecto={proyectoMaestroEfectivo} />}
+
           {/* MÓDULO 2: INGRESO Y CARGA DE DOCUMENTOS NECESARIOS DEL PROYECTO */}
           <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-4">
             <div className="flex items-center justify-between border-b pb-3">
@@ -1559,7 +1579,7 @@ Para confirmar, escriba el código del proyecto: ${codigoConfirmacion}`
             <form onSubmit={handleAgregarDocumento} className="bg-sky-50/50 p-4 rounded-xl border border-sky-200 space-y-3">
               <span className="font-bold text-sky-950 text-xs block flex items-center gap-1.5">
                 <Cloud className="w-4 h-4 text-sky-600" />
-                <span>Ingresar Documento al Proyecto (Se almacenará en Google Drive)</span>
+                <span>Ingresar Documento al Proyecto (se guarda una copia en el sistema)</span>
               </span>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -1675,7 +1695,7 @@ Para confirmar, escriba el código del proyecto: ${codigoConfirmacion}`
                             {doc.estado === 'almacenado' && (
                               <span className="text-[10px] text-blue-700 bg-blue-50 px-2 py-1 rounded border border-blue-200 whitespace-nowrap font-bold flex items-center gap-1">
                                 <Cloud className="w-3 h-3" />
-                                Drive
+                                En el sistema
                               </span>
                             )}
                           </div>

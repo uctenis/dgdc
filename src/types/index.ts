@@ -309,6 +309,25 @@ export interface ProyectoMaestro {
     fechaCarga: string;
     subidoPor?: string;
   }[];
+
+  /** Carpeta del proyecto en Google Drive (dentro de la carpeta de su edificio). Los planos y documentos de
+   * trabajo viven ahí: el sistema guarda solo el enlace, sin copia. */
+  driveCarpetaUrl?: string;
+  /** Documentos del proyecto que están en Drive (solo el enlace). Son internos: los proveedores no entran al
+   * Drive de la UCT, así que lo que se les publica sigue subiéndose en los antecedentes de la licitación. */
+  documentosDrive?: DocumentoDrive[];
+}
+
+export const TIPOS_DOCUMENTO_DRIVE = ['Plano', 'EETT', 'Bases', 'Presupuesto', 'Carta Gantt', 'Otro'] as const;
+
+export interface DocumentoDrive {
+  id: string;
+  nombre: string;
+  tipo: typeof TIPOS_DOCUMENTO_DRIVE[number];
+  /** Enlace al archivo o carpeta en Google Drive. */
+  url: string;
+  fechaVinculo: string;
+  vinculadoPor?: string;
 }
 
 // ─── ITEM DE COTIZACIÓN ────────────────────────────────────────────────────

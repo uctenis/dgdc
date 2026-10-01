@@ -16,7 +16,8 @@ import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
 import { corregirOrtografiaEspanol, corregirTextoAvanzado, normalizarNombreProyecto, ATRIBUTOS_ORTOGRAFIA_ES } from '../utils/spellCorrector';
 import { mejorarDescripcionProyectoConIA, isAIConfigured, mensajeErrorIA } from '../services/aiService';
-import { getCampusList, obtenerEdificiosDeCampus, obtenerCampusPorSigla, etiquetaEdificio, descripcionEdificioParaIA } from '../data/campusData';
+import { getCampusList, obtenerEdificiosDeCampus, obtenerCampusPorSigla, obtenerInfoEdificio, etiquetaEdificio, descripcionEdificioParaIA } from '../data/campusData';
+import { esCarpetaDrive } from '../utils/driveLinks';
 import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
 import { getCentrosCostoList } from '../data/centrosCostoData';
 import { getRubrosList } from '../data/rubrosData';
@@ -56,6 +57,7 @@ const EMPTY_FORM = {
   fechaCreacion: new Date().toISOString(),
   campusSigla: '',
   edificioSigla: '',
+  driveCarpetaUrl: '',
   uso: '',
   tipoObra: '',
   rubro: '',
@@ -246,6 +248,10 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
       alert('Ingrese un Presupuesto Estimado mayor a cero.');
       return;
     }
+    if (form.driveCarpetaUrl.trim() && !esCarpetaDrive(form.driveCarpetaUrl)) {
+      alert('La Carpeta del Proyecto debe ser el enlace de una carpeta de Google Drive (https://drive.google.com/drive/folders/…).');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -263,6 +269,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           campusSigla: form.campusSigla,
           campusNombre: form.campusSigla ? obtenerCampusPorSigla(form.campusSigla)?.nombre : '',
           edificioSigla: form.edificioSigla,
+          driveCarpetaUrl: form.driveCarpetaUrl.trim(),
           uso: form.uso,
           tipoObra: form.tipoObra,
           rubro: form.rubro,
@@ -289,6 +296,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           campusSigla: form.campusSigla,
           campusNombre: campusNombreNuevo,
           edificioSigla: form.edificioSigla,
+          driveCarpetaUrl: form.driveCarpetaUrl.trim(),
           uso: form.uso,
           tipoObra: form.tipoObra,
           rubro: form.rubro,
@@ -1238,6 +1246,30 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                         )}
                       </select>
                     </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1 flex items-center gap-1">
+                      <FolderPlus className="w-3.5 h-3.5 text-indigo-600" />
+                      Carpeta del Proyecto en Google Drive
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="https://drive.google.com/drive/folders/… (opcional, se puede agregar después en la ficha)"
+                      value={form.driveCarpetaUrl}
+                      onChange={e => setForm(f => ({ ...f, driveCarpetaUrl: e.target.value }))}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Los planos se quedan en Drive: el sistema guarda solo el enlace. Cree la carpeta del proyecto dentro de la del edificio
+                      {(() => {
+                        const driveEdificio = obtenerInfoEdificio(form.edificioSigla)?.driveUrl;
+                        return driveEdificio
+                          ? <> (<a href={driveEdificio} target="_blank" rel="noreferrer" className="text-sky-700 underline">abrir carpeta de {form.edificioSigla}</a>)</>
+                          : null;
+                      })()}
+                      {' '}y pegue aquí su enlace.
+                    </p>
                   </div>
 
                   <div>
