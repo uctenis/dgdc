@@ -419,17 +419,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const handleImportarCarpetasDrive = async (file: File) => {
     try {
       const r = importarCarpetasDrive(campusList, JSON.parse(await file.text()) as CarpetasDriveArchivo);
-      if (r.campusEnlazados + r.edificiosEnlazados + r.edificiosAgregados.length === 0) {
-        alert('El archivo no trae carpetas nuevas: no se cambió nada.');
+      if (r.campusEnlazados + r.direccionesCompletadas + r.edificiosEnlazados + r.edificiosAgregados.length === 0) {
+        alert('El archivo no trae datos nuevos: no se cambió nada.');
         return;
       }
       const resumen = [
         `Campus enlazados: ${r.campusEnlazados}`,
+        `Direcciones de campus completadas: ${r.direccionesCompletadas}`,
         `Edificios enlazados: ${r.edificiosEnlazados}`,
         `Edificios nuevos que se agregan: ${r.edificiosAgregados.length ? r.edificiosAgregados.join(', ') : 'ninguno'}`,
         ...(r.campusDesconocidos.length ? [`Campus del archivo que no existen en el catálogo (se omiten): ${r.campusDesconocidos.join(', ')}`] : []),
       ].join('\n');
-      if (!confirm(`${resumen}\n\nNo se modifica ningún enlace ni nombre ya escrito. ¿Guardar?`)) return;
+      if (!confirm(`${resumen}\n\nNo se modifica ningún enlace, nombre ni dirección ya escritos. ¿Guardar?`)) return;
       setCampusList(r.lista);
       saveCampusList(r.lista);
       setHasChanges(true);

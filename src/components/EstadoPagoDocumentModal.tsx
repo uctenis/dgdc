@@ -1,6 +1,7 @@
 import { ImagenArchivo } from './ImagenArchivo';
 import { FileSignature, Printer, X, Receipt } from 'lucide-react';
 import type { Cotizacion, EstadoPago, LicitacionProyecto } from '../types';
+import { ubicacionProyecto } from '../data/campusData';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 
 interface Props {
@@ -88,7 +89,7 @@ export function EstadoPagoDocumentModal({ licitacion, oferta, estadoPago, estado
               <div className="bg-slate-900 p-3 text-white"><p className="text-[8px] font-bold uppercase text-slate-300">Orden de compra principal</p><p className="mt-1 break-all font-mono text-xs font-black text-amber-300">{licitacion.ordenCompraNumero || 'NO INFORMADA'}</p><p className="mt-2 text-[8px] text-slate-300">Corte: {fechaCL(estadoPago.fecha)}</p></div>
             </div>
             <div className="p-4">
-              <div className="flex items-start justify-between gap-4"><div><p className="text-[8px] font-bold uppercase text-slate-500">Proyecto / obra</p><h2 className="mt-1 text-sm font-black uppercase">{licitacion.nombreProyecto.toLocaleUpperCase('es-CL')}</h2><p className="mt-1 text-[9px] text-slate-500">Código de proyecto: <strong>{licitacion.codigoProyecto}</strong> · Campus {licitacion.campusSigla || 'No informado'} {licitacion.edificioSigla ? `· ${licitacion.edificioSigla}` : ''}</p></div><span className={`shrink-0 rounded-full border px-3 py-1 text-[9px] font-black ${colorEstado}`}>{estadoPrograma}</span></div>
+              <div className="flex items-start justify-between gap-4"><div><p className="text-[8px] font-bold uppercase text-slate-500">Proyecto / obra</p><h2 className="mt-1 text-sm font-black uppercase">{licitacion.nombreProyecto.toLocaleUpperCase('es-CL')}</h2><p className="mt-1 text-[9px] text-slate-500">Código de proyecto: <strong>{licitacion.codigoProyecto}</strong> · {ubicacionProyecto(licitacion) || 'Campus no informado'}</p></div><span className={`shrink-0 rounded-full border px-3 py-1 text-[9px] font-black ${colorEstado}`}>{estadoPrograma}</span></div>
               <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <DatoContrato principal label="Orden de compra" value={licitacion.ordenCompraNumero || 'No informada'} />
                 <DatoContrato label="Orden de pedido (OP)" value={licitacion.codigoOP || licitacion.ordenPedidoNumero || 'No informada'} />

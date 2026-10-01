@@ -17,7 +17,7 @@ import {
   type ModalidadContrato,
 } from '../data/basesTemplateData';
 import { obtenerClausulaNormativaPorRubro } from '../data/normativaPorRubro';
-import { obtenerCampusPorSigla } from '../data/campusData';
+import { obtenerCampusPorSigla, obtenerInfoEdificio } from '../data/campusData';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { PARAMETROS_CONTRATO } from '../data/contratoTemplateData';
 
@@ -44,7 +44,11 @@ export function construirDatosMergeBases(proyecto: ProyectoMaestro): Record<stri
   return {
     nombreProyecto: proyecto.nombre || '',
     campus: proyecto.campusNombre || proyecto.campusSigla || '—',
-    edificio: proyecto.edificioSigla ? ` · Edificio ${proyecto.edificioSigla}` : '',
+    edificio: (() => {
+      if (!proyecto.edificioSigla) return '';
+      const nombre = obtenerInfoEdificio(proyecto.edificioSigla)?.nombre;
+      return ` · Edificio ${proyecto.edificioSigla}${nombre ? ` (${nombre})` : ''}`;
+    })(),
     direccionCampus: (() => {
       const dir = obtenerCampusPorSigla(proyecto.campusSigla || '')?.direccion;
       return dir ? `, ${dir}` : '';

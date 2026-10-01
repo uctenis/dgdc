@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { X, Printer, FileSignature, ShieldCheck, Download, Loader2, AlertCircle, RefreshCw, LockKeyhole } from 'lucide-react';
 import type { LicitacionProyecto, ConfiguracionFirmas } from '../types';
+import { ubicacionProyecto } from '../data/campusData';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { updateLicitacion } from '../services/firestoreService';
 import { generarPdfDesdeElemento } from '../services/pdfGenerator';
@@ -184,7 +185,7 @@ export function ActaRecepcionModal({ licitacion, configFirmas, onClose }: ActaRe
                 <tr><td className="py-1 font-bold w-56">Código de Proyecto:</td><td>{licitacion.codigoProyecto}</td></tr>
                 <tr><td className="py-1 font-bold">Centro de Costo (CP):</td><td>{licitacion.codigoCP}</td></tr>
                 <tr><td className="py-1 font-bold">Nombre del proyecto:</td><td>{licitacion.nombreProyecto}</td></tr>
-                <tr><td className="py-1 font-bold">Ubicación:</td><td>{licitacion.campusNombre || licitacion.campusSigla || '—'} {licitacion.edificioSigla ? `· Edificio ${licitacion.edificioSigla}` : ''}</td></tr>
+                <tr><td className="py-1 font-bold">Ubicación:</td><td>{ubicacionProyecto(licitacion) || '—'}</td></tr>
                 <tr><td className="py-1 font-bold">Proveedor adjudicado:</td><td>{licitacion.proveedorAdjudicadoNombre || '—'} (RUT {licitacion.proveedorAdjudicadoRut || '—'})</td></tr>
                 <tr><td className="py-1 font-bold">Monto adjudicado:</td><td>{formatoMonedaCLP(licitacion.montoAdjudicadoTotal || 0)} IVA incluido</td></tr>
                 <tr><td className="py-1 font-bold">Plazo ofertado:</td><td>{plazoOfertado}</td></tr>

@@ -3,6 +3,7 @@ import {
   FileCheck2, Trophy, X, Edit3, Save, Printer, ShieldCheck, AlertTriangle
 } from 'lucide-react';
 import type { LicitacionProyecto, Cotizacion, Proveedor, ConfiguracionFirmas, EvaluacionResultado } from '../types';
+import { ubicacionProyecto } from '../data/campusData';
 import { formatoMonedaCLP, evaluarCotizaciones } from '../services/evaluationEngine';
 import { updateLicitacion } from '../services/firestoreService';
 import confetti from 'canvas-confetti';
@@ -395,7 +396,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
                 <div className="space-y-1 text-slate-800 text-[11px]">
                   <div>• <strong>Detalle:</strong> {licitacion.descripcion}</div>
                   <div>• <strong>Proveedor Adjudicado:</strong> <strong className="text-slate-900">{proveedorganador.razonSocial}</strong> (RUT: {proveedorganador.rut})</div>
-                  <div>• <strong>Ubicación Específica:</strong> {licitacion.campusSigla || 'Campus San Juan Pablo II'} {licitacion.edificioSigla ? `• ${licitacion.edificioSigla}` : ''}</div>
+                  <div>• <strong>Ubicación Específica:</strong> {ubicacionProyecto(licitacion) || 'No informada'}</div>
                   <div>• <strong>Responsable del Proyecto:</strong> {licitacion.responsableNombre || 'David Silva Roco'}</div>
                   <div>• <strong>Motivo de Compra:</strong> {licitacion.descripcion || 'Necesidad de infraestructura institucional'}</div>
                   <div>• <strong>Usuario Solicitante:</strong> {licitacion.uso || 'Facultad de Ingeniería / Dirección de Campos'}</div>

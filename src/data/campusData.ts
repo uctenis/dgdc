@@ -346,7 +346,7 @@ export function saveCampusList(list: CampusInfo[]): void {
 
 /** Archivo de carpetas de Drive que se importa en Configuración → Sedes & Campus (ver importarCarpetasDrive). */
 export interface CarpetasDriveArchivo {
-  campus: Record<string, { driveUrl?: string; edificios?: Record<string, { driveUrl?: string; nombre?: string }> }>;
+  campus: Record<string, { driveUrl?: string; direccion?: string; edificios?: Record<string, { driveUrl?: string; nombre?: string }> }>;
 }
 
 const esCarpetaDeDrive = (url: unknown): url is string =>
@@ -360,11 +360,12 @@ const esCarpetaDeDrive = (url: unknown): url is string =>
 export function importarCarpetasDrive(lista: CampusInfo[], archivo: CarpetasDriveArchivo): {
   lista: CampusInfo[];
   campusEnlazados: number;
+  direccionesCompletadas: number;
   edificiosEnlazados: number;
   edificiosAgregados: string[];
   campusDesconocidos: string[];
 } {
-  const resumen = { campusEnlazados: 0, edificiosEnlazados: 0, edificiosAgregados: [] as string[], campusDesconocidos: [] as string[] };
+  const resumen = { campusEnlazados: 0, direccionesCompletadas: 0, edificiosEnlazados: 0, edificiosAgregados: [] as string[], campusDesconocidos: [] as string[] };
   const datos = archivo?.campus && typeof archivo.campus === 'object' ? archivo.campus : {};
   resumen.campusDesconocidos = Object.keys(datos).filter(s => !lista.some(c => c.sigla === s.toUpperCase()));
   const nueva = lista.map(campus => {
@@ -376,6 +377,11 @@ export function importarCarpetasDrive(lista: CampusInfo[], archivo: CarpetasDriv
     if (!driveUrl && esCarpetaDeDrive(dato.driveUrl)) {
       driveUrl = dato.driveUrl;
       resumen.campusEnlazados++;
+    }
+    let direccion = campus.direccion;
+    if (!direccion?.trim() && typeof dato.direccion === 'string' && dato.direccion.trim()) {
+      direccion = dato.direccion.trim();
+      resumen.direccionesCompletadas++;
     }
     for (const [siglaRaw, ed] of Object.entries(dato.edificios || {})) {
       const sigla = siglaRaw.trim().toUpperCase();
@@ -393,7 +399,7 @@ export function importarCarpetasDrive(lista: CampusInfo[], archivo: CarpetasDriv
         ...(!actual.nombre && typeof ed?.nombre === 'string' && ed.nombre.trim() ? { nombre: ed.nombre.trim() } : {}),
       };
     }
-    return { ...campus, ...(driveUrl ? { driveUrl } : {}), edificios, edificiosInfo: info };
+    return { ...campus, ...(driveUrl ? { driveUrl } : {}), ...(direccion ? { direccion } : {}), edificios, edificiosInfo: info };
   });
   return { lista: nueva, ...resumen };
 }
@@ -450,6 +456,12 @@ export function obtenerInfoEdificio(siglaEdificio?: string): (EdificioInfo & { s
 export function etiquetaEdificio(siglaEdificio: string): string {
   const nombre = obtenerInfoEdificio(siglaEdificio)?.nombre;
   return nombre ? `${siglaEdificio} · ${nombre}` : siglaEdificio;
+}
+
+/** Ubicación legible de un proyecto: "Campus San Francisco · CSF12 · Edificio Teresa Durán (C)". */
+export function ubicacionProyecto(p: { campusSigla?: string; campusNombre?: string; edificioSigla?: string }): string {
+  const campus = (p.campusSigla && obtenerCampusPorSigla(p.campusSigla)?.nombre) || p.campusNombre || p.campusSigla || '';
+  return [campus, p.edificioSigla ? etiquetaEdificio(p.edificioSigla) : ''].filter(Boolean).join(' · ');
 }
 
 /** Texto del edificio para dar contexto a la IA: "edificio CML01 (Biblioteca, Fac. de Educación, 2.450 m², uso docencia)". */

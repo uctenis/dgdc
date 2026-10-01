@@ -1,6 +1,7 @@
 import { motivoNoHabil, proponerCalendario, PLAZOS_CALENDARIO } from '../utils/diasHabiles';
 import React, { useState, useMemo } from 'react';
 import type { LicitacionProyecto, Proveedor, ProyectoMaestro, Cotizacion, ConfiguracionFirmas } from '../types';
+import { etiquetaEdificio } from '../data/campusData';
 import type { TabId as LicitacionTabId } from './LicitacionWorkspacePage';
 import {
   FolderKanban, Plus, Calendar, ArrowRight, ArrowLeft, Edit3, Trash2,
@@ -500,7 +501,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                     {lic.campusSigla && (
                       <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded flex items-center gap-1 border border-slate-200">
                         <MapPin className="w-3 h-3 text-slate-500" />
-                        {lic.campusSigla} {lic.edificioSigla ? `• ${lic.edificioSigla}` : ''}
+                        {lic.campusSigla} {lic.edificioSigla ? `• ${etiquetaEdificio(lic.edificioSigla)}` : ''}
                       </span>
                     )}
                     {lic.estadoLifecycle && (
