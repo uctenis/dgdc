@@ -28,7 +28,8 @@ import {
   type RubroProveedor,
 } from '../data/rubrosData';
 import { obtenerEstadoConfigCompartida } from '../services/configCompartida';
-import { getCampusList, saveCampusList, ordenarSiglasEdificio, importarCarpetasDrive, renombrarSiglaCampus, type CampusInfo, type EdificioInfo, type CarpetasDriveArchivo } from '../data/campusData';
+import { getCampusList, saveCampusList, ordenarSiglasEdificio, importarCarpetasDrive, renombrarSiglaCampus, zonasExterioresDeCampus, zonaExteriorDeCodigo, urlGoogleMaps, type CampusInfo, type EdificioInfo, type CarpetasDriveArchivo } from '../data/campusData';
+import { UbicacionEdificioInput } from './UbicacionEdificioInput';
 import {
   Settings,
   Save,
@@ -216,6 +217,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [campusList, setCampusList] = useState<CampusInfo[]>([]);
   const [busquedaCampus, setBusquedaCampus] = useState('');
   const [isEditingCampus, setIsEditingCampus] = useState(false);
+  // El formulario de campus nuevo parte cerrado: solo se abre con el botón "Añadir Nuevo Campus" (administrador).
+  const [creandoCampus, setCreandoCampus] = useState(false);
   const [campusEditando, setCampusEditando] = useState<CampusInfo>(CAMPUS_VACIO);
   /** Campus desplegado para ver sus edificios (sin entrar a editar). */
   const [campusAbierto, setCampusAbierto] = useState<string | null>(null);
@@ -269,7 +272,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     saveTiposObraList(tiposObra);
     saveEstadosProyectoList(estadosProyecto);
     saveRubrosList(rubros);
-    saveCampusList(campusList);
+    if (campusSinGuardar) {
+      // handleGuardarCampus ya guarda la lista con el campus del formulario incluido.
+      if (!handleGuardarCampus()) return;
+    } else {
+      saveCampusList(campusList);
+    }
     onSaveConfig(formData);
     setHasChanges(false);
     alert('¡Configuración del Sistema guardada exitosamente!');
@@ -306,7 +314,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     saveRubrosList(actualizada);
     setRubroEditando({ id: '', nombre: '', estado: 'Activo', descripcion: '' });
     setIsEditingRubro(false);
-    setHasChanges(true);
   };
 
   const handleEliminarRubro = (id: string) => {
@@ -314,7 +321,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       const filtrada = rubros.filter(r => r.id !== id);
       setRubros(filtrada);
       saveRubrosList(filtrada);
-      setHasChanges(true);
     }
   };
 
@@ -327,15 +333,29 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     });
     setRubros(actualizada);
     saveRubrosList(actualizada);
-    setHasChanges(true);
   };
 
   // CRUD Campus y Edificios
-  const handleGuardarCampus = () => {
+  // Aviso breve tras guardar un campus (se guarda en el momento, sin pasar por el botón general).
+  const [avisoCampus, setAvisoCampus] = useState('');
+  const avisarCampus = (texto: string) => {
+    setAvisoCampus(texto);
+    setTimeout(() => setAvisoCampus(actual => (actual === texto ? '' : actual)), 6000);
+  };
+
+  // El campus abierto en el formulario tiene cambios que aún no se guardan.
+  const campusSinGuardar = (() => {
+    if (!isEditingCampus || !campusEditando.sigla) return false;
+    const guardado = campusList.find(c => c.sigla === campusEditando.sigla);
+    return Boolean(guardado) && JSON.stringify(guardado) !== JSON.stringify(campusEditando);
+  })();
+
+  /** Guarda el campus del formulario. Devuelve la lista resultante, o null si no se guardó. */
+  const handleGuardarCampus = (): CampusInfo[] | null => {
     const sigla = campusEditando.sigla.trim().toUpperCase();
     if (!sigla || !campusEditando.nombre.trim()) {
       alert('Ingrese al menos la sigla y el nombre del Campus.');
-      return;
+      return null;
     }
 
     const index = campusList.findIndex(c => c.sigla === sigla);
@@ -344,10 +364,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       actualizada = [...campusList];
       actualizada[index] = { ...campusEditando, sigla };
     } else {
+      // Un campus nuevo aparece en todos los selectores y sus códigos pasan a proyectos y licitaciones:
+      // se crea solo a propósito (administrador, datos completos y confirmación).
+      if (!isAdmin || !creandoCampus) return null;
       if (campusList.some(c => c.sigla === sigla)) {
         alert('Ya existe un Campus registrado con esa sigla.');
-        return;
+        return null;
       }
+      if (!/^[A-Z]{3}$/.test(sigla)) {
+        alert('La sigla de un campus son 3 letras, como CSF o CJP.');
+        return null;
+      }
+      if (!campusEditando.ciudad.trim()) {
+        alert('Ingrese la ciudad del Campus.');
+        return null;
+      }
+      if (!confirm(`Va a crear un campus NUEVO:\n\n${sigla} — ${campusEditando.nombre.trim()} (${campusEditando.ciudad.trim()})\n\nQuedará disponible para todo el equipo al crear proyectos. Si lo que quería era modificar un campus existente, cancele y use el lápiz de ese campus.\n\n¿Crear el campus ${sigla}?`)) return null;
       actualizada = [...campusList, { ...campusEditando, sigla }];
     }
 
@@ -356,15 +388,28 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setCampusEditando(CAMPUS_VACIO);
     setNuevoEdificioInput('');
     setIsEditingCampus(false);
-    setHasChanges(true);
+    setCreandoCampus(false);
+    avisarCampus(`Campus ${sigla} guardado${obtenerEstadoConfigCompartida().sincronizado ? ': ya lo ve todo el equipo' : ' en este navegador'}.`);
+    return actualizada;
   };
 
+  // Borrar un campus se lleva sus edificios, superficies, carpetas de Drive y puntos del mapa: pide dos
+  // confirmaciones (la segunda, escribiendo la sigla) y solo lo hace el administrador.
   const handleEliminarCampus = (sigla: string) => {
-    if (confirm(`¿Confirma eliminar el Campus "${sigla}" y su lista de edificios? Los proyectos ya asociados a esta sigla conservarán el valor guardado.`)) {
+    if (!isAdmin) return;
+    const campus = campusList.find(c => c.sigla === sigla);
+    const nEdificios = campus?.edificios.length || 0;
+    if (!confirm(`Va a ELIMINAR el campus ${sigla} — ${campus?.nombre || ''}.\n\nSe borrará del catálogo junto con sus ${nEdificios} edificio(s) y sus fichas (nombres, superficies, carpetas de Drive y ubicaciones en el mapa). Los proyectos ya asociados a esta sigla conservarán el valor guardado, pero el campus dejará de aparecer en los selectores.\n\n¿Continuar?`)) return;
+    const escrito = (prompt(`Segunda confirmación: para eliminar el campus, escriba su sigla (${sigla}).`) || '').trim().toUpperCase();
+    if (escrito !== sigla) {
+      if (escrito) alert('La sigla no coincide. No se eliminó nada.');
+      return;
+    }
+    {
       const filtrada = campusList.filter(c => c.sigla !== sigla);
       setCampusList(filtrada);
       saveCampusList(filtrada);
-      setHasChanges(true);
+      avisarCampus(`Campus ${sigla} eliminado.`);
     }
   };
 
@@ -414,7 +459,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       saveCampusList(actualizada);
       setCampusEditando(CAMPUS_VACIO);
       setIsEditingCampus(false);
-      setHasChanges(true);
       alert(`Listo: ${nueva} · ${nombre}. Se actualizaron ${r.proyectos} proyecto(s) y ${r.licitaciones} licitación(es).`);
     } catch (err) {
       console.error('Error cambiando la sigla del campus:', err);
@@ -440,7 +484,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       if (!confirm(`${resumen}\n\nNo se modifica ningún enlace, nombre ni dirección ya escritos. ¿Guardar?`)) return;
       setCampusList(r.lista);
       saveCampusList(r.lista);
-      setHasChanges(true);
       if (!isAdmin) alert('Guardado solo en este navegador: para que llegue a todo el equipo debe importarlo el administrador del sistema.');
     } catch (err) {
       console.error('Error importando carpetas de Drive:', err);
@@ -473,7 +516,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
     setCampusEditando({ ...campusEditando, edificios, edificiosInfo: info });
     setTextoPegarEdificios('');
-    alert(`${n} edificio(s) cargados. Revise la tabla y presione "Actualizar Campus" para guardar.`);
+    alert(`${n} edificio(s) cargados. Revise la tabla y presione "Guardar campus" para guardar.`);
   };
 
   const handleQuitarEdificio = (edificio: string) => {
@@ -802,13 +845,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           type="button"
           onClick={() => handleGuardarCambios()}
           className={`px-5 py-2.5 font-extrabold rounded-xl shadow-md transition text-xs flex items-center gap-2 shrink-0 ${
-            hasChanges
+            hasChanges || campusSinGuardar
               ? 'bg-gradient-to-r from-emerald-600 via-sky-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white ring-2 ring-emerald-400 shadow-emerald-500/30 animate-pulse'
               : 'bg-sky-600 hover:bg-sky-700 text-white'
           }`}
         >
           <Save className="w-4 h-4" />
-          <span>{hasChanges ? '★ Guardar Cambios Pendientes' : 'Guardar Configuración General'}</span>
+          <span>{hasChanges || campusSinGuardar ? '★ Guardar Cambios Pendientes' : 'Guardar Configuración General'}</span>
         </button>
       </div>
 
@@ -2375,18 +2418,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         }}
                       />
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCampusEditando(CAMPUS_VACIO);
-                        setNuevoEdificioInput('');
-                        setIsEditingCampus(false);
-                      }}
-                      className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-xl shadow-sm transition flex items-center gap-1.5"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>Añadir Nuevo Campus</span>
-                    </button>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCampusEditando(CAMPUS_VACIO);
+                          setNuevoEdificioInput('');
+                          setIsEditingCampus(false);
+                          setCreandoCampus(true);
+                        }}
+                        className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 font-bold rounded-xl border border-slate-300 shadow-sm transition flex items-center gap-1.5"
+                        title="Crear un campus que aún no existe en el catálogo (solo administrador)"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Añadir Nuevo Campus</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -2402,12 +2449,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 {/* Formulario Inline Campus */}
-                {(campusEditando.sigla !== '' || !isEditingCampus) && (
+                {(isEditingCampus ? campusEditando.sigla !== '' : creandoCampus) && (
                   <div className="bg-sky-50/60 p-4 rounded-2xl border border-sky-200 space-y-3">
                     <h5 className="font-bold text-sky-950 text-xs flex items-center gap-2">
                       {isEditingCampus ? <Edit2 className="w-4 h-4 text-sky-600" /> : <Plus className="w-4 h-4 text-sky-600" />}
                       <span>{isEditingCampus ? `Editar Campus: ${campusEditando.sigla}` : 'Formulario Nuevo Campus'}</span>
                     </h5>
+                    {!isEditingCampus && (
+                      <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                        Está creando un campus que no existe en el catálogo. Para cambiar datos o edificios de un campus ya registrado, cierre este formulario y use el lápiz de ese campus.
+                      </p>
+                    )}
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
@@ -2491,11 +2543,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           <span>Agregar</span>
                         </button>
                       </div>
-                      {campusEditando.edificios.length === 0 ? (
+                      {campusEditando.edificios.length === 0 && (
                         <p className="text-[11px] text-slate-400 italic mt-2">Sin edificios agregados aún.</p>
-                      ) : (
+                      )}
+                      {campusEditando.sigla.trim() && (
+                        <p className="text-[10px] text-slate-500 mt-2">
+                          Las <strong>zonas exteriores</strong> ({zonasExterioresDeCampus(campusEditando.sigla).join(', ')}) existen en todos los campus, para los proyectos que no ocurren dentro de un edificio: pavimentos, accesos, jardines, cierros.
+                          Para <strong>marcar la ubicación</strong> de un edificio, presione «Marcar en el mapa» en su fila y haga clic sobre él en la imagen satelital.
+                        </p>
+                      )}
+                      {(campusEditando.edificios.length > 0 || campusEditando.sigla.trim()) && (
                         <div className="mt-2 border border-slate-200 rounded-xl overflow-x-auto bg-white">
-                          <table className="w-full text-left text-[11px] min-w-[760px]">
+                          <table className="w-full text-left text-[11px] min-w-[920px]">
                             <thead className="bg-slate-100 text-slate-600">
                               <tr>
                                 <th className="p-2">Sigla</th>
@@ -2504,23 +2563,43 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                 <th className="p-2 w-24">Superficie m²</th>
                                 <th className="p-2">Uso principal</th>
                                 <th className="p-2">Carpeta Drive</th>
+                                <th className="p-2 w-44">Ubicación en el mapa</th>
                                 <th className="p-2 w-8"></th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                              {ordenarSiglasEdificio(campusEditando.edificios).map(ed => {
+                              {[
+                                ...ordenarSiglasEdificio(campusEditando.edificios.filter(e => !zonasExterioresDeCampus(campusEditando.sigla).includes(e))),
+                                ...zonasExterioresDeCampus(campusEditando.sigla),
+                              ].map(ed => {
                                 const info = campusEditando.edificiosInfo?.[ed] || {};
+                                const zona = zonasExterioresDeCampus(campusEditando.sigla).includes(ed) ? zonaExteriorDeCodigo(ed) : undefined;
                                 const celda = 'w-full px-2 py-1 border border-slate-200 rounded-md outline-none focus:ring-1 focus:ring-sky-500';
                                 return (
-                                  <tr key={ed}>
-                                    <td className="p-1.5 font-mono font-bold text-slate-700">{ed}</td>
-                                    <td className="p-1.5"><input value={info.nombre || ''} onChange={e => actualizarInfoEdificio(ed, { nombre: e.target.value })} placeholder="Ej: Edificio Central" className={celda} /></td>
+                                  <tr key={ed} className={zona ? 'bg-emerald-50/40' : ''}>
+                                    <td className="p-1.5 font-mono font-bold text-slate-700 whitespace-nowrap">
+                                      {ed}
+                                      {zona && <span className="block font-sans font-bold text-[9px] text-emerald-700">Zona exterior</span>}
+                                    </td>
+                                    <td className="p-1.5"><input value={info.nombre || ''} onChange={e => actualizarInfoEdificio(ed, { nombre: e.target.value })} placeholder={zona ? zona.nombre : 'Ej: Edificio Central'} className={celda} /></td>
                                     <td className="p-1.5"><input value={info.facultad || ''} onChange={e => actualizarInfoEdificio(ed, { facultad: e.target.value })} placeholder="Ej: Fac. de Ingeniería" className={celda} /></td>
                                     <td className="p-1.5"><input value={info.superficieM2 ? String(info.superficieM2) : ''} onChange={e => { const n = Number(e.target.value.replace(/[^0-9.,]/g, '').replace(',', '.')); actualizarInfoEdificio(ed, { superficieM2: n > 0 ? n : undefined }); }} inputMode="decimal" placeholder="0" className={`${celda} text-right`} /></td>
-                                    <td className="p-1.5"><input value={info.uso || ''} onChange={e => actualizarInfoEdificio(ed, { uso: e.target.value })} placeholder="Docencia, laboratorios…" className={celda} /></td>
+                                    <td className="p-1.5"><input value={info.uso || ''} onChange={e => actualizarInfoEdificio(ed, { uso: e.target.value })} placeholder={zona ? zona.uso : 'Docencia, laboratorios…'} className={celda} /></td>
                                     <td className="p-1.5"><input value={info.driveUrl || ''} onChange={e => actualizarInfoEdificio(ed, { driveUrl: e.target.value.trim() })} placeholder="https://drive.google.com/…" className={celda} /></td>
+                                    <td className="p-1.5">
+                                      <UbicacionEdificioInput
+                                        titulo={[ed, info.nombre || zona?.nombre, campusEditando.nombre].filter(Boolean).join(' · ')}
+                                        lat={info.lat}
+                                        lng={info.lng}
+                                        direccion={[campusEditando.direccion, campusEditando.ciudad].filter(Boolean).join(', ')}
+                                        otros={Object.entries(campusEditando.edificiosInfo || {})
+                                          .filter(([sigla, i]) => sigla !== ed && i.lat != null && i.lng != null)
+                                          .map(([sigla, i]) => ({ etiqueta: sigla, lat: i.lat as number, lng: i.lng as number }))}
+                                        onCambio={punto => actualizarInfoEdificio(ed, punto)}
+                                      />
+                                    </td>
                                     <td className="p-1.5 text-center">
-                                      <button type="button" title="Quitar edificio" onClick={() => handleQuitarEdificio(ed)} className="text-slate-400 hover:text-rose-600"><X className="w-3.5 h-3.5" /></button>
+                                      {!zona && <button type="button" title="Quitar edificio" onClick={() => handleQuitarEdificio(ed)} className="text-slate-400 hover:text-rose-600"><X className="w-3.5 h-3.5" /></button>}
                                     </td>
                                   </tr>
                                 );
@@ -2544,23 +2623,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
 
                     <div className="flex items-center justify-end gap-2 pt-2">
+                      {isEditingCampus && (
+                        <span className={`mr-auto text-[11px] font-bold ${campusSinGuardar ? 'text-amber-700' : 'text-emerald-700'}`}>
+                          {campusSinGuardar ? '● Hay cambios sin guardar en este campus' : '✓ Sin cambios pendientes'}
+                        </span>
+                      )}
                       <button
                         type="button"
-                        onClick={() => { setCampusEditando(CAMPUS_VACIO); setNuevoEdificioInput(''); setIsEditingCampus(false); }}
+                        onClick={() => {
+                          if (campusSinGuardar && !confirm('Hay cambios sin guardar en este campus. ¿Descartarlos?')) return;
+                          setCampusEditando(CAMPUS_VACIO); setNuevoEdificioInput(''); setIsEditingCampus(false); setCreandoCampus(false);
+                        }}
                         className="px-3 py-1.5 text-slate-600 hover:bg-slate-200 rounded-lg font-medium"
                       >
-                        Limpiar Formulario
+                        Cancelar
                       </button>
                       <button
                         type="button"
-                        onClick={handleGuardarCampus}
-                        className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-sm flex items-center gap-1"
+                        onClick={() => { handleGuardarCampus(); }}
+                        disabled={isEditingCampus && !campusSinGuardar}
+                        title={isEditingCampus && !campusSinGuardar ? 'No hay cambios que guardar en este campus' : 'Se guarda de inmediato; no hace falta el botón de arriba'}
+                        className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold rounded-lg shadow-sm flex items-center gap-1"
                       >
                         <Check className="w-4 h-4" />
-                        <span>{isEditingCampus ? 'Actualizar Campus' : 'Guardar Campus'}</span>
+                        <span>{isEditingCampus ? `Guardar campus ${campusEditando.sigla}` : 'Crear Campus Nuevo'}</span>
                       </button>
                     </div>
                   </div>
+                )}
+
+                {avisoCampus && (
+                  <p className="bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold rounded-xl px-4 py-2">✓ {avisoCampus}</p>
                 )}
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2582,12 +2675,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           </span>
                           <div className="flex items-center gap-1">
                             <span className="text-[10px] text-slate-500 font-medium">{c.ciudad}</span>
-                            <button type="button" title="Editar" onClick={e => { e.stopPropagation(); setCampusEditando(c); setIsEditingCampus(true); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="p-1 text-sky-700 hover:bg-sky-100 rounded-lg transition">
+                            <button type="button" title="Editar" onClick={e => { e.stopPropagation(); setCampusEditando(c); setIsEditingCampus(true); setCreandoCampus(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="p-1 text-sky-700 hover:bg-sky-100 rounded-lg transition">
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
-                            <button type="button" title="Eliminar" onClick={e => { e.stopPropagation(); handleEliminarCampus(c.sigla); }} className="p-1 text-rose-600 hover:bg-rose-100 rounded-lg transition">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {isAdmin && (
+                              <button type="button" title="Eliminar campus (pide doble confirmación)" onClick={e => { e.stopPropagation(); handleEliminarCampus(c.sigla); }} className="p-1 text-rose-600 hover:bg-rose-100 rounded-lg transition">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </div>
                         <h5 className="font-bold text-slate-900 text-xs leading-snug">{c.nombre}</h5>
@@ -2616,10 +2711,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                       <th className="p-2 text-right">Superficie</th>
                                       <th className="p-2">Uso</th>
                                       <th className="p-2">Drive</th>
+                                      <th className="p-2">Mapa</th>
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-slate-100">
-                                    {ordenarSiglasEdificio(c.edificios).map(ed => {
+                                    {[
+                                      ...ordenarSiglasEdificio(c.edificios),
+                                      ...zonasExterioresDeCampus(c.sigla).filter(z => !c.edificios.includes(z) && c.edificiosInfo?.[z]),
+                                    ].map(ed => {
                                       const info = c.edificiosInfo?.[ed] || {};
                                       return (
                                         <tr key={ed} className="hover:bg-slate-50">
@@ -2629,6 +2728,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                           <td className="p-2 text-right text-slate-600">{info.superficieM2 ? `${info.superficieM2.toLocaleString('es-CL')} m²` : <span className="text-slate-300">—</span>}</td>
                                           <td className="p-2 text-slate-600">{info.uso || <span className="text-slate-300">—</span>}</td>
                                           <td className="p-2">{info.driveUrl ? <a href={info.driveUrl} target="_blank" rel="noreferrer" className="text-sky-700 underline">📁 Abrir</a> : <span className="text-slate-300">—</span>}</td>
+                                          <td className="p-2">{info.lat != null && info.lng != null ? <a href={urlGoogleMaps(info.lat, info.lng)} target="_blank" rel="noreferrer" className="text-sky-700 underline">📍 Ver</a> : <span className="text-slate-300">—</span>}</td>
                                         </tr>
                                       );
                                     })}
@@ -2638,13 +2738,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                       <tr>
                                         <td className="p-2" colSpan={3}>Total superficie registrada</td>
                                         <td className="p-2 text-right">{c.edificios.reduce((t, ed) => t + (c.edificiosInfo?.[ed]?.superficieM2 || 0), 0).toLocaleString('es-CL')} m²</td>
-                                        <td colSpan={2}></td>
+                                        <td colSpan={3}></td>
                                       </tr>
                                     </tfoot>
                                   )}
                                 </table>
                               </div>
                             )}
+                            <p className="text-[10px] text-slate-500 mt-1.5">
+                              Zonas exteriores disponibles para proyectos fuera de los edificios: <span className="font-mono">{zonasExterioresDeCampus(c.sigla).join(' · ')}</span>
+                            </p>
                           </div>
                         )}
                       </div>

@@ -16,7 +16,7 @@ import { normalizarNombreProyecto, corregirOrtografiaEspanol, corregirTextoAvanz
 import { rewriteTextWithAI, isAIConfigured } from '../services/aiService';
 import { updateLicitacion, updateProyectoMaestro, deleteLicitacion, deleteProyectoMaestro, syncOCToProyectoMaestro, subscribeToEstadosPago } from '../services/firestoreService';
 import { uploadProyectoDocumento } from '../services/storageService';
-import { getCampusList, obtenerEdificiosDeCampus, etiquetaEdificio, obtenerInfoEdificio, obtenerCampusPorSigla } from '../data/campusData';
+import { getCampusList, obtenerEdificiosDeCampus, etiquetaEdificio, obtenerInfoEdificio, obtenerCampusPorSigla, urlGoogleMaps } from '../data/campusData';
 import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
 import { agruparPorFase } from '../utils/itemizadoOrganizer';
@@ -1045,20 +1045,21 @@ Para confirmar, escriba el código del proyecto: ${codigoConfirmacion}`
                 disabled={!mainData.campusSigla}
                 className="w-full bg-slate-800 text-slate-300 text-[11px] border border-slate-600 rounded p-1 outline-none focus:ring-1 focus:ring-indigo-500"
               >
-                <option value="">Edificio (Todos)</option>
+                <option value="">Edificio o zona exterior</option>
                 {mainData.campusSigla && obtenerEdificiosDeCampus(mainData.campusSigla).map(ed => (
                   <option key={ed} value={ed}>{etiquetaEdificio(ed)}</option>
                 ))}
               </select>
               {(() => {
                 const info = obtenerInfoEdificio(mainData.edificioSigla);
-                if (!info || !(info.nombre || info.facultad || info.superficieM2 || info.driveUrl)) return null;
+                if (!info || !(info.nombre || info.facultad || info.superficieM2 || info.driveUrl || info.lat != null)) return null;
                 return (
                   <div className="text-[10px] text-slate-300 space-y-0.5 pt-1">
                     {info.facultad && <p><span className="text-slate-400">Facultad/Unidad:</span> {info.facultad}</p>}
                     {info.superficieM2 ? <p><span className="text-slate-400">Superficie edificio:</span> {info.superficieM2.toLocaleString('es-CL')} m²</p> : null}
                     {info.uso && <p><span className="text-slate-400">Uso:</span> {info.uso}</p>}
-                    {info.driveUrl && <a href={info.driveUrl} target="_blank" rel="noreferrer" className="text-sky-300 underline">📁 Carpeta del edificio en Drive</a>}
+                    {info.driveUrl && <a href={info.driveUrl} target="_blank" rel="noreferrer" className="text-sky-300 underline block">📁 Carpeta del edificio en Drive</a>}
+                    {info.lat != null && info.lng != null && <a href={urlGoogleMaps(info.lat, info.lng)} target="_blank" rel="noreferrer" className="text-sky-300 underline block">📍 Ver ubicación en Google Maps</a>}
                   </div>
                 );
               })()}

@@ -23,6 +23,73 @@ export interface EdificioInfo {
   /** Enlace a la carpeta del edificio en Google Drive. */
   driveUrl?: string;
   notas?: string;
+  /** Punto del edificio o zona marcado en Google Maps (grados decimales). */
+  lat?: number;
+  lng?: number;
+}
+
+// ─── ZONAS EXTERIORES ───────────────────────────────────────────────────────
+// Todo campus tiene, además de sus edificios, estos códigos para las obras que no ocurren dentro de
+// ninguno (pavimentar un acceso, un jardín, un cierro). No se guardan en el catálogo: existen para
+// todos los campus, y en `edificiosInfo` solo queda lo que se les edite (ubicación, superficie, notas).
+export const ZONAS_EXTERIORES = [
+  { sufijo: 'CE', nombre: 'Circulaciones exteriores', uso: 'Accesos, pavimentos, veredas, estacionamientos y patios' },
+  { sufijo: 'AV', nombre: 'Áreas verdes', uso: 'Jardines, arbolado, riego y paisajismo' },
+  { sufijo: 'EX', nombre: 'Otras obras exteriores', uso: 'Cierros, portones, alumbrado y redes exteriores' },
+] as const;
+
+/** Códigos de las zonas exteriores de un campus: "CSF-CE", "CSF-AV", "CSF-EX". */
+export function zonasExterioresDeCampus(siglaCampus: string): string[] {
+  const sigla = siglaCampus.trim().toUpperCase();
+  return sigla ? ZONAS_EXTERIORES.map(z => `${sigla}-${z.sufijo}`) : [];
+}
+
+/** Zona exterior a la que corresponde un código, o undefined si es un edificio. */
+export function zonaExteriorDeCodigo(codigo?: string) {
+  const sufijo = /-([A-Z]{2})$/.exec((codigo || '').trim().toUpperCase())?.[1];
+  return ZONAS_EXTERIORES.find(z => z.sufijo === sufijo);
+}
+
+// ─── UBICACIÓN EN EL MAPA ───────────────────────────────────────────────────
+/** Plaza Aníbal Pinto: referencia para medir cuán lejos de Temuco queda una obra (fletes y traslados). */
+const CENTRO_TEMUCO = { lat: -38.7397, lng: -72.5901 };
+
+/**
+ * Lee un punto desde lo que entrega Google Maps: las coordenadas copiadas con clic derecho
+ * ("-38.7359, -72.6021") o un enlace largo (…/@-38.73,-72.60,17z, …!3d-38.73!4d-72.60, ?q=-38.73,-72.60).
+ * Los enlaces cortos (maps.app.goo.gl) no traen el punto y devuelven null.
+ */
+export function leerCoordenadas(texto: string): { lat: number; lng: number } | null {
+  const t = texto.trim();
+  if (!t) return null;
+  const candidatos = [
+    /!3d(-?\d{1,2}\.\d+)!4d(-?\d{1,3}\.\d+)/,          // punto marcado en un enlace largo
+    /[?&](?:q|query|ll|destination)=(-?\d{1,2}\.\d+)(?:,|%2C)\s*(-?\d{1,3}\.\d+)/i,
+    /@(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)/,              // centro de la vista
+    /^\(?\s*(-?\d{1,2}(?:\.\d+)?)\s*[,;\s]\s*(-?\d{1,3}(?:\.\d+)?)\s*\)?$/, // "lat, lng"
+  ];
+  for (const patron of candidatos) {
+    const m = patron.exec(t);
+    if (!m) continue;
+    const lat = Number(m[1]);
+    const lng = Number(m[2]);
+    if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0)) {
+      return { lat: Math.round(lat * 1e6) / 1e6, lng: Math.round(lng * 1e6) / 1e6 };
+    }
+  }
+  return null;
+}
+
+/** Enlace para abrir un punto en Google Maps. */
+export const urlGoogleMaps = (lat: number, lng: number) => `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+
+/** Distancia en línea recta al centro de Temuco, en km. */
+export function distanciaATemucoKm(lat: number, lng: number): number {
+  const rad = (g: number) => (g * Math.PI) / 180;
+  const dLat = rad(lat - CENTRO_TEMUCO.lat);
+  const dLng = rad(lng - CENTRO_TEMUCO.lng);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(CENTRO_TEMUCO.lat)) * Math.cos(rad(lat)) * Math.sin(dLng / 2) ** 2;
+  return Math.round(6371 * 2 * Math.asin(Math.sqrt(a)) * 10) / 10;
 }
 
 const STORAGE_KEY = 'infra_app_campus_v1';
@@ -434,17 +501,28 @@ export function ordenarSiglasEdificio(siglas: string[]): string[] {
   return [...siglas].sort((a, b) => a.localeCompare(b, 'es', { numeric: true, sensitivity: 'base' }));
 }
 
+/** Edificios del campus y, al final, sus zonas exteriores (ver ZONAS_EXTERIORES). */
 export function obtenerEdificiosDeCampus(siglaCampus: string): string[] {
   if (!siglaCampus) return [];
   const c = getCampusList().find(camp => camp.sigla === siglaCampus.toUpperCase());
-  return c ? ordenarSiglasEdificio(c.edificios) : [];
+  if (!c) return [];
+  const zonas = zonasExterioresDeCampus(c.sigla);
+  return [...ordenarSiglasEdificio(c.edificios.filter(e => !zonas.includes(e))), ...zonas];
 }
 
-/** Ficha de un edificio por su sigla (ej. "CML01"), buscando en todos los campus. */
-export function obtenerInfoEdificio(siglaEdificio?: string): (EdificioInfo & { sigla: string; campus: CampusInfo }) | undefined {
+/** Ficha de un edificio o zona exterior por su código (ej. "CML01", "CML-CE"), buscando en todos los campus. */
+export function obtenerInfoEdificio(siglaEdificio?: string): (EdificioInfo & { sigla: string; campus: CampusInfo; esExterior?: boolean }) | undefined {
   if (!siglaEdificio) return undefined;
   const sigla = siglaEdificio.trim().toUpperCase();
-  for (const campus of getCampusList()) {
+  const lista = getCampusList();
+  for (const campus of lista) {
+    if (zonasExterioresDeCampus(campus.sigla).includes(sigla)) {
+      const zona = zonaExteriorDeCodigo(sigla);
+      const editado = campus.edificiosInfo?.[sigla] || {};
+      return { ...editado, nombre: editado.nombre || zona?.nombre, uso: editado.uso || zona?.uso, sigla, campus, esExterior: true };
+    }
+  }
+  for (const campus of lista) {
     if (campus.edificios.includes(sigla) || campus.edificiosInfo?.[sigla]) {
       return { ...(campus.edificiosInfo?.[sigla] || {}), sigla, campus };
     }
@@ -472,8 +550,14 @@ export function descripcionEdificioParaIA(siglaEdificio: string): string {
     info?.facultad,
     info?.superficieM2 ? `${info.superficieM2.toLocaleString('es-CL')} m² construidos` : '',
     info?.uso ? `uso ${info.uso}` : '',
+    // El punto marcado en el mapa: sitúa la obra dentro del campus y dice cuán lejos queda de Temuco.
+    info?.lat != null && info?.lng != null
+      ? `ubicado en ${info.lat}, ${info.lng}, a ${distanciaATemucoKm(info.lat, info.lng).toLocaleString('es-CL')} km en línea recta del centro de Temuco`
+      : '',
   ].filter(Boolean);
-  return datos.length ? `edificio ${siglaEdificio} (${datos.join(', ')})` : `edificio ${siglaEdificio}`;
+  // Una zona exterior no es un edificio: la obra es a la intemperie, sin recintos interiores.
+  const tipo = info?.esExterior ? 'zona exterior del campus, obra a la intemperie' : 'edificio';
+  return datos.length ? `${tipo} ${siglaEdificio} (${datos.join(', ')})` : `${tipo} ${siglaEdificio}`;
 }
 
 export function buscarCampusYEdificioPorTexto(texto: string): { campus?: CampusInfo; edificio?: string } {
