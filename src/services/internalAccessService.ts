@@ -26,10 +26,15 @@ export interface InternalAccess {
 }
 
 const normalizeEmail = (email?: string | null) => (email || '').trim().toLowerCase();
+/** Correo con que se compara a una persona: su alias institucional se lleva al correo de la nómina. Se aplica a
+ * AMBOS lados de cada comparación, así da igual con cuál de sus dos correos esté anotada o inicie sesión. */
+const correoCanonico = (email?: string | null) => {
+  const correo = normalizeEmail(email);
+  return ALIAS_CORREOS_INSTITUCIONALES[correo] || correo;
+};
 
 export function getInternalAccess(email?: string | null): InternalAccess | null {
-  const correoCuenta = normalizeEmail(email);
-  const normalized = ALIAS_CORREOS_INSTITUCIONALES[correoCuenta] || correoCuenta;
+  const normalized = correoCanonico(email);
   if (!normalized || !normalized.endsWith('@uct.cl')) return null;
 
   const configured = (() => {
@@ -50,17 +55,17 @@ export function getInternalAccess(email?: string | null): InternalAccess | null 
   }
 
   const director = configured.directorGestionCampus;
-  if (normalizeEmail(director.email) === normalized) {
+  if (correoCanonico(director.email) === normalized) {
     return { email: normalized, nombre: director.nombre, cargo: director.cargo, role: 'director' };
   }
 
   const subdirector = configured.subdirectorInfraestructura;
-  if (normalizeEmail(subdirector.email) === normalized) {
+  if (correoCanonico(subdirector.email) === normalized) {
     return { email: normalized, nombre: subdirector.nombre, cargo: subdirector.cargo, role: 'subdirector' };
   }
 
   const responsable = getResponsablesList().find(item =>
-    item.estado !== 'Inactivo' && normalizeEmail(item.email) === normalized
+    item.estado !== 'Inactivo' && correoCanonico(item.email) === normalized
   );
   if (responsable) {
     return {
@@ -72,7 +77,7 @@ export function getInternalAccess(email?: string | null): InternalAccess | null 
   }
 
   const responsableGeneral = configured.responsableDesarrollo;
-  if (normalizeEmail(responsableGeneral.email) === normalized) {
+  if (correoCanonico(responsableGeneral.email) === normalized) {
     return {
       email: normalized,
       nombre: responsableGeneral.nombre,
@@ -95,5 +100,5 @@ export function getInternalAccess(email?: string | null): InternalAccess | null 
 }
 
 export function isProjectResponsible(email: string | null | undefined, responsibleEmail?: string): boolean {
-  return Boolean(normalizeEmail(email) && normalizeEmail(email) === normalizeEmail(responsibleEmail));
+  return Boolean(correoCanonico(email) && correoCanonico(email) === correoCanonico(responsibleEmail));
 }
