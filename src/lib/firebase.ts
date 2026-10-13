@@ -2,7 +2,9 @@ import { initializeApp } from 'firebase/app';
 import { connectFirestoreEmulator, getFirestore, initializeFirestore, memoryLocalCache, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 import { connectAuthEmulator, getAuth, GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
 
-const firebaseConfig = {
+// Proyecto de producción. Para trabajar contra un proyecto de PRUEBAS (otra base de datos, sin datos reales),
+// defina VITE_FIREBASE_CONFIG en .env.local con la configuración web de ese proyecto en una línea de JSON.
+const configProduccion = {
   apiKey: "AIzaSyBRcvt7iWJIUiNNVE87ZA_3MhdATJbicFc",
   authDomain: "dgdc-c848d.firebaseapp.com",
   projectId: "dgdc-c848d",
@@ -11,6 +13,21 @@ const firebaseConfig = {
   appId: "1:614609890960:web:4359cfc6beb11fdf13b215",
   measurementId: "G-JF6NPHYP6L"
 };
+
+function configDeAmbiente(): typeof configProduccion | null {
+  const texto = import.meta.env.VITE_FIREBASE_CONFIG as string | undefined;
+  if (!texto?.trim()) return null;
+  try {
+    const config = JSON.parse(texto);
+    if (config?.projectId && config?.apiKey) return config;
+  } catch { /* se informa abajo */ }
+  console.error('VITE_FIREBASE_CONFIG no es una configuración válida de Firebase: se usa el proyecto de producción.');
+  return null;
+}
+
+const firebaseConfig = configDeAmbiente() || configProduccion;
+/** true cuando la app NO está conectada a la base de datos real (proyecto de pruebas o emuladores). */
+export const AMBIENTE_DE_PRUEBAS = firebaseConfig.projectId !== configProduccion.projectId;
 
 const app = initializeApp(firebaseConfig);
 // Los campos opcionales sin valor (undefined) se omiten al guardar; sin esto Firestore rechaza el documento entero

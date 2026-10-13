@@ -1,6 +1,7 @@
 rules_version = '2';
 
-// REGLAS SUGERIDAS — no están desplegadas. Léase LEEME.md antes de aplicarlas.
+// REGLAS VIGENTES de la base de datos: son las publicadas en Firebase (verificado el 2026-10-13 contra la
+// versión del 2026-10-01). Todo cambio se hace aquí y luego se publica; léase LEEME.md.
 service cloud.firestore {
   match /databases/{database}/documents {
 

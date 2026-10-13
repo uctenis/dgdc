@@ -2,10 +2,14 @@
 
 Estas reglas son lo que **realmente** impide que un proveedor vea algo distinto de su invitación. Las rutas y
 pantallas de la app solo esconden cosas; un proveedor con sesión podría consultar Firebase directamente, y hoy
-las reglas no distinguen entre proveedores y personal interno (no hay archivo de reglas en el repositorio, así que
-no sé cómo están ahora).
+estas reglas son las que distinguen entre proveedores y personal interno.
 
-**No están desplegadas.** Al aplicarlas reemplazan las reglas actuales.
+**Estado (verificado el 2026-10-13):** `firestore.rules` está publicado en Firebase desde el 2026-10-01 y coincide
+con este archivo. `storage.rules` no aplica hoy: los archivos se guardan en la base de datos, no en Firebase Storage.
+
+Este archivo es la fuente: todo cambio de reglas se hace aquí, se revisa y recién entonces se publica con
+`firebase deploy --only firestore:rules` (`firebase.json` ya apunta a este archivo). No edite las reglas
+directamente en la consola, porque el repositorio quedaría desactualizado.
 
 ## Qué garantizan
 
