@@ -59,6 +59,21 @@ export function extraerItemizadoDesdeTexto(texto: string): ItemCotizacion[] {
 /**
  * Extrae texto y valores clave (RUT, Monto Neto y Plazo) de un archivo PDF de cotización sin confundir RUTs con montos.
  */
+/**
+ * Texto de un PDF, página por página, para entregarlo a la IA como antecedente. Un PDF escaneado
+ * (solo imágenes) devuelve texto vacío: no se hace reconocimiento de caracteres.
+ */
+export async function extraerTextoPdf(file: File, maxCaracteres = 30_000): Promise<{ texto: string; paginas: number; truncado: boolean }> {
+  const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  let texto = '';
+  for (let i = 1; i <= pdf.numPages && texto.length < maxCaracteres; i++) {
+    const contenido = await (await pdf.getPage(i)).getTextContent();
+    const pagina = contenido.items.map(item => ('str' in item ? item.str : '')).join(' ').replace(/\s+/g, ' ').trim();
+    if (pagina) texto += `[Página ${i}] ${pagina}\n`;
+  }
+  return { texto: texto.slice(0, maxCaracteres), paginas: pdf.numPages, truncado: texto.length > maxCaracteres };
+}
+
 export async function parseCotizacionPdf(file: File): Promise<ParsedPdfData> {
   const detallesLeidos: string[] = [];
   let montoNeto: number | undefined = undefined;

@@ -12,6 +12,7 @@ import { parsePresupuestoExcel, type ParsedPresupuestoImportado } from '../utils
 import { parsePresupuestoPdf } from '../utils/pdfParser';
 import { itemizadoDesdeImportado } from '../utils/presupuestoImportado';
 import { PresupuestoPrecisoIAModal } from './PresupuestoPrecisoIAModal';
+import { ubicacionProyecto, descripcionEdificioParaIA, obtenerCampusPorSigla } from '../data/campusData';
 import { CalculadoraGastosGeneralesModal } from './CalculadoraGastosGeneralesModal';
 import { calcularGastosGenerales, plazoSugeridoMeses, type ParametrosCalculoGG } from '../utils/gastosGenerales';
 
@@ -851,7 +852,14 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
 
       {mostrarPresupuestoPreciso && (
         <PresupuestoPrecisoIAModal
-          proyecto={{ nombre: proyecto.nombre, descripcion: proyecto.descripcion, tipoObra: proyecto.tipoObra, rubro: proyecto.rubro, uso: proyecto.uso }}
+          proyecto={{
+            nombre: proyecto.nombre, descripcion: proyecto.descripcion, tipoObra: proyecto.tipoObra, rubro: proyecto.rubro, uso: proyecto.uso,
+            ubicacion: ubicacionProyecto(proyecto) || undefined,
+            edificio: proyecto.edificioSigla ? descripcionEdificioParaIA(proyecto.edificioSigla) : undefined,
+            direccion: (proyecto.campusSigla && obtenerCampusPorSigla(proyecto.campusSigla)?.direccion) || undefined,
+            plazoDias: proyecto.plazoEjecucionDias || proyecto.duracionEstimadaDias || undefined,
+            presupuestoAprox: proyecto.valorAprox || undefined,
+          }}
           onClose={() => setMostrarPresupuestoPreciso(false)}
           onAgregarPartidas={agregarPartidasPrecisas}
         />
