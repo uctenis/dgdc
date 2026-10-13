@@ -16,13 +16,14 @@ import { normalizarNombreProyecto, corregirOrtografiaEspanol, corregirTextoAvanz
 import { rewriteTextWithAI, isAIConfigured } from '../services/aiService';
 import { updateLicitacion, updateProyectoMaestro, deleteLicitacion, deleteProyectoMaestro, syncOCToProyectoMaestro, subscribeToEstadosPago } from '../services/firestoreService';
 import { uploadProyectoDocumento } from '../services/storageService';
-import { getCampusList, obtenerEdificiosDeCampus, etiquetaEdificio, obtenerInfoEdificio, obtenerCampusPorSigla, urlGoogleMaps } from '../data/campusData';
+import { getCampusList, obtenerEdificiosDeCampus, etiquetaEdificio, obtenerInfoEdificio, obtenerCampusPorSigla, urlGoogleMaps, ubicacionProyecto } from '../data/campusData';
 import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
 import { agruparPorFase } from '../utils/itemizadoOrganizer';
 import { AumentosObraPanel } from './AumentosObraPanel';
 import { ItemizadoProyectoPanel } from './ItemizadoProyectoPanel';
 import { ProgramaTrabajoPanel } from './ProgramaTrabajoPanel';
+import { calcularFechaTerminoEfectiva } from '../utils/avanceFinanciero';
 import { BitacoraProyectoPanel } from './BitacoraProyectoPanel';
 import { CargaOrdenCompraModal } from './CargaOrdenCompraModal';
 import { PremiumDatePicker } from './PremiumDatePicker';
@@ -501,9 +502,12 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
     responsableEmail: responsableEmail,
     uso: uso,
     montoEstimado: montoEstimado,
-    fechaInicioObra: fechaInicioObra || '',
-    fechaTerminoProgramada: fechaTerminoProgramada || '',
-    plazoAdjudicadoDias: plazoAdjudicadoDias || 0,
+    // Un proyecto de la cartera (aún sin licitación) trae su inicio y duración del formulario de creación:
+    // la cabecera los muestra y edita ahí mismo (ver saveInlineUpdate), para que coincidan con el cronograma.
+    fechaInicioObra: fechaInicioObra || proyectoMaestroEfectivo?.fechaInicio?.slice(0, 10) || '',
+    fechaTerminoProgramada: fechaTerminoProgramada
+      || (proyectoMaestroEfectivo ? calcularFechaTerminoEfectiva(proyectoMaestroEfectivo)?.slice(0, 10) : '') || '',
+    plazoAdjudicadoDias: plazoAdjudicadoDias || proyectoMaestroEfectivo?.duracionEstimadaDias || 0,
   });
 
   // Mantiene el input del resumen alineado con el monto vigente (p. ej. tras "Usar como Presupuesto Estimado").
@@ -549,6 +553,10 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
           payload.nombre = payload.nombreProyecto;
           delete payload.nombreProyecto;
         }
+        // Calendario: el proyecto de cartera guarda inicio, término y duración con sus propios nombres.
+        if (payload.fechaInicioObra !== undefined) { payload.fechaInicio = payload.fechaInicioObra; delete payload.fechaInicioObra; }
+        if (payload.fechaTerminoProgramada !== undefined) { payload.fechaTermino = payload.fechaTerminoProgramada; delete payload.fechaTerminoProgramada; }
+        if (payload.plazoAdjudicadoDias !== undefined) { payload.duracionEstimadaDias = Number(payload.plazoAdjudicadoDias) || 0; delete payload.plazoAdjudicadoDias; }
         await updateProyectoMaestro(id, payload);
       }
       setHasChanges(true);
@@ -1386,8 +1394,11 @@ Para confirmar, escriba el código del proyecto: ${codigoConfirmacion}`
         <div hidden={tabActiva !== 'cronograma'}>
           <ProgramaTrabajoPanel
             proyecto={proyectoMaestroEfectivo}
-            fechaInicioRespaldo={mainData.fechaInicioObra || undefined}
-            duracionRespaldoDias={mainData.plazoAdjudicadoDias || undefined}
+            fechaInicioFicha={mainData.fechaInicioObra || undefined}
+            duracionFichaDias={mainData.plazoAdjudicadoDias || undefined}
+            plazoContractualDias={plazoAdjudicadoDias || undefined}
+            ubicacion={ubicacionProyecto({ campusSigla, edificioSigla }) || undefined}
+            onPlazoEstimado={(dias, termino) => setMainData(prev => ({ ...prev, plazoAdjudicadoDias: dias, fechaTerminoProgramada: termino || prev.fechaTerminoProgramada }))}
           />
         </div>
       )}

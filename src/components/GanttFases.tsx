@@ -128,7 +128,17 @@ export function GanttFases({ fechaInicio, duracionTotalDias, fases, onCambio }: 
       setTimeout(redibujar, 0);
     };
     document.addEventListener('mouseup', alSoltar);
+    // La pestaña del cronograma se monta oculta: al mostrarse por primera vez la carta se dibuja de nuevo,
+    // porque oculta no puede medir sus textos ni desplazarse al inicio del proyecto.
+    let anchoPrevio = nodo.offsetWidth;
+    const observador = new ResizeObserver(() => {
+      const ancho = nodo.offsetWidth;
+      if (anchoPrevio === 0 && ancho > 0) gantt.current?.refresh(aTareas(actual.current.fases, actual.current.inicio));
+      anchoPrevio = ancho;
+    });
+    observador.observe(nodo);
     return () => {
+      observador.disconnect();
       document.removeEventListener('mouseup', alSoltar);
       gantt.current = null;
       nodo.innerHTML = '';

@@ -822,42 +822,64 @@ Usa unidades reales de construcción chilena (m2, m3, ml, un, gl, kg, hh, etc).`
 
 export interface FaseSugeridaIA {
   fase: string;
-  inicioPct: number;
-  duracionPct: number;
+  /** Día corrido en que parte la fase, contado desde el inicio de la obra (0 = primer día). */
+  diaInicio: number;
+  duracionDias: number;
 }
 
 /**
- * Propone, para cada fase del itemizado, en qué % del plazo total inicia y qué % del plazo total
- * dura, siguiendo la lógica de secuencia y traslapes típica de una obra (ej. Instalaciones puede
- * comenzar antes de que termine Obra Gruesa). Es la base del Programa de Trabajo / Carta Gantt
- * referencial — la IA decide SOLO la lógica de secuencia, las fechas reales se calculan en el
- * código a partir de la fecha de inicio y duración total real del proyecto.
+ * Programa de Trabajo / Carta Gantt referencial: a partir de las partidas de cada fase (con sus cantidades),
+ * la IA estima cuántos días corridos toma cada fase y en qué día parte, con los traslapes normales de una obra.
+ * El plazo total sale de ahí (último día de la última fase). Si la obra ya tiene plazo contractual, la IA debe
+ * ajustarse a él. Las fechas reales se calculan en el código desde la Fecha de Inicio de la ficha.
  */
 export async function sugerirProgramaTrabajoConIA(params: {
+  nombre?: string;
   tipoObra?: string;
-  duracionTotalDias: number;
-  fases: { fase: string; pesoPresupuestario: number }[];
+  ubicacion?: string;
+  fases: { fase: string; pesoPresupuestario: number; partidas: { descripcion: string; unidad: string; cantidad: number }[] }[];
+  /** Plazo del contrato adjudicado: el programa debe caber exactamente en estos días. */
+  plazoContractualDias?: number;
+  /** Plazo que el responsable declaró al crear el proyecto: referencia, no obligación. */
+  plazoReferenciaDias?: number;
 }): Promise<FaseSugeridaIA[]> {
   const listaFases = params.fases
-    .map(f => `- ${f.fase} (${f.pesoPresupuestario}% del presupuesto)`)
+    .map(f => {
+      const partidas = f.partidas.slice(0, 25).map(pt => `    · ${pt.descripcion}: ${pt.cantidad.toLocaleString('es-CL')} ${pt.unidad}`).join('\n');
+      return `- ${f.fase} (${f.pesoPresupuestario}% del presupuesto)\n${partidas}`;
+    })
     .join('\n');
 
-  const prompt = `Eres un experto en planificación y programación de obras (Carta Gantt) en Chile. Un proyecto${params.tipoObra ? ` de tipo "${params.tipoObra}"` : ''} tiene una duración total estimada de ${params.duracionTotalDias} días corridos, y su presupuesto se distribuye en estas fases (en orden de ejecución):
+  const contexto = [
+    params.nombre ? `Proyecto: "${params.nombre}"` : '',
+    params.tipoObra ? `Tipo de obra: ${params.tipoObra}` : '',
+    params.ubicacion ? `Ubicación: ${params.ubicacion}` : '',
+  ].filter(Boolean).join('\n');
 
+  const reglaPlazo = params.plazoContractualDias
+    ? `La obra tiene un PLAZO CONTRACTUAL de ${params.plazoContractualDias} días corridos: la última fase debe terminar exactamente el día ${params.plazoContractualDias}. Reparte ese plazo entre las fases.`
+    : `No hay plazo contractual: ESTIMA tú el plazo, calculando la duración de cada fase con rendimientos normales de cuadrillas de contratistas pequeños y medianos de la Región de La Araucanía, a partir de las cantidades de cada partida (ej. m2 de pintura por jornada de una cuadrilla, tiempos de secado y fraguado, plazos de entrega de materiales). Considera días corridos (incluye fines de semana sin trabajo) y no agregues holguras artificiales.${params.plazoReferenciaDias ? ` El responsable había supuesto ${params.plazoReferenciaDias} días: es solo una referencia; si tu cálculo da otro plazo, entrega el tuyo.` : ''}`;
+
+  const prompt = `Eres un experto en planificación y programación de obras (Carta Gantt) en Chile.
+${contexto}
+
+Fases de la obra, en orden de ejecución, con sus partidas y cantidades:
 ${listaFases}
 
-Determina, según la lógica constructiva secuencial NORMAL de una obra (incluyendo los traslapes típicos entre fases consecutivas — ej. Instalaciones puede iniciar antes de que termine Obra Gruesa, Terminaciones antes de que termine Instalaciones), en qué porcentaje del plazo total inicia cada fase y qué porcentaje del plazo total dura. La primera fase debe iniciar en 0%, y la suma del inicio + duración de la última fase debe llegar a 100%. Responde EXCLUSIVAMENTE con un array JSON válido, sin texto adicional ni markdown, con este formato exacto (mismo orden y mismos nombres de fase recibidos):
-[{"fase":"...","inicioPct":0,"duracionPct":15}, ...]`;
+${reglaPlazo}
 
-  const content = await llamarIA(prompt, 1500);
+Para cada fase entrega el día corrido en que PARTE (contado desde el inicio de la obra: la primera fase parte el día 0) y cuántos días corridos DURA. Sigue la lógica constructiva normal, con los traslapes típicos entre fases consecutivas (ej. Instalaciones puede iniciar antes de que termine Obra Gruesa; Terminaciones antes de que terminen Instalaciones; Aseo y Entrega va al final). Toda fase dura al menos 1 día. Usa los nombres de fase EXACTAMENTE como aparecen arriba, sin agregar ni quitar fases. Responde EXCLUSIVAMENTE con un array JSON válido, sin texto adicional ni markdown, con este formato exacto:
+[{"fase":"...","diaInicio":0,"duracionDias":5}, ...]`;
+
+  const content = await llamarIA(prompt, 2000);
   const parsed = parsearArregloJsonDeIA(content);
 
   return parsed
     .filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null)
     .map(x => ({
       fase: normalizarFase(String(x.fase ?? '')),
-      inicioPct: Math.max(0, Math.min(100, Number(x.inicioPct ?? 0))),
-      duracionPct: Math.max(0, Math.min(100, Number(x.duracionPct ?? 0))),
+      diaInicio: Math.max(0, Math.round(Number(x.diaInicio ?? 0)) || 0),
+      duracionDias: Math.max(1, Math.round(Number(x.duracionDias ?? 0)) || 1),
     }))
     .filter(x => x.fase.length > 0);
 }
