@@ -1,4 +1,5 @@
 import type { EvaluacionDesempeno, LicitacionProyecto, ProyectoMaestro } from '../types';
+import { promedioDesempenoPonderado } from './scorecardProveedor';
 
 const DIA_MS = 86_400_000;
 const hoyISO = () => new Date().toISOString().slice(0, 10);
@@ -62,9 +63,8 @@ export function calcularIndicadores(
     porProveedor.set(id, actual);
   }
   const totalAdjudicado = [...porProveedor.values()].reduce((s, p) => s + p.monto, 0);
-  const promedio = (evs: EvaluacionDesempeno[] = []) => (evs.length ? Math.round((evs.reduce((s, e) => s + e.puntajeFinal, 0) / evs.length) * 10) / 10 : null);
   const reparto = [...porProveedor.entries()]
-    .map(([id, p]) => ({ ...p, pct: totalAdjudicado ? Math.round((p.monto / totalAdjudicado) * 1000) / 10 : 0, promedioDesempeno: promedio(evaluacionesPorProveedor[id]) }))
+    .map(([id, p]) => ({ ...p, pct: totalAdjudicado ? Math.round((p.monto / totalAdjudicado) * 1000) / 10 : 0, promedioDesempeno: promedioDesempenoPonderado(evaluacionesPorProveedor[id] || []) }))
     .sort((a, b) => b.monto - a.monto);
 
   const todas = Object.values(evaluacionesPorProveedor).flat();
@@ -74,7 +74,7 @@ export function calcularIndicadores(
     obras,
     reparto,
     concentracionMayor: reparto.length ? reparto[0].pct : null,
-    desempeno: { promedio: promedio(todas), evaluaciones: todas.length },
+    desempeno: { promedio: promedioDesempenoPonderado(todas), evaluaciones: todas.length },
   };
 }
 

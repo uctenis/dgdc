@@ -1,6 +1,7 @@
 import type { Proveedor, EvaluacionDesempeno, LicitacionProyecto } from '../types';
 import { calcularPromedioDesempeno } from '../services/firestoreService';
 import { cargaVacia, type CargaProveedor } from './cargaProveedores';
+import { nivelBajoUmbral, nivelDesempeno } from './scorecardProveedor';
 
 export interface ProveedorSugerido {
   proveedor: Proveedor;
@@ -10,7 +11,7 @@ export interface ProveedorSugerido {
   carga: CargaProveedor;
   /** Desempeño descontado por carga de trabajo y por invitaciones recientes (rotación). Mayor = mejor candidato. */
   puntajeSugerencia: number;
-  /** Desempeño histórico bajo 3/5: no se sugiere automáticamente. */
+  /** Nivel Deficiente o Crítico (bajo 3/5): no se sugiere automáticamente. */
   bajoUmbral: boolean;
 }
 
@@ -45,7 +46,7 @@ export function ordenarProveedoresPorRubroYDesempeno(
       cantidadEvaluaciones: evaluaciones.length,
       carga,
       puntajeSugerencia,
-      bajoUmbral: promedioDesempeno !== null && promedioDesempeno < 3,
+      bajoUmbral: nivelBajoUmbral(nivelDesempeno(promedioDesempeno)),
     };
   });
 

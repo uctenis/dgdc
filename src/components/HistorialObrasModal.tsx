@@ -11,6 +11,7 @@ import {
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { useAuth } from '../context/AuthContext';
 import type { Proveedor, HistorialObra, EvaluacionDesempeno, CriterioDesempeno } from '../types';
+import { nivelBajoUmbral, nivelDesempeno } from '../utils/scorecardProveedor';
 
 const ETIQUETA_CRITERIO: Record<CriterioDesempeno['id'], string> = {
   calidad: 'Calidad de la obra',
@@ -63,7 +64,8 @@ export const HistorialObrasModal: React.FC<HistorialObrasModalProps> = ({ provee
 
   const promedioDesempeno = calcularPromedioDesempeno(evaluaciones);
   const promediosPorCriterio = calcularPromediosPorCriterio(evaluaciones);
-  const bajoUmbral = promedioDesempeno !== null && promedioDesempeno < 3;
+  const nivel = nivelDesempeno(promedioDesempeno);
+  const bajoUmbral = nivelBajoUmbral(nivel);
 
   const iniciarEdicion = (ev: EvaluacionDesempeno) => {
     const puntajesEv: Record<CriterioDesempeno['id'], number> = {
@@ -160,9 +162,7 @@ export const HistorialObrasModal: React.FC<HistorialObrasModalProps> = ({ provee
         {/* Scorecard de Desempeño (Fase D — evaluación post-ejecución) */}
         <div className="px-6 pt-5">
           <div className={`rounded-xl border p-4 flex items-center justify-between gap-4 ${
-            promedioDesempeno === null ? 'bg-slate-50 border-slate-200' :
-            bajoUmbral ? 'bg-rose-50 border-rose-200' :
-            promedioDesempeno < 4 ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200'
+            nivel ? nivel.clases.caja : 'bg-slate-50 border-slate-200'
           }`}>
             <div>
               <span className="text-[10px] font-bold uppercase text-slate-500 flex items-center gap-1.5">
@@ -171,16 +171,16 @@ export const HistorialObrasModal: React.FC<HistorialObrasModalProps> = ({ provee
               <p className="text-xs text-slate-600 mt-0.5">
                 {evaluaciones.length === 0
                   ? 'Sin evaluaciones registradas aún. Se generan al aprobar la Recepción Conforme de una obra.'
-                  : `Promedio de ${evaluaciones.length} evaluación(es) registrada(s).`}
+                  : `Nivel ${nivel?.etiqueta}: promedio de ${evaluaciones.length} evaluación(es) registrada(s).`}
               </p>
               {bajoUmbral && (
                 <p className="text-[10px] text-rose-700 font-bold flex items-center gap-1 mt-1">
-                  <ShieldAlert className="w-3 h-3" /> Bajo el umbral recomendado — revisar antes de próximas invitaciones.
+                  <ShieldAlert className="w-3 h-3" /> {nivel?.consecuencia}
                 </p>
               )}
             </div>
             {promedioDesempeno !== null && (
-              <span className={`text-2xl font-black shrink-0 ${bajoUmbral ? 'text-rose-700' : promedioDesempeno < 4 ? 'text-amber-700' : 'text-emerald-700'}`}>
+              <span className={`text-2xl font-black shrink-0 ${nivel?.clases.texto}`}>
                 {promedioDesempeno}<span className="text-sm text-slate-400">/5</span>
               </span>
             )}

@@ -23,6 +23,9 @@ export interface CargaProveedor {
   invitacionesRecientes: number;
   invitacionesTotal: number;
   ofertasPresentadas: number;
+  /** Invitaciones registradas en procesos ya cerrados, y en cuántas de ellas ofertó: mide cuánto responde. */
+  invitacionesCerradas: number;
+  ofertasEnCerradas: number;
   adjudicacionesTotal: number;
   ultimaInvitacion?: string;
   nivel: 'Libre' | 'Media' | 'Alta';
@@ -37,6 +40,8 @@ export const cargaVacia = (): CargaProveedor => ({
   invitacionesRecientes: 0,
   invitacionesTotal: 0,
   ofertasPresentadas: 0,
+  invitacionesCerradas: 0,
+  ofertasEnCerradas: 0,
   adjudicacionesTotal: 0,
   nivel: 'Libre',
   invitadoFrecuente: false,
@@ -80,6 +85,11 @@ export function calcularCargaProveedores(
       if (fecha && fecha >= desdeISO) c.invitacionesRecientes++;
       if (fecha && (!c.ultimaInvitacion || fecha > c.ultimaInvitacion)) c.ultimaInvitacion = fecha;
       if (inv?.estadoPropuesta === 'Presentada') c.ofertasPresentadas++;
+      // Sin registro de invitado no se sabe si respondió, y en un proceso abierto aún puede hacerlo.
+      if (inv && !procesoAbierto(lic)) {
+        c.invitacionesCerradas++;
+        if (inv.estadoPropuesta === 'Presentada') c.ofertasEnCerradas++;
+      }
       if (procesoAbierto(lic)) {
         c.licitacionesAbiertas.push({
           licitacionId: lic.id,

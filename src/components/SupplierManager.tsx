@@ -9,6 +9,7 @@ import { DocumentosProveedorModal } from './DocumentosProveedorModal';
 import { InscripcionesProveedoresModal } from './InscripcionesProveedoresModal';
 import { documentosConAviso } from '../utils/vencimientos';
 import { RankingDesempenoModal } from './RankingDesempenoModal';
+import { nivelDesempeno } from '../utils/scorecardProveedor';
 import { formatearRUT, validarRUT } from '../utils/rutUtils';
 import { parseProveedorDesdeCotizacion } from '../utils/providerDocumentParser';
 
@@ -460,9 +461,9 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
               ].join('\n') || 'Sin obras en ejecución ni licitaciones abiertas';
               return (
                 <div className="mt-2 grid grid-cols-3 gap-1 text-center text-[10px] bg-slate-50 border border-slate-100 rounded-lg p-1.5">
-                  <div title={d?.cantidad ? `Promedio de ${d.cantidad} evaluación(es) post-ejecución` : 'Sin evaluaciones de desempeño'}>
+                  <div title={d?.cantidad ? `${nivelDesempeno(d.promedio)?.etiqueta || ''}: promedio de ${d.cantidad} evaluación(es) post-ejecución` : 'Sin evaluaciones de desempeño'}>
                     <span className="block text-slate-400">Desempeño</span>
-                    <strong className={d?.promedio == null ? 'text-slate-400' : d.promedio < 3 ? 'text-rose-700' : d.promedio < 4 ? 'text-amber-700' : 'text-emerald-700'}>
+                    <strong className={nivelDesempeno(d?.promedio ?? null)?.clases.texto || 'text-slate-400'}>
                       {d?.promedio == null ? '—' : `★ ${d.promedio}/5`}
                     </strong>
                   </div>
@@ -571,6 +572,7 @@ export const SupplierManager: React.FC<SupplierManagerProps> = ({
       {rankingAbierto && (
         <RankingDesempenoModal
           proveedores={proveedores}
+          cargas={cargas}
           onClose={() => setRankingAbierto(false)}
         />
       )}

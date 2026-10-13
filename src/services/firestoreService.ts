@@ -46,6 +46,7 @@ import type {
   EvaluacionDesempeno, EnvioInvitacion, InvitacionAcceso, ConsultaLicitacion, ConsultaPublicada, GarantiaLicitacion, RegistroAperturaOfertas,
   EntradaLibroObra, FotoLibroObra, MultaObra, AclaracionLicitacion, InscripcionProveedor, DocumentoProveedor,
 } from '../types';
+import { promedioDesempenoPonderado, promediosPorCriterioPonderados } from '../utils/scorecardProveedor';
 
 // ═══════════════════════════════════════════════════════════════════
 // PROVEEDORES
@@ -257,29 +258,14 @@ export async function getEvaluacionesDesempenoDeProveedores(
   return Object.fromEntries(entradas);
 }
 
-/** Promedio ponderado de todas las evaluaciones de desempeño de un proveedor (1-5), o null si no tiene ninguna. */
+/** Puntaje histórico de un proveedor (1-5), dando más peso a las evaluaciones recientes; null si no tiene ninguna. */
 export function calcularPromedioDesempeno(evaluaciones: EvaluacionDesempeno[]): number | null {
-  if (!evaluaciones.length) return null;
-  const suma = evaluaciones.reduce((acc, ev) => acc + ev.puntajeFinal, 0);
-  return Math.round((suma / evaluaciones.length) * 10) / 10;
+  return promedioDesempenoPonderado(evaluaciones);
 }
 
-/** Promedio histórico por cada criterio de la pauta (calidad, plazo, seguridad, garantías, comunicación), o null si no hay evaluaciones. */
+/** Promedio histórico por cada criterio de la pauta (calidad, plazo, seguridad, garantías, comunicación), con el mismo peso por antigüedad que el puntaje general; null si no hay evaluaciones. */
 export function calcularPromediosPorCriterio(evaluaciones: EvaluacionDesempeno[]): Record<string, number> | null {
-  if (!evaluaciones.length) return null;
-  const sumas: Record<string, number> = {};
-  const conteos: Record<string, number> = {};
-  evaluaciones.forEach(ev => {
-    ev.criterios.forEach(c => {
-      sumas[c.id] = (sumas[c.id] || 0) + c.puntaje;
-      conteos[c.id] = (conteos[c.id] || 0) + 1;
-    });
-  });
-  const promedios: Record<string, number> = {};
-  Object.keys(sumas).forEach(id => {
-    promedios[id] = Math.round((sumas[id] / conteos[id]) * 10) / 10;
-  });
-  return promedios;
+  return promediosPorCriterioPonderados(evaluaciones);
 }
 
 // ═══════════════════════════════════════════════════════════════════

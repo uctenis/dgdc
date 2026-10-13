@@ -22,6 +22,7 @@ import { useAuth } from '../context/AuthContext';
 import { enviarInvitacionesLicitacion, ENVIO_CORREOS_REAL } from '../services/invitacionService';
 import { calcularCargaProveedores, advertenciaCarga, MESES_ROTACION, type CargaProveedor } from '../utils/cargaProveedores';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
+import { advertenciaDesempeno, nivelDesempeno, promedioDesempenoPonderado } from '../utils/scorecardProveedor';
 
 const ESTILO_NIVEL_CARGA: Record<CargaProveedor['nivel'], string> = {
   Libre: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -197,6 +198,11 @@ export const InvitadosManager: React.FC<InvitadosManagerProps> = ({
 
   const handleAdd = async (prov: Proveedor, advertir = true) => {
     if (advertir) {
+      const evaluaciones = evaluacionesPorProveedor[prov.id] || [];
+      const avisoDesempeno = advertenciaDesempeno(prov.razonSocial, promedioDesempenoPonderado(evaluaciones), evaluaciones.length);
+      if (avisoDesempeno && !confirm(`${avisoDesempeno}
+
+¿Invitarlo de todas formas?`)) return;
       const aviso = advertenciaCarga(prov.razonSocial, cargas[prov.id], formatoMonedaCLP);
       if (aviso && !confirm(`${aviso}\n\n¿Invitarlo de todas formas?`)) return;
     }
@@ -690,7 +696,7 @@ export const InvitadosManager: React.FC<InvitadosManagerProps> = ({
                             title={`Desempeño promedio en ${cantidadEvaluaciones} evaluación(es) post-ejecución`}
                             className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-bold ${bajoUmbral ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-800'}`}
                           >
-                            <Star className="w-3 h-3 fill-current" /> {promedioDesempeno.toFixed(1)}/5 ({cantidadEvaluaciones}){bajoUmbral ? ' — bajo umbral' : ''}
+                            <Star className="w-3 h-3 fill-current" /> {promedioDesempeno.toFixed(1)}/5 ({cantidadEvaluaciones}){bajoUmbral ? ` — ${nivelDesempeno(promedioDesempeno)?.etiqueta}` : ''}
                           </span>
                         ) : (
                           <span className="text-[10px] text-slate-400 italic">Sin evaluaciones</span>

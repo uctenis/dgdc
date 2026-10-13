@@ -1,20 +1,22 @@
 import { useEffect, useState } from 'react';
 import { X, Trophy, Loader2, ShieldAlert, Star } from 'lucide-react';
 import type { Proveedor, EvaluacionDesempeno } from '../types';
-import { getEvaluacionesDesempenoDeProveedores, calcularPromedioDesempeno } from '../services/firestoreService';
+import { getEvaluacionesDesempenoDeProveedores } from '../services/firestoreService';
+import type { CargaProveedor } from '../utils/cargaProveedores';
+import { calcularScorecard, nivelBajoUmbral, NIVELES_DESEMPENO, MESES_EVALUACION_VIGENTE, type ScorecardProveedor } from '../utils/scorecardProveedor';
 
 interface RankingDesempenoModalProps {
   proveedores: Proveedor[];
+  /** Invitaciones y ofertas de cada proveedor, para mostrar cuánto responde cuando se le invita. */
+  cargas?: Record<string, CargaProveedor>;
   onClose: () => void;
 }
 
-interface FilaRanking {
+interface FilaRanking extends ScorecardProveedor {
   proveedor: Proveedor;
-  promedio: number | null;
-  cantidadEvaluaciones: number;
 }
 
-export function RankingDesempenoModal({ proveedores, onClose }: RankingDesempenoModalProps) {
+export function RankingDesempenoModal({ proveedores, cargas = {}, onClose }: RankingDesempenoModalProps) {
   const [cargando, setCargando] = useState(true);
   const [mapaEvaluaciones, setMapaEvaluaciones] = useState<Record<string, EvaluacionDesempeno[]>>({});
   const [soloConEvaluaciones, setSoloConEvaluaciones] = useState(true);
@@ -30,11 +32,7 @@ export function RankingDesempenoModal({ proveedores, onClose }: RankingDesempeno
   const filas: FilaRanking[] = proveedores
     .map(proveedor => {
       const evaluaciones = mapaEvaluaciones[proveedor.id] || [];
-      return {
-        proveedor,
-        promedio: calcularPromedioDesempeno(evaluaciones),
-        cantidadEvaluaciones: evaluaciones.length,
-      };
+      return { proveedor, ...calcularScorecard(evaluaciones, cargas[proveedor.id]) };
     })
     .filter(fila => !soloConEvaluaciones || fila.cantidadEvaluaciones > 0)
     .sort((a, b) => {
@@ -77,6 +75,16 @@ export function RankingDesempenoModal({ proveedores, onClose }: RankingDesempeno
             />
             Mostrar solo proveedores con evaluaciones registradas
           </label>
+          <div className="flex flex-wrap gap-1.5 mt-2.5">
+            {NIVELES_DESEMPENO.map((n, i) => (
+              <span key={n.id} title={n.consecuencia} className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${n.clases.etiqueta}`}>
+                {n.etiqueta} {i === 0 ? `${n.desde} o más` : `${n.desde} a ${NIVELES_DESEMPENO[i - 1].desde}`}
+              </span>
+            ))}
+          </div>
+          <p className="text-[10px] text-slate-400 mt-1.5">
+            Las evaluaciones de los últimos {MESES_EVALUACION_VIGENTE} meses pesan completo en el puntaje; las anteriores, la mitad.
+          </p>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 pt-3">
@@ -94,7 +102,7 @@ export function RankingDesempenoModal({ proveedores, onClose }: RankingDesempeno
           ) : (
             <div className="space-y-2">
               {filas.map((fila, index) => {
-                const bajoUmbral = fila.promedio !== null && fila.promedio < 3;
+                const bajoUmbral = nivelBajoUmbral(fila.nivel);
                 return (
                   <div
                     key={fila.proveedor.id}
@@ -110,19 +118,26 @@ export function RankingDesempenoModal({ proveedores, onClose }: RankingDesempeno
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-bold text-slate-800 truncate">{fila.proveedor.razonSocial}</p>
                       <p className="text-[10px] text-slate-500 truncate">{fila.proveedor.rubro} · RUT {fila.proveedor.rut}</p>
+                      {fila.respuesta.invitaciones > 0 && (
+                        <p className="text-[10px] text-slate-400 truncate">
+                          Ofertó en {fila.respuesta.ofertas} de {fila.respuesta.invitaciones} procesos cerrados ({fila.respuesta.pct}%) · {fila.adjudicaciones} adjudicación(es)
+                        </p>
+                      )}
                     </div>
-                    {bajoUmbral && (
-                      <span className="text-[9px] font-bold text-rose-700 flex items-center gap-1 shrink-0" title="Bajo el umbral recomendado">
-                        <ShieldAlert className="w-3 h-3" /> Revisar
+                    {fila.nivel && (
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0 ${fila.nivel.clases.etiqueta}`} title={fila.nivel.consecuencia}>
+                        {bajoUmbral && <ShieldAlert className="w-3 h-3" />} {fila.nivel.etiqueta}
                       </span>
                     )}
                     <div className="text-right shrink-0">
                       {fila.promedio !== null ? (
                         <>
-                          <span className={`text-lg font-black ${fila.promedio >= 4 ? 'text-emerald-700' : fila.promedio >= 3 ? 'text-amber-700' : 'text-rose-700'}`}>
+                          <span className={`text-lg font-black ${fila.nivel?.clases.texto}`}>
                             {fila.promedio}<span className="text-xs text-slate-400">/5</span>
                           </span>
-                          <p className="text-[9px] text-slate-400">{fila.cantidadEvaluaciones} evaluación(es)</p>
+                          <p className="text-[9px] text-slate-400">
+                            {fila.cantidadEvaluaciones} evaluación(es){fila.evaluacionesAntiguas > 0 ? ` · ${fila.evaluacionesAntiguas} antigua(s)` : ''}
+                          </p>
                         </>
                       ) : (
                         <span className="text-[10px] text-slate-400 italic">Sin evaluar</span>
