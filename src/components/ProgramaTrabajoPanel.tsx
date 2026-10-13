@@ -5,6 +5,7 @@ import { updateProyectoMaestro } from '../services/firestoreService';
 import { sugerirProgramaTrabajoConIA, isAIConfigured, mensajeErrorIA } from '../services/aiService';
 import { agruparPorFase, SIN_FASE } from '../utils/itemizadoOrganizer';
 import { calcularFechaTerminoEfectiva } from '../utils/avanceFinanciero';
+import { GanttFases } from './GanttFases';
 
 interface Props {
   proyecto: ProyectoMaestro;
@@ -31,7 +32,8 @@ function calcularDuracionTotalDias(proyecto: ProyectoMaestro): number {
 }
 
 function sumarDias(fechaISO: string, dias: number): string {
-  const d = new Date(fechaISO);
+  // Medianoche local: new Date('YYYY-MM-DD') es UTC y en Chile mostraba el día anterior.
+  const d = new Date(`${fechaISO.slice(0, 10)}T00:00:00`);
   d.setDate(d.getDate() + dias);
   return d.toLocaleDateString('es-CL', { day: 'numeric', month: 'short' });
 }
@@ -95,6 +97,8 @@ export function ProgramaTrabajoPanel({ proyecto: proyectoBase, fechaInicioRespal
   const presupuestoCompleto = partidas.length > 0 && partidasIncompletas === 0 && partidasSinFase === 0;
 
   const puedeGenerar = presupuestoCompleto && duracionTotalDias > 0 && fasesDelItemizado.length > 0;
+  // Con Fecha de Inicio y duración se dibuja la carta con fechas reales; si falta algo, barras en días relativos.
+  const conGantt = Boolean(proyecto.fechaInicio) && duracionTotalDias > 0;
 
   const generar = async () => {
     setError(null);
@@ -239,10 +243,20 @@ export function ProgramaTrabajoPanel({ proyecto: proyectoBase, fechaInicioRespal
 
       {programa.length > 0 && (
         <>
+          {conGantt && proyecto.fechaInicio && (
+            <GanttFases
+              key={`${proyecto.id}-${proyecto.fechaInicio}`}
+              fechaInicio={proyecto.fechaInicio}
+              duracionTotalDias={duracionTotalDias}
+              fases={programa}
+              onCambio={actualizarFase}
+            />
+          )}
           <div className="space-y-2">
             {programa.map((f, i) => (
               <div key={f.fase} className="flex items-center gap-3">
-                <span className="w-40 shrink-0 text-[10px] font-bold text-slate-700 truncate" title={f.fase}>{f.fase}</span>
+                <span className={`${conGantt ? 'flex-1' : 'w-40 shrink-0'} text-[10px] font-bold text-slate-700 truncate`} title={f.fase}>{f.fase}</span>
+                {!conGantt && (
                 <div className="flex-1 relative h-5 bg-slate-100 rounded-md overflow-hidden">
                   <div
                     className={`absolute top-0 h-full rounded-md ${COLORES_FASE[i % COLORES_FASE.length]} opacity-80`}
@@ -253,6 +267,7 @@ export function ProgramaTrabajoPanel({ proyecto: proyectoBase, fechaInicioRespal
                     title={`${f.fase}: día ${f.diaInicio} a ${f.diaTermino}`}
                   />
                 </div>
+                )}
                 <div className="flex items-center gap-1 text-[10px] text-slate-500 shrink-0">
                   <input
                     type="number"
@@ -275,7 +290,7 @@ export function ProgramaTrabajoPanel({ proyecto: proyectoBase, fechaInicioRespal
                 </div>
                 {proyecto.fechaInicio && (
                   <span className="text-[10px] text-slate-400 shrink-0 w-32 text-right">
-                    {sumarDias(proyecto.fechaInicio, f.diaInicio)} → {sumarDias(proyecto.fechaInicio, f.diaTermino)}
+                    {sumarDias(proyecto.fechaInicio, f.diaInicio)} → {sumarDias(proyecto.fechaInicio, Math.max(f.diaInicio, f.diaTermino - 1))}
                   </span>
                 )}
               </div>
