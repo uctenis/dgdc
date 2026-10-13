@@ -32,3 +32,6 @@ dist-ssr
 # Enlaces a las carpetas del Drive de la Dirección: se cargan una vez en Configuración → Sedes & Campus
 # y viven en Firebase (el repositorio es público).
 carpetas-drive*.json
+
+# Archivos temporales de la herramienta de Supabase
+supabase/.temp

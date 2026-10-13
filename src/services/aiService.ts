@@ -1,9 +1,9 @@
 // ─── PROVEEDOR DE IA (Gemini u OpenAI) ─────────────────────────────────────
 // Todas las funciones de IA de la app llaman a través de este único despachador.
-// Con VITE_IA_SERVIDOR=true (producción) Gemini se consulta a través de la función
-// `consultarIA` de Firebase: la clave vive solo en el servidor y exige sesión
-// @uct.cl. Sin eso (pruebas locales) se usa la clave VITE_GEMINI_API_KEY directo
-// desde el navegador —queda visible en el bundle— y, si no hay, OpenAI.
+// Con VITE_IA_SERVIDOR=true (producción) Gemini se consulta a través del intermediario
+// `consultar-ia` (función de Supabase, ver supabase/functions/consultar-ia): la clave vive
+// solo en el servidor y exige sesión @uct.cl. Sin eso (pruebas locales) se usa la clave
+// VITE_GEMINI_API_KEY directo desde el navegador —queda visible en el bundle— y, si no hay, OpenAI.
 
 import { FASES_ITEMIZADO } from '../types';
 import { auth } from '../lib/firebase';
@@ -12,7 +12,7 @@ type ProveedorIA = 'gemini' | 'openai';
 
 const IA_POR_SERVIDOR = import.meta.env.VITE_IA_SERVIDOR === 'true';
 const IA_ENDPOINT = (import.meta.env.VITE_IA_SERVIDOR_URL as string | undefined)
-  || 'https://us-central1-dgdc-c848d.cloudfunctions.net/consultarIA';
+  || 'https://etjoutfnzqqjrudosjkg.supabase.co/functions/v1/consultar-ia';
 
 function proveedorActivo(): ProveedorIA | null {
   if (IA_POR_SERVIDOR) return 'gemini';
