@@ -1,7 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { collection, query, where, getDocs, doc, getDoc, onSnapshot } from 'firebase/firestore';
-import { db } from '../lib/firebase';
 import {
   ArrowLeft, FileText, CheckCircle2, Upload,
   Trash2, Building, DollarSign,
@@ -14,7 +12,7 @@ import type { AumentoObra, Cotizacion, EstadoPago, LicitacionProyecto, ProyectoM
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { normalizarNombreProyecto, corregirOrtografiaEspanol, corregirTextoAvanzado } from '../utils/spellCorrector';
 import { rewriteTextWithAI, isAIConfigured } from '../services/aiService';
-import { updateLicitacion, updateProyectoMaestro, deleteLicitacion, deleteProyectoMaestro, syncOCToProyectoMaestro, subscribeToEstadosPago } from '../services/firestoreService';
+import { updateLicitacion, updateProyectoMaestro, deleteLicitacion, deleteProyectoMaestro, syncOCToProyectoMaestro, subscribeToEstadosPago, buscarLicitacionDeProyecto, buscarProyectoDeLicitacion, subscribeToDocumentoLicitacion, subscribeToDocumentoProyecto } from '../services/firestoreService';
 import { uploadProyectoDocumento } from '../services/storageService';
 import { getCampusList, obtenerEdificiosDeCampus, etiquetaEdificio, obtenerInfoEdificio, obtenerCampusPorSigla, urlGoogleMaps, ubicacionProyecto } from '../data/campusData';
 import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
@@ -122,35 +120,16 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
         // NO se usa codigoCP como respaldo: no es único (muchos proyectos comparten el valor
         // por defecto "409-1722"), lo que enlazaba proyectos nuevos con licitaciones ajenas.
         if (!(esLicitacion(proyecto))) {
-          const licsRef = collection(db, 'licitaciones');
-          let snap = await getDocs(query(licsRef, where('proyectoMaestroId', '==', proyecto.id)));
-          if (snap.empty && codigoProyectoTarget) {
-            snap = await getDocs(query(licsRef, where('codigoProyecto', '==', codigoProyectoTarget)));
-          }
-          if (!snap.empty && isMounted) {
-            const licData = { id: snap.docs[0].id, ...(snap.docs[0].data() as Omit<LicitacionProyecto, 'id'>) };
-            setLicitacionVinculada(licData);
-          }
+          const licData = await buscarLicitacionDeProyecto(proyecto.id, codigoProyectoTarget);
+          if (licData && isMounted) setLicitacionVinculada(licData);
         }
 
         // Si la ficha recibió una LicitacionProyecto, buscar su ProyectoMaestro asociado.
         // Mismo criterio: proyectoMaestroId (vínculo directo por id de documento) primero,
         // codigoProyecto como respaldo, sin fallback por codigoCP.
         if (esLicitacion(proyecto)) {
-          if (proyecto.proyectoMaestroId) {
-            const directSnap = await getDoc(doc(db, 'proyectos', proyecto.proyectoMaestroId));
-            if (directSnap.exists() && isMounted) {
-              setProyectoMaestroVinculado({ id: directSnap.id, ...(directSnap.data() as Omit<ProyectoMaestro, 'id'>) });
-              return;
-            }
-          }
-          if (codigoProyectoTarget) {
-            const snap = await getDocs(query(collection(db, 'proyectos'), where('codigoProyecto', '==', codigoProyectoTarget)));
-            if (!snap.empty && isMounted) {
-              const proyData = { id: snap.docs[0].id, ...(snap.docs[0].data() as Omit<ProyectoMaestro, 'id'>) };
-              setProyectoMaestroVinculado(proyData);
-            }
-          }
+          const proyData = await buscarProyectoDeLicitacion(proyecto.proyectoMaestroId, codigoProyectoTarget);
+          if (proyData && isMounted) setProyectoMaestroVinculado(proyData);
         }
       } catch (err) {
         console.error('Error buscando vinculados en FichaProyectoPage:', err);
@@ -174,9 +153,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
       setLicitacionVinculadaLive(null);
       return;
     }
-    return onSnapshot(doc(db, 'licitaciones', idLicitacionVinculada), snap => {
-      if (snap.exists()) setLicitacionVinculadaLive({ id: snap.id, ...(snap.data() as Omit<LicitacionProyecto, 'id'>) });
-    });
+    return subscribeToDocumentoLicitacion(idLicitacionVinculada, setLicitacionVinculadaLive);
   }, [idLicitacionVinculada]);
 
   const licitacionEfectiva = esLicitacion(proyecto)
@@ -196,9 +173,7 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
       setProyectoMaestroLive(null);
       return;
     }
-    return onSnapshot(doc(db, 'proyectos', idProyectoMaestro), snap => {
-      if (snap.exists()) setProyectoMaestroLive({ id: snap.id, ...(snap.data() as Omit<ProyectoMaestro, 'id'>) });
-    });
+    return subscribeToDocumentoProyecto(idProyectoMaestro, setProyectoMaestroLive);
   }, [idProyectoMaestro]);
 
   const proyectoMaestroEfectivo = proyectoMaestroLive || (!esLicitacion(proyecto) ? proyecto : (proyectoMaestroVinculado || undefined));
