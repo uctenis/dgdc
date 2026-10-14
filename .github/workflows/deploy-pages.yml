@@ -30,6 +30,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Si algún cálculo (multas, evaluación de ofertas, puntajes) deja de dar lo esperado, no se publica.
+      - name: Pruebas automaticas
+        run: npm test
+
       - name: Build site
         env:
           VITE_BASE_PATH: /dgdc/
