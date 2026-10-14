@@ -1,21 +1,22 @@
-// ─── PROVEEDOR DE IA (Gemini u OpenAI) ─────────────────────────────────────
-// Todas las funciones de IA de la app llaman a través de este único despachador.
-// Con VITE_IA_SERVIDOR=true (producción) Gemini se consulta a través del intermediario
-// `consultar-ia` (función de Supabase, ver supabase/functions/consultar-ia): la clave vive
-// solo en el servidor y exige sesión @uct.cl. Sin eso (pruebas locales) se usa la clave
-// VITE_GEMINI_API_KEY directo desde el navegador —queda visible en el bundle— y, si no hay, OpenAI.
+// ─── PROVEEDOR DE IA ───────────────────────────────────────────────────────
+// Todas las funciones de IA de la app llaman a través de este único despachador (llamarIA).
+// Con VITE_IA_SERVIDOR=true (producción) se consulta el intermediario `consultar-ia` (función de
+// Supabase, ver supabase/functions/consultar-ia): ahí viven la clave, el proveedor y la lista de
+// modelos, y el sitio no sabe qué IA hay detrás; cambiar de modelo o proveedor no requiere republicar.
+// Sin eso (pruebas locales) se usa la clave VITE_GEMINI_API_KEY directo desde el navegador —queda
+// visible en el bundle— y, si no hay, OpenAI.
 
 import { FASES_ITEMIZADO } from '../types';
 import { auth } from '../lib/firebase';
 
-type ProveedorIA = 'gemini' | 'openai';
+type ProveedorIA = 'servidor' | 'gemini' | 'openai';
 
 const IA_POR_SERVIDOR = import.meta.env.VITE_IA_SERVIDOR === 'true';
 const IA_ENDPOINT = (import.meta.env.VITE_IA_SERVIDOR_URL as string | undefined)
   || 'https://etjoutfnzqqjrudosjkg.supabase.co/functions/v1/consultar-ia';
 
 function proveedorActivo(): ProveedorIA | null {
-  if (IA_POR_SERVIDOR) return 'gemini';
+  if (IA_POR_SERVIDOR) return 'servidor';
   if (import.meta.env.VITE_GEMINI_API_KEY) return 'gemini';
   if (import.meta.env.VITE_OPENAI_API_KEY) return 'openai';
   return null;
@@ -72,8 +73,7 @@ async function llamarGemini(prompt: string, maxOutputTokens: number, timeoutMs?:
         const msg = err instanceof Error ? err.message : '';
         // Modelo inexistente para esta clave: se saca de la rotación.
         if (/AI_REQUEST_FAILED: 404/.test(msg)) { modelos = modelos.filter(m => m !== model); continue; }
-        const reintentable = msg.includes('AI_TIMEOUT') || msg.includes('AI_EMPTY_RESPONSE') || /AI_REQUEST_FAILED: (503|429|500|502|504)/.test(msg);
-        if (!reintentable) throw err;
+        if (!esReintentable(msg)) throw err;
         console.warn(`Gemini ${model} no disponible (ronda ${ronda + 1}), probando otro:`, msg.slice(0, 120));
       }
     }
@@ -82,14 +82,66 @@ async function llamarGemini(prompt: string, maxOutputTokens: number, timeoutMs?:
   throw ultimoError;
 }
 
+/** Error de una consulta de IA que vale la pena reintentar (saturación, límite momentáneo, sin respuesta). */
+const esReintentable = (msg: string) =>
+  msg.includes('AI_TIMEOUT') || msg.includes('AI_EMPTY_RESPONSE') || /AI_REQUEST_FAILED: (404|503|429|500|502|504)/.test(msg);
+// Cuántos intentos se hacen en cada ronda contra el intermediario: él cambia de modelo en cada intento.
+const INTENTOS_POR_RONDA_SERVIDOR = 5;
+
+/** Consulta al intermediario de IA, reintentando con rondas y pausas crecientes si está saturado. */
+async function llamarServidor(prompt: string, maxOutputTokens: number, timeoutMs?: number): Promise<string> {
+  const inicio = Date.now();
+  let ultimoError: unknown;
+  let intento = 0;
+  for (let ronda = 0; ronda <= PAUSAS_ENTRE_RONDAS_MS.length; ronda++) {
+    if (ronda > 0) {
+      if (Date.now() - inicio > PRESUPUESTO_REINTENTOS_MS) break;
+      await esperar(PAUSAS_ENTRE_RONDAS_MS[ronda - 1]);
+    }
+    for (let i = 0; i < INTENTOS_POR_RONDA_SERVIDOR; i++, intento++) {
+      if (Date.now() - inicio > PRESUPUESTO_REINTENTOS_MS) break;
+      try {
+        return await consultarServidor(prompt, maxOutputTokens, intento, timeoutMs);
+      } catch (err) {
+        ultimoError = err;
+        const msg = err instanceof Error ? err.message : '';
+        if (!esReintentable(msg)) throw err;
+        console.warn(`IA no disponible (intento ${intento + 1}), reintentando:`, msg.slice(0, 120));
+      }
+    }
+  }
+  throw ultimoError;
+}
+
+async function consultarServidor(prompt: string, maxOutputTokens: number, intento: number, timeoutMs?: number): Promise<string> {
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) throw new Error('AI_AUTH_REQUIRED');
+  let resp: Response;
+  try {
+    resp = await fetchConTimeout(IA_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ prompt, maxOutputTokens, intento }),
+    }, timeoutMs);
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') throw new Error('AI_TIMEOUT');
+    throw new Error(`AI_NETWORK_ERROR: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (!resp.ok) throw new Error(`AI_REQUEST_FAILED: ${resp.status} ${await resp.text()}`);
+  const datos = await resp.json().catch(() => ({}));
+  const texto = typeof datos?.texto === 'string' ? datos.texto.trim() : '';
+  if (!texto) throw new Error(`AI_EMPTY_RESPONSE: ${JSON.stringify(datos).slice(0, 300)}`);
+  return texto;
+}
+
 /** Mensaje claro para el usuario según el error de IA (mismo texto en todas las pantallas). */
 export function mensajeErrorIA(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err || '');
   if (msg.includes('AI_AUTH_REQUIRED') || msg.includes('IA_AUTH')) return 'Su sesión expiró. Vuelva a iniciar sesión para usar la IA.';
   if (msg.includes('IA_NO_AUTORIZADO')) return 'Solo el personal de la UCT puede usar la IA.';
-  if (msg.includes('AI_API_KEY_NOT_CONFIGURED')) return 'La IA no está configurada en este ambiente (falta la clave de Gemini).';
+  if (msg.includes('AI_API_KEY_NOT_CONFIGURED')) return 'La IA no está configurada en este ambiente (falta la clave del proveedor de IA).';
   if (/AI_REQUEST_FAILED: (503|500|502|504)/.test(msg) || msg.includes('AI_TIMEOUT'))
-    return 'Los servidores de IA de Google están saturados en este momento (el sistema reintentó varias veces con distintos modelos). Intente nuevamente en unos minutos.';
+    return 'Los servidores de IA están saturados en este momento (el sistema reintentó varias veces con distintos modelos). Intente nuevamente en unos minutos.';
   if (/AI_REQUEST_FAILED: 429/.test(msg)) return 'Se alcanzó el límite de uso gratuito de la IA por ahora. Espere unos minutos (o hasta mañana si es el límite diario) e intente nuevamente.';
   if (/AI_REQUEST_FAILED: (400|401|403)/.test(msg)) return 'La clave de IA no es válida o no tiene permiso. Avise al administrador del sistema.';
   if (msg.includes('AI_NETWORK_ERROR')) return 'No se pudo conectar con la IA. Revise su conexión a internet (o un firewall/proxy que bloquee la llamada).';
@@ -109,35 +161,20 @@ function urlGemini(model: string, key: string): string {
 async function llamarGeminiModelo(model: string, prompt: string, maxOutputTokens: number, timeoutMs?: number): Promise<string> {
   let resp: Response;
   try {
-    if (IA_POR_SERVIDOR) {
-      const token = await auth.currentUser?.getIdToken();
-      if (!token) throw new Error('AI_AUTH_REQUIRED');
-      resp = await fetchConTimeout(
-        IA_ENDPOINT,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ model, prompt, maxOutputTokens }),
-        },
-        timeoutMs
-      );
-    } else {
-      const key = import.meta.env.VITE_GEMINI_API_KEY;
-      resp = await fetchConTimeout(
-        urlGemini(model, key),
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: { maxOutputTokens, temperature: 0.3 },
-          }),
-        },
-        timeoutMs
-      );
-    }
+    const key = import.meta.env.VITE_GEMINI_API_KEY;
+    resp = await fetchConTimeout(
+      urlGemini(model, key),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens, temperature: 0.3 },
+        }),
+      },
+      timeoutMs
+    );
   } catch (err) {
-    if (err instanceof Error && err.message === 'AI_AUTH_REQUIRED') throw err;
     if (err instanceof DOMException && err.name === 'AbortError') throw new Error('AI_TIMEOUT');
     throw new Error(`AI_NETWORK_ERROR: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -189,10 +226,11 @@ async function llamarOpenAI(prompt: string, maxTokens: number, timeoutMs?: numbe
   return content.trim();
 }
 
-/** Envía `prompt` al proveedor de IA configurado (Gemini primero, luego OpenAI) y retorna el texto de respuesta. */
+/** Envía `prompt` a la IA configurada (el intermediario, en producción) y retorna el texto de respuesta. */
 async function llamarIA(prompt: string, maxTokens: number, timeoutMs?: number): Promise<string> {
   const proveedor = proveedorActivo();
   if (!proveedor) throw new Error('AI_API_KEY_NOT_CONFIGURED');
+  if (proveedor === 'servidor') return llamarServidor(prompt, maxTokens, timeoutMs);
   return proveedor === 'gemini' ? llamarGemini(prompt, maxTokens, timeoutMs) : llamarOpenAI(prompt, maxTokens, timeoutMs);
 }
 
