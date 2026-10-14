@@ -173,6 +173,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     provider.setCustomParameters({ hd: 'uct.cl', prompt: 'select_account' });
     try {
       const credential = await signInWithPopup(auth, provider);
+      // La nómina se valida con la versión VIGENTE de Firebase, no con la copia guardada en este navegador:
+      // a una persona recién agregada, la copia vieja (o la del primer intento, antes de que la agregaran)
+      // la dejaba fuera aunque ya figurara en la nómina.
+      if ((credential.user.email || '').toLowerCase().endsWith('@uct.cl')) {
+        await Promise.race([cargarConfigCompartida(), new Promise(r => setTimeout(r, 8000))]);
+        reloadResponsables();
+      }
       if (!getInternalAccess(credential.user.email)) {
         await signOut(auth);
         setError(mensajeCuentaNoAutorizada(credential.user.email));
