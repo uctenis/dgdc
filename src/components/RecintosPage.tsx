@@ -5,7 +5,7 @@ import {
 import { getCampusList, obtenerEdificiosDeCampus, etiquetaEdificio } from '../data/campusData';
 import { SUPABASE_CONFIGURADO } from '../lib/supabase';
 import {
-  listarPisos, listarEdificiosConDatos, obtenerFichaEdificio, guardarPiso, eliminarPiso, listarRecintos, guardarRecinto, eliminarRecinto, historialRecinto,
+  listarPisos, listarEdificiosConDatos, obtenerFichaEdificio, listarUsos, guardarPiso, eliminarPiso, listarRecintos, guardarRecinto, eliminarRecinto, historialRecinto,
   listarDocumentos, registrarDocumento,
 } from '../services/recintos';
 import {
@@ -24,6 +24,7 @@ type DocumentoNuevo = Omit<DocumentoEdificio, 'id' | 'vigente' | 'creado_en' | '
 /** Módulo de control documental: pisos y recintos de cada edificio, y el índice de sus planos (los archivos siguen en Drive). */
 export function RecintosPage() {
   const [enBase, setEnBase] = useState<string[]>([]);
+  const [usos, setUsos] = useState<string[]>([]);
   // Campus y edificios de la configuración, más los que solo existen en la base (códigos del catastro aún no configurados).
   const configurados = getCampusList();
   const siglasConfiguradas = new Set(configurados.map(c => c.sigla));
@@ -53,7 +54,11 @@ export function RecintosPage() {
   const [importando, setImportando] = useState(false);
   const [guardando, setGuardando] = useState(false);
 
-  useEffect(() => { if (SUPABASE_CONFIGURADO) listarEdificiosConDatos().then(setEnBase).catch(() => {}); }, []);
+  useEffect(() => {
+    if (!SUPABASE_CONFIGURADO) return;
+    listarEdificiosConDatos().then(setEnBase).catch(() => {});
+    listarUsos().then(setUsos).catch(() => {});
+  }, []);
   useEffect(() => { setEdificio(prev => (edificios.includes(prev) ? prev : edificios[0] || '')); }, [campusSigla, enBase.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const cargar = useCallback(async () => {
@@ -287,7 +292,7 @@ export function RecintosPage() {
                 {pisos.map(p => <option key={p.id} value={p.id}>{p.codigo} — {p.nombre}</option>)}
               </select>
             </label>
-            <label className="font-bold">Uso<input value={recintoEditando.uso || ''} onChange={e => setRecintoEditando({ ...recintoEditando, uso: e.target.value })} placeholder="Docencia" className={`mt-1 ${campo} font-normal`} /></label>
+            <label className="font-bold">Uso<SelectorUso valor={recintoEditando.uso || ''} usos={usos} onChange={uso => setRecintoEditando({ ...recintoEditando, uso })} /></label>
             <label className="font-bold">Estado
               <select value={recintoEditando.estado} onChange={e => setRecintoEditando({ ...recintoEditando, estado: e.target.value as Recinto['estado'] })} className={`mt-1 ${campo} font-normal`}>
                 {ESTADOS_RECINTO.map(s => <option key={s}>{s}</option>)}
@@ -434,5 +439,26 @@ function TarjetaFicha({ ficha, sumaUtil, sumaOguc }: { ficha: FichaEdificio; sum
         </div>
       )}
     </div>
+  );
+}
+
+/** Lista desplegable de usos (los mismos del catastro, para que no se escriban de mil formas), con la opción de agregar uno nuevo. */
+function SelectorUso({ valor, usos, onChange }: { valor: string; usos: string[]; onChange: (uso: string) => void }) {
+  const [escribiendo, setEscribiendo] = useState(false);
+  const opciones = valor && !usos.includes(valor) ? [valor, ...usos] : usos;
+  if (escribiendo) {
+    return (
+      <span className="mt-1 flex gap-1.5">
+        <input autoFocus value={valor} onChange={e => onChange(e.target.value.toUpperCase())} placeholder="Nuevo uso" className={`${campo} font-normal`} />
+        <button type="button" onClick={() => setEscribiendo(false)} className="px-2 rounded-lg border border-slate-300 font-bold text-slate-600 hover:bg-slate-50">Lista</button>
+      </span>
+    );
+  }
+  return (
+    <select value={valor} onChange={e => (e.target.value === '__otro' ? (onChange(''), setEscribiendo(true)) : onChange(e.target.value))} className={`block mt-1 ${campo} font-normal`}>
+      <option value="">— Sin uso definido —</option>
+      {opciones.map(u => <option key={u} value={u}>{u}</option>)}
+      <option value="__otro">Otro… (escribir uno nuevo)</option>
+    </select>
   );
 }

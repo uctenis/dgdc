@@ -58,6 +58,13 @@ export async function listarRecintos(edificioCodigo: string): Promise<Recinto[]>
   return data as Recinto[];
 }
 
+/** Usos ya registrados en la base (los del catastro y los que se agreguen), en orden alfabético, para elegir de una lista. */
+export async function listarUsos(): Promise<string[]> {
+  const { data, error } = await supabase.from('recintos').select('uso').not('uso', 'is', null);
+  if (error) throw errorDe(error, 'No se pudieron leer los usos');
+  return [...new Set((data as { uso: string }[]).map(r => r.uso.trim().toUpperCase()).filter(Boolean))].sort((x, y) => x.localeCompare(y, 'es'));
+}
+
 export async function guardarRecinto(recinto: Omit<Recinto, 'id'> & { id?: string }): Promise<Recinto> {
   const { id, modificado_en: _modificadoEn, modificado_por: _modificadoPor, ...datos } = recinto;
   const consulta = id
