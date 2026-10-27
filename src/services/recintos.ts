@@ -109,8 +109,3 @@ export async function registrarDocumento(documento: Omit<DocumentoEdificio, 'id'
   if (error) throw errorDe(error, 'No se pudo registrar el documento');
   return data as DocumentoEdificio;
 }
-
-export async function actualizarDocumento(id: string, cambios: Partial<Omit<DocumentoEdificio, 'id'>>): Promise<void> {
-  const { error } = await supabase.from('documentos').update(cambios).eq('id', id);
-  if (error) throw errorDe(error, 'No se pudo actualizar el documento');
-}
