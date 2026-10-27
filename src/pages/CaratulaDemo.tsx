@@ -13,7 +13,7 @@ const licitacion = {
   montoEstimado: 9000000, fechaEvaluacion: '', fechaCreacion: hace(40), estado: 'Adjudicado',
   proveedorAdjudicadoNombre: 'Constructora Araucanía SpA', proveedorAdjudicadoRut: '76.123.456-7',
   montoAdjudicadoTotal: 8450000, plazoAdjudicadoDias: 45, fechaInicioObra: hace(10).slice(0, 10),
-  campusSigla: 'CCC', edificioSigla: '', uso: 'Deportivo', tipoObra: 'REMODELACION', rubro: 'Obras Exteriores, Pavimentos y Paisajismo',
+  campusSigla: 'CSN', edificioSigla: '', uso: 'Deportivo', tipoObra: 'REMODELACION', rubro: 'Obras Exteriores, Pavimentos y Paisajismo',
   responsableNombre: 'J. Solís de Ovando', responsableEmail: 'jsolis@uct.cl',
   actaFirmaDigital: { version: 1, estado: 'Firmada', fechaActualizacion: hace(20), sha256: 'x', firmas: [{ uid: 'x', email: 'icisternas@uct.cl', nombre: 'Iván Cisternas', cargo: 'Director', rolFirma: 'director', fecha: hace(20), version: 1, sha256: 'x' }] },
   opRegistro: { fecha: hace(15) }, ordenPedidoNumero: 'OP-2026-0153',

@@ -23,7 +23,7 @@ const especificaciones: Record<string, string> = {
 const proyecto = {
   id: 'demo', correlativo: 7, codigoProyecto: '2026_007', codigoCP: '409-1722', codigoOP: '', codigoOT: '',
   nombre: 'MANTA TERMICA PISCINA CURACAUTIN', descripcion: 'La Subdirección de Infraestructura requiere la adquisición e instalación de una manta térmica para la piscina del Campus Curacautín, zona precordillerana de clima frío, para reducir la pérdida de calor y la evaporación del agua cuando el recinto no está en uso.', valorAprox: 9000000, estado: 'Pendiente', fechaCreacion: '',
-  campusSigla: 'CCC', edificioSigla: '', tipoObra: 'REMODELACION', rubro: 'Obras Exteriores, Pavimentos y Paisajismo',
+  campusSigla: 'CSN', edificioSigla: '', tipoObra: 'REMODELACION', rubro: 'Obras Exteriores, Pavimentos y Paisajismo',
   modalidadContrato: 'Suma Alzada', responsableNombre: 'J. Solís de Ovando', responsableEmail: 'jsolis@uct.cl',
 } as unknown as ProyectoMaestro;
 

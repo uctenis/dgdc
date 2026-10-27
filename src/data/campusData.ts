@@ -325,11 +325,38 @@ const INITIAL_CAMPUS_UCT: CampusInfo[] = [
     ]
   },
   {
-    "sigla": "CCC",
-    "nombre": "Campus Curacautín",
+    "sigla": "CSN",
+    "nombre": "Campus San Nicolás (Curacautín)",
     "ciudad": "Curacautín",
     "edificios": [
-      "CCC"
+      "CSN01",
+      "CSN05",
+      "CSN15",
+      "CSN16",
+      "CSN17",
+      "CSN18",
+      "CSN19",
+      "CSN20",
+      "CSN101",
+      "CSN102",
+      "CSN105",
+      "CSN110",
+      "CSN111",
+      "CSN115",
+      "CSN116",
+      "CSN117",
+      "CSN118",
+      "CSN120",
+      "CSN121",
+      "CSN122",
+      "CSN123",
+      "CSN124",
+      "CSN125",
+      "CSN130",
+      "CSN170",
+      "CSN180",
+      "CSN190",
+      "CSN195"
     ]
   },
   {
