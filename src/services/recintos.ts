@@ -1,7 +1,7 @@
 // Acceso a datos del módulo de recintos y planos (Postgres en Supabase). Las pantallas no hablan con la base
 // directamente: todo pasa por aquí.
 import { supabase } from '../lib/supabase';
-import type { CambioRecinto, DocumentoEdificio, Piso, Recinto } from '../types/recintos';
+import type { CambioRecinto, DocumentoEdificio, FichaEdificio, Piso, Recinto } from '../types/recintos';
 import { datosDePiso } from '../utils/importacionRecintos';
 
 /** Convierte el error de la base en un mensaje entendible. */
@@ -21,11 +21,19 @@ export async function listarPisos(edificioCodigo: string): Promise<Piso[]> {
   return data as Piso[];
 }
 
-/** Códigos de todos los edificios que tienen pisos en la base, estén o no en la configuración de campus. */
+/** Códigos de todos los edificios con ficha o con pisos en la base, estén o no en la configuración de campus. */
 export async function listarEdificiosConDatos(): Promise<string[]> {
-  const { data, error } = await supabase.from('pisos').select('edificio_codigo');
-  if (error) throw errorDe(error, 'No se pudieron leer los edificios');
-  return [...new Set((data as { edificio_codigo: string }[]).map(p => p.edificio_codigo))];
+  const [p, e] = await Promise.all([supabase.from('pisos').select('edificio_codigo'), supabase.from('edificios').select('codigo')]);
+  if (p.error || e.error) throw errorDe(p.error || e.error, 'No se pudieron leer los edificios');
+  return [...new Set([...(p.data as { edificio_codigo: string }[]).map(x => x.edificio_codigo), ...(e.data as { codigo: string }[]).map(x => x.codigo)])];
+}
+
+// ── Ficha del edificio ──
+
+export async function obtenerFichaEdificio(codigo: string): Promise<FichaEdificio | null> {
+  const { data, error } = await supabase.from('edificios').select('*').eq('codigo', codigo).maybeSingle();
+  if (error) throw errorDe(error, 'No se pudo leer la ficha del edificio');
+  return data as FichaEdificio | null;
 }
 
 export async function guardarPiso(piso: Omit<Piso, 'id'> & { id?: string }): Promise<Piso> {

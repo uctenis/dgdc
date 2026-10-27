@@ -5,12 +5,12 @@ import {
 import { getCampusList, obtenerEdificiosDeCampus, etiquetaEdificio } from '../data/campusData';
 import { SUPABASE_CONFIGURADO } from '../lib/supabase';
 import {
-  listarPisos, listarEdificiosConDatos, guardarPiso, eliminarPiso, listarRecintos, guardarRecinto, eliminarRecinto, historialRecinto,
+  listarPisos, listarEdificiosConDatos, obtenerFichaEdificio, guardarPiso, eliminarPiso, listarRecintos, guardarRecinto, eliminarRecinto, historialRecinto,
   listarDocumentos, registrarDocumento,
 } from '../services/recintos';
 import {
   ESTADOS_RECINTO, TIPOS_DOCUMENTO, ESPECIALIDADES, FORMATOS_DOCUMENTO,
-  type Piso, type Recinto, type DocumentoEdificio, type CambioRecinto,
+  type Piso, type Recinto, type DocumentoEdificio, type CambioRecinto, type FichaEdificio,
 } from '../types/recintos';
 import { ImportarRecintosModal } from './ImportarRecintosModal';
 import { formatoFecha } from '../utils/fechas';
@@ -42,6 +42,7 @@ export function RecintosPage() {
   const [pisos, setPisos] = useState<Piso[]>([]);
   const [recintos, setRecintos] = useState<Recinto[]>([]);
   const [documentos, setDocumentos] = useState<DocumentoEdificio[]>([]);
+  const [ficha, setFicha] = useState<FichaEdificio | null>(null);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
   const [pisoEditando, setPisoEditando] = useState<(Omit<Piso, 'id'> & { id?: string }) | null>(null);
@@ -60,8 +61,8 @@ export function RecintosPage() {
     setCargando(true);
     setError('');
     try {
-      const [p, r, d] = await Promise.all([listarPisos(edificio), listarRecintos(edificio), listarDocumentos(edificio)]);
-      setPisos(p); setRecintos(r); setDocumentos(d);
+      const [p, r, d, f] = await Promise.all([listarPisos(edificio), listarRecintos(edificio), listarDocumentos(edificio), obtenerFichaEdificio(edificio)]);
+      setPisos(p); setRecintos(r); setDocumentos(d); setFicha(f);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -91,6 +92,7 @@ export function RecintosPage() {
   }, [recintos]);
   const activos = recintos.filter(r => r.estado !== 'Eliminado');
   const superficieTotal = activos.reduce((s, r) => s + (Number(r.superficie_m2) || 0), 0);
+  const superficieOguc = activos.reduce((s, r) => s + (Number(r.superficie_oguc_m2) || 0), 0);
   const documentosVisibles = documentos.filter(d => verAnteriores || d.vigente);
   const porEspecialidad = ESPECIALIDADES.map(e => ({ especialidad: e, lista: documentosVisibles.filter(d => d.especialidad === e) })).filter(g => g.lista.length);
 
@@ -139,9 +141,11 @@ export function RecintosPage() {
                 {v === 'recintos' ? `Recintos (${activos.length})` : `Planos y documentos (${documentos.filter(d => d.vigente).length} vigentes)`}
               </button>
             ))}
-            <span className="ml-auto text-slate-500">{pisos.length} piso(s) · superficie útil <strong className="text-slate-800">{m2(superficieTotal)}</strong> · OGUC <strong className="text-slate-800">{m2(activos.reduce((s, r) => s + (Number(r.superficie_oguc_m2) || 0), 0))}</strong></span>
+            <span className="ml-auto text-slate-500">{pisos.length} piso(s) · suma de recintos: útil <strong className="text-slate-800">{m2(superficieTotal)}</strong> · OGUC <strong className="text-slate-800">{m2(superficieOguc)}</strong></span>
             {cargando && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
           </div>
+
+          {ficha && <TarjetaFicha ficha={ficha} sumaUtil={superficieTotal} sumaOguc={superficieOguc} />}
 
           {error && (
             <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 rounded-lg p-3 text-rose-800">
@@ -160,7 +164,9 @@ export function RecintosPage() {
               </div>
               {!cargando && !pisos.length && (
                 <p className="bg-white border border-dashed border-slate-300 rounded-2xl p-6 text-center text-slate-500">
-                  Este edificio aún no tiene pisos ni recintos. Agréguelos a mano o importe la planilla del edificio.
+                  {ficha?.superficie_m2
+                    ? `Este edificio no tiene recintos detallados; el catastro informa ${m2(ficha.superficie_m2)} útiles para el edificio completo. Puede agregar sus pisos y recintos a mano o importarlos.`
+                    : 'Este edificio aún no tiene pisos ni recintos. Agréguelos a mano o importe la planilla del edificio.'}
                 </p>
               )}
               {pisos.map(piso => {
@@ -389,6 +395,44 @@ function Ventana({ titulo, children, onClose, onGuardar, guardando, error }: { t
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Datos del edificio completo según el catastro (hoja de edificios): superficies, terreno, rol, año y permisos. */
+function TarjetaFicha({ ficha, sumaUtil, sumaOguc }: { ficha: FichaEdificio; sumaUtil: number; sumaOguc: number }) {
+  // Si el catastro no trae la superficie del edificio (en la planilla es una suma de sus recintos), se muestra esa suma.
+  const util = ficha.superficie_m2 ?? (sumaUtil || null);
+  const oguc = ficha.superficie_oguc_m2 ?? (sumaOguc || null);
+  const datos: [string, ReactNode][] = [
+    ['Superficie útil', <>{m2(util)}{ficha.superficie_m2 == null && sumaUtil > 0 && <span className="text-slate-400"> (suma de recintos)</span>}</>],
+    ['Superficie OGUC', <>{m2(oguc)}{ficha.superficie_oguc_m2 == null && sumaOguc > 0 && <span className="text-slate-400"> (suma de recintos)</span>}</>],
+    ['Terreno', m2(ficha.superficie_terreno_m2)],
+    ['Uso principal', ficha.uso_principal || '—'],
+    ['Año de construcción', ficha.anio_construccion || '—'],
+    ['Ascensor / rampa', [ficha.anio_ascensor && `Ascensor ${ficha.anio_ascensor}`, ficha.rampa && ficha.rampa !== '0' && `Rampa ${ficha.rampa}`].filter(Boolean).join(' · ') || '—'],
+    ['Dirección', ficha.direccion || '—'],
+    ['Rol', ficha.rol || '—'],
+  ];
+  const permisos = Object.entries(ficha.regularizacion || {});
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-3">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h3 className="text-sm font-extrabold text-slate-900">{ficha.codigo} · {ficha.nombre || 'Sin nombre'}</h3>
+        {ficha.nombre_anterior && <span className="text-slate-400">antes {ficha.nombre_anterior}</span>}
+        <span className="ml-auto text-[10px] font-bold uppercase tracking-wide text-slate-400">Ficha del catastro</span>
+      </div>
+      <dl className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2">
+        {datos.map(([k, v]) => (
+          <div key={k}><dt className="text-[10px] font-bold uppercase text-slate-400">{k}</dt><dd className="font-semibold text-slate-800">{v}</dd></div>
+        ))}
+      </dl>
+      {(permisos.length > 0 || ficha.comentarios) && (
+        <div className="border-t border-slate-100 pt-2 space-y-1 text-slate-600">
+          {permisos.map(([k, p]) => <p key={k}><strong className="text-slate-700">{k}:</strong> {[p.valor, p.fecha && formatoFecha(p.fecha)].filter(Boolean).join(' · ')}</p>)}
+          {ficha.comentarios && <p className="italic">{ficha.comentarios}</p>}
+        </div>
+      )}
     </div>
   );
 }

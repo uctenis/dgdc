@@ -11,6 +11,29 @@ export const ESPECIALIDADES = [
 ] as const;
 export const FORMATOS_DOCUMENTO = ['DWG', 'PDF', 'Otro'] as const;
 
+/** Ficha de un edificio según el catastro (tabla edificios, supabase/migrations/0003_ficha_edificios.sql). */
+export interface FichaEdificio {
+  codigo: string;
+  campus_nombre?: string | null;
+  nombre?: string | null;
+  nombre_anterior?: string | null;
+  categoria?: string | null;
+  uso_principal?: string | null;
+  direccion?: string | null;
+  rol?: string | null;
+  superficie_terreno_m2?: number | null;
+  /** Superficie interior útil del edificio completo, según el catastro. */
+  superficie_m2?: number | null;
+  superficie_oguc_m2?: number | null;
+  anio_construccion?: number | null;
+  anio_ascensor?: string | null;
+  rampa?: string | null;
+  /** Permisos de edificación y recepciones: { "PERM EDIF": { valor, fecha } }. */
+  regularizacion: Record<string, { valor: string | null; fecha: string | null }>;
+  comentarios?: string | null;
+  atributos: Record<string, unknown>;
+}
+
 export interface Piso {
   id: string;
   edificio_codigo: string;
