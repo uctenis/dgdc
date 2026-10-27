@@ -10,7 +10,7 @@ const DIA_MS = 86_400_000;
 /** Puntos de diferencia bajo lo programado desde los que se considera la obra atrasada. */
 export const UMBRAL_ATRASO_PTS = 10;
 
-export interface PuntoAvance { fecha: string; pct: number; origen: 'libro' | 'estado-pago' }
+interface PuntoAvance { fecha: string; pct: number; origen: 'libro' | 'estado-pago' }
 
 export interface AvanceObra {
   inicio?: Date;
@@ -25,7 +25,7 @@ export interface AvanceObra {
   estado: 'sin-programa' | 'al-dia' | 'atrasada' | 'adelantada';
 }
 
-export function plazoObraDias(lic: Pick<LicitacionProyecto, 'plazoAdjudicadoDias' | 'fechaInicioObra' | 'fechaTerminoProgramada'>): number | undefined {
+function plazoObraDias(lic: Pick<LicitacionProyecto, 'plazoAdjudicadoDias' | 'fechaInicioObra' | 'fechaTerminoProgramada'>): number | undefined {
   if (lic.plazoAdjudicadoDias) return lic.plazoAdjudicadoDias;
   if (lic.fechaInicioObra && lic.fechaTerminoProgramada) {
     const d = Math.round((new Date(lic.fechaTerminoProgramada).getTime() - new Date(lic.fechaInicioObra).getTime()) / DIA_MS);

@@ -15,7 +15,7 @@ export type FamiliaBases = 'obra-civil' | 'obra-menor' | 'diseno' | 'suministro'
  * diseño o suministro), que es lo que realmente cambia el contenido de las
  * bases (garantías, forma de pago, qué se recibe al final, etc).
  */
-export const TIPO_OBRA_A_FAMILIA: Record<string, FamiliaBases> = {
+const TIPO_OBRA_A_FAMILIA: Record<string, FamiliaBases> = {
   'OBRA NUEVA': 'obra-civil',
   'AUMENTO DE OBRA': 'obra-civil',
   'AMPLIACION': 'obra-civil',
@@ -61,8 +61,8 @@ export type PoliticaGarantias = 'Sin Garantías' | 'Retención sobre Estados de 
  * sugerencia de partida, siempre editable por quien crea el proyecto — no
  * reemplaza la política oficial de garantías que defina Coordinación de Calidad.
  */
-export const UMBRAL_GARANTIAS_RETENCION = 800001;
-export const UMBRAL_GARANTIAS_BOLETAS = 5000001;
+const UMBRAL_GARANTIAS_RETENCION = 800001;
+const UMBRAL_GARANTIAS_BOLETAS = 5000001;
 
 export function sugerirPoliticaGarantias(valorAprox: number): PoliticaGarantias {
   if (valorAprox >= UMBRAL_GARANTIAS_BOLETAS) return 'Boletas de Garantía Completas';
@@ -344,9 +344,6 @@ const PLANTILLAS_POR_FAMILIA: Record<FamiliaBases, SeccionBases[]> = {
   'otros': PLANTILLA_OBRA_CIVIL, // familia genérica: usa la estructura completa como base más segura
 };
 
-/** @deprecated usar PLANTILLAS_POR_FAMILIA['obra-civil'] */
-export const PLANTILLA_BASES_SUMA_ALZADA = PLANTILLA_OBRA_CIVIL;
-
 // v4: se agregó {{descripcionProyecto}} al objeto de cada familia — el cambio de versión en la
 // llave fuerza a que todos los navegadores reciban el default nuevo (localStorage no se auto-migra).
 const STORAGE_KEY_POR_FAMILIA: Record<FamiliaBases, string> = {
@@ -394,11 +391,6 @@ export function restaurarPlantillaBasesPorFamilia(familia: FamiliaBases): Seccio
 /** Atajo: obtiene la plantilla correcta a partir del Tipo de Obra del proyecto. */
 export function getPlantillaBasesPorTipoObra(tipoObra?: string): SeccionBases[] {
   return getPlantillaBasesPorFamilia(obtenerFamiliaPorTipoObra(tipoObra));
-}
-
-/** @deprecated usar getPlantillaBasesPorFamilia('obra-civil') o getPlantillaBasesPorTipoObra */
-export function getPlantillaBasesSumaAlzada(): SeccionBases[] {
-  return getPlantillaBasesPorFamilia('obra-civil');
 }
 
 /** Reemplaza los marcadores {{campo}} de una sección con los datos reales del proyecto. */

@@ -7,11 +7,11 @@ import { auth, db } from '../lib/firebase';
  * pantalla y, sin señal, queda en cola) y nunca interrumpe la operación si falla.
  */
 
-export type EntidadAuditoria =
+type EntidadAuditoria =
   | 'Licitación' | 'Proyecto' | 'Proveedor' | 'Cotización' | 'Estado de pago' | 'Aumento de obra'
   | 'Garantía' | 'Multa' | 'Aclaración' | 'Consulta' | 'Evaluación de desempeño' | 'Invitado' | 'Configuración';
 
-export type AccionAuditoria = 'Creó' | 'Modificó' | 'Eliminó' | 'Adjudicó' | 'Publicó' | 'Respondió' | 'Invitó';
+type AccionAuditoria = 'Creó' | 'Modificó' | 'Eliminó' | 'Adjudicó' | 'Publicó' | 'Respondió' | 'Invitó';
 
 export interface CambioCampo { antes?: string; despues?: string }
 

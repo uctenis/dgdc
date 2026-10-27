@@ -31,7 +31,7 @@ const SOLSTICIO: Record<number, number> = { 2025: 20, 2026: 21, 2027: 21, 2028: 
 const cache = new Map<number, Map<string, string>>();
 
 /** Feriados nacionales del año: fecha (YYYY-MM-DD) → nombre. */
-export function feriadosChile(a: number): Map<string, string> {
+function feriadosChile(a: number): Map<string, string> {
   const guardado = cache.get(a);
   if (guardado) return guardado;
   const f = new Map<string, string>();
@@ -65,7 +65,7 @@ export function feriadosChile(a: number): Map<string, string> {
 }
 
 /** Nombre del feriado, o undefined si la fecha (YYYY-MM-DD) no es feriado. */
-export function feriado(fechaISO: string): string | undefined {
+function feriado(fechaISO: string): string | undefined {
   return feriadosChile(Number(fechaISO.slice(0, 4))).get(fechaISO.slice(0, 10));
 }
 
@@ -84,10 +84,10 @@ export function motivoNoHabil(fechaISO: string): string | undefined {
   return nombre ? `feriado: ${nombre}` : undefined;
 }
 
-export const esDiaHabil = (fechaISO: string) => !motivoNoHabil(fechaISO);
+const esDiaHabil = (fechaISO: string) => !motivoNoHabil(fechaISO);
 
 /** Suma `n` días hábiles a la fecha (n ≥ 1). */
-export function sumarDiasHabiles(fechaISO: string, n: number): string {
+function sumarDiasHabiles(fechaISO: string, n: number): string {
   let d = aFecha(fechaISO);
   let restantes = n;
   while (restantes > 0) {

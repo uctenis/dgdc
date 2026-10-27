@@ -7,7 +7,7 @@ export interface EstadoProyectoInfo {
   estado: 'Activo' | 'Inactivo';
 }
 
-export const INITIAL_ESTADOS_PROYECTO: EstadoProyectoInfo[] = [
+const INITIAL_ESTADOS_PROYECTO: EstadoProyectoInfo[] = [
   { id: 'est-1', nombre: 'PROYECTO', colorBadge: 'bg-blue-100 text-blue-900 border-blue-300', estado: 'Activo', descripcion: 'Iniciativa en fase de diseño o formulación preliminar' },
   { id: 'est-2', nombre: 'COTIZACION', colorBadge: 'bg-sky-100 text-sky-900 border-sky-300', estado: 'Activo', descripcion: 'En proceso de recepción y evaluación de ofertas de proveedores' },
   { id: 'est-3', nombre: 'EN EJECUCION', colorBadge: 'bg-amber-100 text-amber-900 border-amber-300', estado: 'Activo', descripcion: 'Obra adjudicada e inicio de ejecución física en terreno' },
@@ -41,15 +41,3 @@ export function saveEstadosProyectoList(list: EstadoProyectoInfo[]): void {
   }
 }
 
-export function getEstadosProyectoNombres(): string[] {
-  return getEstadosProyectoList()
-    .filter(e => e.estado === 'Activo')
-    .map(e => e.nombre);
-}
-
-export function obtenerBadgeEstiloEstado(nombreEstado: string): string {
-  const list = getEstadosProyectoList();
-  const clean = (nombreEstado || '').trim().toUpperCase();
-  const found = list.find(e => e.nombre.toUpperCase() === clean);
-  return found?.colorBadge || 'bg-slate-100 text-slate-800 border-slate-300';
-}

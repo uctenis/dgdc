@@ -31,25 +31,6 @@ export async function getProveedorPorId(id: string): Promise<Proveedor | null> {
   return { ...prov, rut: formatearRUT(prov.rut) };
 }
 
-export async function getProveedorPorEmail(email: string): Promise<Proveedor | null> {
-  const normalizado = email.trim().toLowerCase();
-  if (!normalizado) return null;
-  const snap = await getDocs(collection(db, 'proveedores'));
-  const match = snap.docs.find(d => (d.data().email || '').trim().toLowerCase() === normalizado);
-  if (!match) return null;
-  const prov = { id: match.id, ...(match.data() as Omit<Proveedor, 'id'>) };
-  return { ...prov, rut: formatearRUT(prov.rut) };
-}
-
-export async function getProveedores(): Promise<Proveedor[]> {
-  const q = query(collection(db, 'proveedores'), orderBy('fechaRegistro', 'desc'));
-  const snap = await getDocs(q);
-  return snap.docs.map(d => {
-    const prov = { id: d.id, ...(d.data() as Omit<Proveedor, 'id'>) };
-    return { ...prov, rut: formatearRUT(prov.rut) };
-  });
-}
-
 export async function addProveedorSinRegistro(data: Omit<Proveedor, 'id' | 'fechaRegistro'>): Promise<string> {
   const ref = await addDoc(collection(db, 'proveedores'), {
     ...data,
@@ -157,16 +138,6 @@ export async function getHistorialObras(proveedorId: string): Promise<HistorialO
   return [...consolidado.values()].sort((a, b) => {
     if (Boolean(a.activo) !== Boolean(b.activo)) return a.activo ? -1 : 1;
     return (b.fecha || '').localeCompare(a.fecha || '');
-  });
-}
-
-export async function addHistorialObra(
-  proveedorId: string,
-  data: Omit<HistorialObra, 'id'>
-): Promise<void> {
-  await addDoc(collection(db, 'proveedores', proveedorId, 'historialObras'), {
-    ...data,
-    _createdAt: serverTimestamp(),
   });
 }
 

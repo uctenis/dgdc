@@ -37,7 +37,7 @@ export const CAMPOS_QUE_AFECTAN_BASES: (keyof ProyectoMaestro)[] = [
 ];
 
 /** Datos reales del proyecto que reemplazan los {{marcadores}} en el texto de las Bases. */
-export function construirDatosMergeBases(proyecto: ProyectoMaestro): Record<string, string> {
+function construirDatosMergeBases(proyecto: ProyectoMaestro): Record<string, string> {
   // El plazo REAL del contrato adjudicado (plazoEjecucionDias) manda una vez que existe;
   // mientras el proyecto no se licita, se usa la duración aproximada declarada al crearlo.
   const plazoDiasEfectivo = proyecto.plazoEjecucionDias || proyecto.duracionEstimadaDias;

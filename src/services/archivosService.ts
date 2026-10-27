@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { comprimirImagen } from '../utils/imagenes';
 
@@ -9,7 +9,7 @@ import { comprimirImagen } from '../utils/imagenes';
  */
 
 /** Tamaño máximo de un archivo (la base gratuita tiene 1 GB en total). */
-export const MAX_BYTES_ARCHIVO = 15 * 1024 * 1024;
+const MAX_BYTES_ARCHIVO = 15 * 1024 * 1024;
 const BYTES_POR_PARTE = 700_000;
 /** Las imágenes más pesadas que esto se comprimen antes de guardarlas. */
 const COMPRIMIR_IMAGENES_DESDE = 900_000;
@@ -24,7 +24,7 @@ export type AccesoArchivo =
   /** Personal UCT y la empresa con el enlace de inscripción (sin sesión). */
   | { tipo: 'inscripcion'; codigo: string };
 
-export interface ArchivoMeta {
+interface ArchivoMeta {
   nombre: string;
   tipo: string;
   tamano: number;
@@ -106,7 +106,7 @@ export async function subirArchivo(file: File, acceso: AccesoArchivo, onProgress
   return urlArchivo(ref.id);
 }
 
-export async function leerMetaArchivo(id: string): Promise<ArchivoMeta | null> {
+async function leerMetaArchivo(id: string): Promise<ArchivoMeta | null> {
   const snap = await getDoc(doc(db, 'archivos', id));
   return snap.exists() ? (snap.data() as ArchivoMeta) : null;
 }
@@ -125,17 +125,6 @@ export async function obtenerBlobArchivo(url: string): Promise<{ blob: Blob; nom
   const ordenadas = partes.docs.map(d => d.data() as { n: number; datos: string }).sort((a, b) => a.n - b.n);
   if (ordenadas.length < meta.partes) throw new Error('ARCHIVO_INCOMPLETO');
   return { blob: new Blob(ordenadas.map(p => desdeBase64(p.datos)), { type: meta.tipo }), nombre: meta.nombre };
-}
-
-/** Borra un archivo propio del sistema (las URLs externas se ignoran). */
-export async function borrarArchivo(url: string): Promise<void> {
-  const id = idDesdeUrl(url);
-  if (!id) return;
-  const meta = await leerMetaArchivo(id);
-  const batch = writeBatch(db);
-  for (let n = 0; n < (meta?.partes || 0); n++) batch.delete(doc(db, 'archivos', id, 'partes', String(n)));
-  batch.delete(doc(db, 'archivos', id));
-  await batch.commit().catch(() => deleteDoc(doc(db, 'archivos', id)).catch(() => undefined));
 }
 
 /** Espacio usado por los archivos (bytes), para mostrar cuánto queda de la base gratuita. */

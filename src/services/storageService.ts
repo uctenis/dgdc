@@ -1,5 +1,5 @@
 import { guardarConfigCompartida } from './configCompartida';
-import { borrarArchivo, subirArchivo, type AccesoArchivo } from './archivosService';
+import { subirArchivo, type AccesoArchivo } from './archivosService';
 import type { Proveedor, LicitacionProyecto, Cotizacion, ConfiguracionFirmas } from '../types';
 import { INITIAL_PROVEEDORES, INITIAL_LICITACIONES, INITIAL_COTIZACIONES, INITIAL_CONFIG_FIRMAS } from '../data/initialData';
 import { formatearRUT } from '../utils/rutUtils';
@@ -82,16 +82,6 @@ export const storageService = {
 // Firebase Storage exige plan de pago, así que los archivos se guardan en Firestore (ver archivosService.ts).
 // Estas funciones mantienen su forma de siempre: reciben el archivo y devuelven el enlace para abrirlo.
 
-/** Oferta de un proveedor (la ven la UCT y ese proveedor). */
-export function uploadPropuesta(
-  licitacionId: string,
-  proveedorId: string,
-  file: File,
-  onProgress: (pct: number) => void
-): Promise<string> {
-  return subirArchivo(file, { tipo: 'oferta', licitacionId, proveedorId }, onProgress);
-}
-
 /**
  * Firma manuscrita enrolada por un usuario: imagen liviana (PNG, máx. 600 px) que se guarda directamente en su
  * perfil como data URL, así se estampa en las actas sin depender de otro almacenamiento.
@@ -155,11 +145,3 @@ export function uploadDocumentoInscripcion(codigo: string, _requisito: string, f
   return subirArchivo(file, { tipo: 'inscripcion', codigo }, onProgress);
 }
 
-/** Elimina un archivo dado su enlace (silencioso si no existe). */
-export async function deletePropuestaFile(url: string): Promise<void> {
-  try {
-    await borrarArchivo(url);
-  } catch {
-    // Silencioso si el archivo no existe
-  }
-}

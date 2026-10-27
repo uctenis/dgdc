@@ -2,9 +2,9 @@ import type { LicitacionProyecto, ProyectoMaestro } from '../types';
 import { licitacionCerradaParaOfertas } from '../services/firestoreService';
 import { esProcesoSimplificado } from '../data/contratoTemplateData';
 
-export type EstadoCheck = 'ok' | 'falta' | 'na';
+type EstadoCheck = 'ok' | 'falta' | 'na';
 
-export interface ChecklistItem {
+interface ChecklistItem {
   id: string;
   etiqueta: string;
   estado: EstadoCheck;

@@ -1,11 +1,11 @@
 import { PARAMETROS_CONTRATO } from '../data/contratoTemplateData';
 import { sugerirPoliticaGarantias, type PoliticaGarantias } from '../data/basesTemplateData';
-import type { EstadoPago, MultaObra } from '../types';
+import type { MultaObra } from '../types';
 
 const DIA_MS = 86_400_000;
 /** Multa diaria como fracción del contrato (PARAMETROS_CONTRATO.multaDiariaPct viene como texto, ej. "0,02" %). */
 export const MULTA_DIARIA = Number(String(PARAMETROS_CONTRATO.multaDiariaPct).replace(',', '.')) / 100;
-export const TOPE_MULTAS = PARAMETROS_CONTRATO.topeMultasPct / 100;
+const TOPE_MULTAS = PARAMETROS_CONTRATO.topeMultasPct / 100;
 
 /** % de retención de cada estado de pago según la política de garantías (0 si el contrato no la exige). */
 export function retencionPctSegunPolitica(politica: PoliticaGarantias | undefined, montoContrato: number): number {
@@ -80,7 +80,3 @@ export function calcularAtraso(params: {
   };
 }
 
-/** Totales de retenciones de los estados de pago del contrato. */
-export function totalesRetenciones(estados: Pick<EstadoPago, 'montoRetencion'>[]) {
-  return { retenido: estados.reduce((s, e) => s + (e.montoRetencion || 0), 0) };
-}

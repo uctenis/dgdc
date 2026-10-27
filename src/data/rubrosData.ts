@@ -10,7 +10,7 @@ export interface RubroProveedor {
 
 const STORAGE_KEY = 'infra_app_rubros_v3';
 
-export const INITIAL_RUBROS: RubroProveedor[] = [
+const INITIAL_RUBROS: RubroProveedor[] = [
   { id: 'rub-01', nombre: 'Obras Civiles y Estructuras', descripcion: 'Hormigón, fundaciones y movimiento de tierra', estado: 'Activo' },
   { id: 'rub-02', nombre: 'Instalaciones Eléctricas', descripcion: 'Cableado, tableros, corrientes débiles e iluminación', estado: 'Activo' },
   { id: 'rub-03', nombre: 'Instalaciones Sanitarias y Gas', descripcion: 'Agua potable, alcantarillado, gasfitería y gas', estado: 'Activo' },
@@ -64,27 +64,3 @@ export function saveRubrosList(list: RubroProveedor[]): void {
   }
 }
 
-export function addRubro(nuevo: Omit<RubroProveedor, 'id'>): RubroProveedor[] {
-  const current = getRubrosList();
-  const item: RubroProveedor = {
-    ...nuevo,
-    id: `rub-${Date.now()}`,
-  };
-  const updated = [...current, item];
-  saveRubrosList(updated);
-  return updated;
-}
-
-export function updateRubro(id: string, datos: Partial<Omit<RubroProveedor, 'id'>>): RubroProveedor[] {
-  const current = getRubrosList();
-  const updated = current.map(r => (r.id === id ? { ...r, ...datos } : r));
-  saveRubrosList(updated);
-  return updated;
-}
-
-export function deleteRubro(id: string): RubroProveedor[] {
-  const current = getRubrosList();
-  const updated = current.filter(r => r.id !== id);
-  saveRubrosList(updated);
-  return updated;
-}

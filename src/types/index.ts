@@ -394,7 +394,7 @@ export const FASES_ITEMIZADO = [
   'Terminaciones',
   'Aseo y Entrega',
 ] as const;
-export type FaseItemizado = typeof FASES_ITEMIZADO[number];
+type FaseItemizado = typeof FASES_ITEMIZADO[number];
 
 /** Especificación técnica de UNA partida del itemizado — enlazada por `partidaId` (id estable de
  * la partida; `item`/`descripcion` se guardan como referencia por si la partida cambia después). */
@@ -1006,7 +1006,7 @@ export interface UserProfile {
 }
 
 // ─── CONFIGURACIÓN DE FIRMAS Y PARÁMETROS ──────────────────────────────
-export interface ParametrosLicitacionSGC {
+interface ParametrosLicitacionSGC {
   porcentajeEconomico: number;     // 55
   porcentajeTecnico: number;       // 35
   porcentajeSustentabilidad: number; // 10

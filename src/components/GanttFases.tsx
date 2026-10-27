@@ -3,7 +3,7 @@ import Gantt, { type TareaGantt } from 'frappe-gantt';
 // El paquete solo exporta su raíz, así que la hoja de estilos se toma por su ruta en disco.
 import '../../node_modules/frappe-gantt/dist/frappe-gantt.css';
 
-export interface FaseGantt {
+interface FaseGantt {
   fase: string;
   diaInicio: number;
   diaTermino: number;

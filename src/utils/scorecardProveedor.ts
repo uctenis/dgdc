@@ -7,9 +7,9 @@ import type { CargaProveedor } from './cargaProveedores';
 
 /** Las evaluaciones más antiguas que esto pesan PESO_EVALUACION_ANTIGUA en el promedio. */
 export const MESES_EVALUACION_VIGENTE = 24;
-export const PESO_EVALUACION_ANTIGUA = 0.5;
+const PESO_EVALUACION_ANTIGUA = 0.5;
 
-export type AccionNivel = 'preferir' | 'ninguna' | 'no-sugerir' | 'confirmar';
+type AccionNivel = 'preferir' | 'ninguna' | 'no-sugerir' | 'confirmar';
 
 export interface NivelDesempeno {
   id: 'excelente' | 'aceptable' | 'deficiente' | 'critico';

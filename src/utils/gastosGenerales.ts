@@ -22,7 +22,7 @@ export interface ParametrosCalculoGG {
   ajustesPorcentuales?: Record<string, number>;
 }
 
-export interface LineaGG {
+interface LineaGG {
   id: string;
   concepto: string;
   detalle: string;
@@ -48,7 +48,7 @@ export interface ResultadoCalculoGG {
 
 const MM = 1_000_000;
 
-export function envergaduraDe(costoDirecto: number): Envergadura {
+function envergaduraDe(costoDirecto: number): Envergadura {
   if (costoDirecto < 30 * MM) return 'menor';
   if (costoDirecto <= 150 * MM) return 'mediana';
   return 'mayor';

@@ -80,7 +80,7 @@ export async function parseCotizacionExcel(file: File): Promise<ParsedCotizacion
         for (const val of row) {
           if (val === undefined || val === null) continue;
           const strVal = String(val).trim();
-          const rutMatches = strVal.match(/\b(\d{1,2}[\.\s]?\d{3}[\.\s]?\d{3}[\-\s]?[0-9kK])\b/g);
+          const rutMatches = strVal.match(/\b(\d{1,2}[.\s]?\d{3}[.\s]?\d{3}[-\s]?[0-9kK])\b/g);
           if (rutMatches) {
             for (const rMatch of rutMatches) {
               const formattedRUT = formatearRUT(rMatch);

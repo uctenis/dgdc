@@ -37,7 +37,7 @@ function serieDe(anio: number): Promise<SerieUF | null> {
 }
 
 /** UF del día indicado, o la última publicada antes de esa fecha (hasta 10 días atrás). */
-export async function valorUF(fechaISO: string): Promise<number | null> {
+async function valorUF(fechaISO: string): Promise<number | null> {
   const anio = Number(fechaISO.slice(0, 4));
   if (!anio) return null;
   const serie = await serieDe(anio);

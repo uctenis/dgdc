@@ -26,10 +26,6 @@ export function isAIConfigured(): boolean {
   return proveedorActivo() !== null;
 }
 
-export function proveedorIAActivo(): ProveedorIA | null {
-  return proveedorActivo();
-}
-
 const TIMEOUT_MS = 60000;
 
 /** fetch con límite de tiempo — sin esto, una IA que no responde deja el botón "Pensando…" para siempre. */
@@ -611,7 +607,7 @@ export interface PreguntaTecnicaIA {
 }
 
 /** Documento adjunto (ya convertido a texto) que se entrega a la IA como antecedente del proyecto. */
-export interface AntecedentePresupuestoIA {
+interface AntecedentePresupuestoIA {
   nombre: string;
   texto: string;
 }

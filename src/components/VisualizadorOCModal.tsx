@@ -2,7 +2,7 @@ import React from 'react';
 import { X, Printer, Download, ExternalLink, FileText, ShieldCheck, Building, Calendar, DollarSign } from 'lucide-react';
 import type { ProyectoMaestro, LicitacionProyecto } from '../types';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
-import { formatearRut } from '../utils/rutUtils';
+import { formatearRUT } from '../utils/rutUtils';
 
 interface VisualizadorOCModalProps {
   proyecto: ProyectoMaestro | LicitacionProyecto;
@@ -182,7 +182,7 @@ export const VisualizadorOCModal: React.FC<VisualizadorOCModalProps> = ({
                   </div>
                   <div>
                     <span className="text-[10px] text-slate-500 font-bold block">RUT Contratista:</span>
-                    <span className="font-bold text-slate-800 font-mono text-xs">{formatearRut(proveedorRut)}</span>
+                    <span className="font-bold text-slate-800 font-mono text-xs">{formatearRUT(proveedorRut)}</span>
                   </div>
                   <div>
                     <span className="text-[10px] text-slate-500 font-bold block">Condición de Pago:</span>

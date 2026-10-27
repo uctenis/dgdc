@@ -1,5 +1,5 @@
 const { initializeApp } = require('firebase/app');
-const { getFirestore, doc, setDoc, writeBatch, collection } = require('firebase/firestore');
+const { getFirestore, doc, writeBatch } = require('firebase/firestore');
 const fs = require('fs');
 const path = require('path');
 

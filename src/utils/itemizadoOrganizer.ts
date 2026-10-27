@@ -14,7 +14,7 @@ export const SIN_FASE = 'Sin fase asignada';
  * segmento (no alfabético — si no, "2.10" quedaría antes que "2.9"). Un código más corto que
  * comparte el mismo prefijo va primero (ej. "2" antes que "2.1"), igual que en un itemizado real.
  */
-export function compararCodigoItem(a: string, b: string): number {
+function compararCodigoItem(a: string, b: string): number {
   const segmentosA = String(a || '').split('.');
   const segmentosB = String(b || '').split('.');
   const largo = Math.max(segmentosA.length, segmentosB.length);
@@ -101,7 +101,7 @@ const faseSegunTexto = (texto: string): Fase | undefined => {
 
 /** Fase estándar que corresponde a una partida según su descripción; si no dice nada reconocible, según el
  * capítulo en que venía. `undefined` = no se pudo deducir. */
-export function sugerirFasePartida(descripcion: string, capitulo?: string): Fase | undefined {
+function sugerirFasePartida(descripcion: string, capitulo?: string): Fase | undefined {
   const estandar = FASES_ITEMIZADO.find(f => sinTildesMinusculas(f) === sinTildesMinusculas(capitulo || '').trim());
   return estandar ?? faseSegunTexto(descripcion) ?? (capitulo ? faseSegunTexto(capitulo) : undefined);
 }

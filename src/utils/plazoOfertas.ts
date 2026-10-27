@@ -7,7 +7,7 @@ export const HORA_LIMITE_POR_DEFECTO = '23:59';
 const ZONA = 'America/Santiago';
 
 /** Instante exacto de una fecha (AAAA-MM-DD) y hora (HH:MM) expresadas en hora de Chile. */
-export function fechaHoraChile(fecha: string, hora: string): Date {
+function fechaHoraChile(fecha: string, hora: string): Date {
   const [y, m, d] = fecha.split('-').map(Number);
   const [hh, mm] = hora.split(':').map(Number);
   const supuestoUtc = Date.UTC(y, m - 1, d, hh, mm);
@@ -40,7 +40,7 @@ export function plazoOfertasVencido(lic: CampoPlazo, ahora: Date = new Date()): 
  * Sello de ofertas DESACTIVADO (decisión del 2026-09-30): se reevalúa después de usar el portal con proveedores
  * reales. Para activarlo, poner true aquí y aplicar el sello en las reglas de Firebase (ver reglas-sugeridas/LEEME.md).
  */
-export const SELLO_OFERTAS_ACTIVO = false;
+const SELLO_OFERTAS_ACTIVO = false;
 
 /**
  * Ofertas selladas: mientras la recepción está abierta nadie de la UCT ve el contenido de las ofertas (montos ni

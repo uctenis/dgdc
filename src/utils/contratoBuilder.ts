@@ -40,14 +40,14 @@ export function formatearFechaLarga(fechaISO: string): string {
   return new Date(y, (m || 1) - 1, d || 1).toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-export function formatearFechaCorta(fechaISO: string): string {
+function formatearFechaCorta(fechaISO: string): string {
   if (!fechaISO) return '[por definir]';
   const [y, m, d] = fechaISO.split('-').map(Number);
   return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
 }
 
 /** Fecha (AAAA-MM-DD) en que quedó firmada el acta de adjudicación, si ya lo está. */
-export function fechaActaAdjudicacion(lic?: LicitacionProyecto): string {
+function fechaActaAdjudicacion(lic?: LicitacionProyecto): string {
   const acta = lic?.actaFirmaDigital;
   if (!acta || acta.estado !== 'Firmada') return '';
   const ultima = acta.firmas.map(f => f.fecha).filter(Boolean).sort().pop();

@@ -1,7 +1,7 @@
 import type { Cotizacion, LicitacionProyecto } from '../types';
 import { fechaLimiteOfertas, textoLimiteOfertas, formatoFechaHoraChile } from './plazoOfertas';
 
-export interface ObservacionCotizacion {
+interface ObservacionCotizacion {
   /** error = la oferta NO es admisible; aviso = a revisar, no impide evaluarla. */
   severidad: 'error' | 'aviso';
   mensaje: string;

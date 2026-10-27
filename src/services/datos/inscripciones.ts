@@ -67,9 +67,6 @@ export const rechazarInscripcion = (ins: InscripcionProveedor, observaciones: st
 export const marcarSolicitadaAdquisiciones = (ins: InscripcionProveedor, por: string) =>
   cambiarEstadoInscripcion(ins, { estado: 'Solicitada a Adquisiciones', solicitudAdquisiciones: { fecha: new Date().toISOString(), por } }, 'Solicitud de registro enviada a Adquisiciones');
 
-export const marcarRegistradaUCT = (ins: InscripcionProveedor) =>
-  cambiarEstadoInscripcion(ins, { estado: 'Registrada', fechaRegistroOficial: new Date().toISOString().slice(0, 10) }, 'Registrado en el registro oficial de proveedores de la UCT');
-
 /** Requisitos con vigencia de 30 días: al aprobar, su vencimiento queda en la carpeta del proveedor. */
 const REQUISITOS_CON_VIGENCIA = new Set(REQUISITOS_INSCRIPCION.filter(r => r.vigenciaDias).map(r => r.id));
 

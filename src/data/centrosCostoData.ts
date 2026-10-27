@@ -6,7 +6,7 @@ export interface CentroCosto {
   descripcion?: string;
 }
 
-export const INITIAL_CENTROS_COSTO: CentroCosto[] = [
+const INITIAL_CENTROS_COSTO: CentroCosto[] = [
   { codigoCP: '409-1722', nombre: 'REMODELACIONES-OBRAS', estado: 'Activo', descripcion: 'Obras de remodelación y mantención de infraestructura' },
   { codigoCP: '409-5243', nombre: 'INSTITUTO TECNOLOGICO', estado: 'Activo', descripcion: 'Iniciativas y habilitaciones del Instituto Tecnológico' },
   { codigoCP: '409-5503', nombre: 'PROYECTO TÚNEL SALIDA Y CALLE PROLONGACIÓN CJPII', estado: 'Activo', descripcion: 'Obras viales y conexión Campus San Juan Pablo II' },

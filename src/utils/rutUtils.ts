@@ -86,8 +86,6 @@ export function formatearRUT(rawInput: string): string {
   return bodyFormatted;
 }
 
-export const formatearRut = formatearRUT;
-
 /**
  * Valida si un RUT ingresado es matemáticamente válido con su DV (Módulo 11).
  */
@@ -170,9 +168,3 @@ export function desformatearNumero(val: string | number | undefined | null): num
   return Number.isNaN(num) ? 0 : num;
 }
 
-/**
- * Validador booleano simple.
- */
-export function esRUTValido(rutCompleto: string): boolean {
-  return validarRUT(rutCompleto).esValido;
-}

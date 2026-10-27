@@ -32,7 +32,7 @@ export interface EdificioInfo {
 // Todo campus tiene, además de sus edificios, estos códigos para las obras que no ocurren dentro de
 // ninguno (pavimentar un acceso, un jardín, un cierro). No se guardan en el catálogo: existen para
 // todos los campus, y en `edificiosInfo` solo queda lo que se les edite (ubicación, superficie, notas).
-export const ZONAS_EXTERIORES = [
+const ZONAS_EXTERIORES = [
   { sufijo: 'CE', nombre: 'Circulaciones exteriores', uso: 'Accesos, pavimentos, veredas, estacionamientos y patios' },
   { sufijo: 'AV', nombre: 'Áreas verdes', uso: 'Jardines, arbolado, riego y paisajismo' },
   { sufijo: 'EX', nombre: 'Otras obras exteriores', uso: 'Cierros, portones, alumbrado y redes exteriores' },
@@ -84,7 +84,7 @@ export function leerCoordenadas(texto: string): { lat: number; lng: number } | n
 export const urlGoogleMaps = (lat: number, lng: number) => `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
 
 /** Distancia en línea recta al centro de Temuco, en km. */
-export function distanciaATemucoKm(lat: number, lng: number): number {
+function distanciaATemucoKm(lat: number, lng: number): number {
   const rad = (g: number) => (g * Math.PI) / 180;
   const dLat = rad(lat - CENTRO_TEMUCO.lat);
   const dLng = rad(lng - CENTRO_TEMUCO.lng);
@@ -94,7 +94,7 @@ export function distanciaATemucoKm(lat: number, lng: number): number {
 
 const STORAGE_KEY = 'infra_app_campus_v1';
 
-export const INITIAL_CAMPUS_UCT: CampusInfo[] = [
+const INITIAL_CAMPUS_UCT: CampusInfo[] = [
   {
     "sigla": "CML",
     "nombre": "Campus Monseñor Alejandro Menchaca Lira",
@@ -350,39 +350,6 @@ export const INITIAL_CAMPUS_UCT: CampusInfo[] = [
   }
 ];
 
-export const USOS_PROYECTO = [
-  'DOCENCIA',
-  'INVESTIGACIÓN',
-  'ESPACIOS COMUNES',
-  'ADMINISTRACIÓN',
-  'OTROS',
-];
-
-export const ESTADOS_PROYECTO = [
-  'PROYECTO',
-  'COTIZACIÓN',
-  'EN EJECUCIÓN',
-  'TERMINADO',
-  'POSTERGADO',
-  'ELIMINADO',
-  'AJUSTADO',
-  'EN CARPETA',
-];
-
-export const TIPOS_OBRA = [
-  'OBRA NUEVA',
-  'AUMENTO DE OBRA',
-  'AMPLIACIÓN',
-  'REMODELACIÓN',
-  'ÁREAS VERDES',
-  'ALHAJAMIENTO',
-  'REGULARIZACIÓN',
-  'COMPRA ELEMENTOS',
-  'DEMOLICIÓN',
-  'INSTALACIONES',
-  'OTROS',
-];
-
 // Catálogo editable desde Configuración → Sedes y Campus. Persiste en localStorage,
 // mismo patrón que rubrosData.ts/centrosCostoData.ts/tiposObraData.ts.
 export function getCampusList(): CampusInfo[] {
@@ -489,9 +456,6 @@ export function renombrarSiglaCampus(lista: CampusInfo[], antigua: string, nueva
   });
 }
 
-/** @deprecated usar getCampusList() — se mantiene como snapshot inicial de referencia. */
-export const CAMPUS_UCT: CampusInfo[] = INITIAL_CAMPUS_UCT;
-
 export function obtenerCampusPorSigla(sigla: string): CampusInfo | undefined {
   return getCampusList().find(c => c.sigla === sigla.toUpperCase());
 }
@@ -560,18 +524,3 @@ export function descripcionEdificioParaIA(siglaEdificio: string): string {
   return datos.length ? `${tipo} ${siglaEdificio} (${datos.join(', ')})` : `${tipo} ${siglaEdificio}`;
 }
 
-export function buscarCampusYEdificioPorTexto(texto: string): { campus?: CampusInfo; edificio?: string } {
-  if (!texto) return {};
-  const upper = texto.toUpperCase();
-  for (const campus of getCampusList()) {
-    for (const ed of campus.edificios) {
-      if (upper.includes(ed)) {
-        return { campus, edificio: ed };
-      }
-    }
-    if (upper.includes(campus.sigla) || upper.includes(campus.nombre.toUpperCase())) {
-      return { campus };
-    }
-  }
-  return {};
-}

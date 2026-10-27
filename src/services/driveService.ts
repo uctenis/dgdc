@@ -9,14 +9,6 @@ interface DriveFolder {
   webViewLink: string;
 }
 
-interface DriveFile {
-  id: string;
-  name: string;
-  webViewLink: string;
-  mimeType: string;
-  createdTime: string;
-}
-
 const GOOGLE_DRIVE_CLIENT_ID = import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID as string | undefined;
 const PARENT_FOLDER_NAME = 'DGDC_PROYECTOS_2026'; // Carpeta raíz en Drive
 
@@ -40,7 +32,7 @@ const loadGoogleIdentityServices = (): Promise<void> => {
 /**
  * Obtiene el token de acceso de Google usando la autenticación de Firebase
  */
-export const getDriveAccessToken = async (): Promise<string> => {
+const getDriveAccessToken = async (): Promise<string> => {
   if (accessToken) return accessToken;
 
   try {
@@ -89,7 +81,7 @@ export const getDriveAccessToken = async (): Promise<string> => {
 /**
  * Obtiene o crea la carpeta raíz DGDC_PROYECTOS_2026
  */
-export const getOrCreateRootFolder = async (): Promise<DriveFolder> => {
+const getOrCreateRootFolder = async (): Promise<DriveFolder> => {
   try {
     const token = await getDriveAccessToken();
     
@@ -126,7 +118,7 @@ export const getOrCreateRootFolder = async (): Promise<DriveFolder> => {
 /**
  * Obtiene o crea una carpeta para un proyecto específico
  */
-export const getOrCreateProjectFolder = async (
+const getOrCreateProjectFolder = async (
   projectId: string,
   projectName: string
 ): Promise<DriveFolder> => {
@@ -239,81 +231,3 @@ export const uploadFileToProjectFolder = async (
   }
 };
 
-/**
- * Lista todos los archivos en la carpeta del proyecto
- */
-export const listProjectFiles = async (
-  projectId: string,
-  projectName: string
-): Promise<DriveFile[]> => {
-  try {
-    const token = await getDriveAccessToken();
-    const projectFolder = await getOrCreateProjectFolder(projectId, projectName);
-
-    const response = await fetch(
-      `https://www.googleapis.com/drive/v3/files?q='${projectFolder.id}' in parents and trashed=false&spaces=drive&fields=files(id,name,webViewLink,mimeType,createdTime)&pageSize=100`,
-      {
-        headers: { Authorization: `Bearer ${token}` }
-      }
-    );
-
-    if (!response.ok) throw new Error(`Error listing files: ${response.statusText}`);
-    
-    const data = await response.json();
-    return data.files || [];
-  } catch (error) {
-    console.error('Error listing project files:', error);
-    return [];
-  }
-};
-
-/**
- * Descarga un archivo desde Google Drive
- */
-export const getDownloadURL = async (fileId: string): Promise<string> => {
-  // Google Drive no permite descargas directas con API key
-  // Retorna el URL de visualización en Drive
-  return `https://drive.google.com/file/d/${fileId}/view`;
-};
-
-/**
- * Elimina un archivo de Google Drive
- */
-export const deleteFileFromDrive = async (fileId: string): Promise<boolean> => {
-  try {
-    if (fileId.startsWith('local_')) {
-      // Es un archivo local, no hacer nada
-      return true;
-    }
-
-    const token = await getDriveAccessToken();
-
-    const response = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${fileId}`,
-      {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` }
-      }
-    );
-
-    if (!response.ok) {
-      console.warn(`No se pudo eliminar archivo de Drive: ${response.statusText}`);
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    console.error('Error deleting file from Drive:', error);
-    return false;
-  }
-};
-
-export const driveService = {
-  getDriveAccessToken,
-  getOrCreateRootFolder,
-  getOrCreateProjectFolder,
-  uploadFileToProjectFolder,
-  listProjectFiles,
-  getDownloadURL,
-  deleteFileFromDrive
-};

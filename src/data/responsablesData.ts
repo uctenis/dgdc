@@ -8,7 +8,7 @@ export interface ResponsableInfraestructura {
   estado?: 'Activo' | 'Inactivo';
 }
 
-export const INITIAL_RESPONSABLES: ResponsableInfraestructura[] = [
+const INITIAL_RESPONSABLES: ResponsableInfraestructura[] = [
   { codigo: 'dsilva', nombre: 'David Silva Roco', email: 'dsilva@uct.cl', cargo: 'Ingeniero Constructor', estado: 'Activo' },
   { codigo: 'mzurita', nombre: 'M. Zurita', email: 'mzurita@uct.cl', cargo: 'Ingeniero de Proyectos', estado: 'Activo' },
   { codigo: 'fanselme', nombre: 'Felipe Anselme', email: 'fanselme@uct.cl', cargo: 'Sub-Director de Infraestructura', estado: 'Activo' },
@@ -81,13 +81,3 @@ export function reloadResponsables(): ResponsableInfraestructura[] {
   return RESPONSABLES_INFRAESTRUCTURA;
 }
 
-export function obtenerResponsablePorCodigo(codigo: string): ResponsableInfraestructura | undefined {
-  if (!codigo) return undefined;
-  const clean = codigo.trim().toLowerCase();
-  const list = getResponsablesList();
-  return list.find(r => 
-    r.codigo.toLowerCase() === clean || 
-    (r.email && r.email.split('@')[0].toLowerCase() === clean) ||
-    r.nombre.toLowerCase().includes(clean)
-  );
-}

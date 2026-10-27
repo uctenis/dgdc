@@ -26,7 +26,7 @@ const R = {
   cubiertas: 'Cubiertas e Impermeabilización',
 };
 
-export const INITIAL_TIPOS_OBRA: TipoObraInfo[] = [
+const INITIAL_TIPOS_OBRA: TipoObraInfo[] = [
   { id: 'tipo-1', nombre: 'OBRA NUEVA', estado: 'Activo', descripcion: 'Construcciones y edificaciones nuevas desde cimientos', rubrosSugeridos: [R.civiles, R.electricas, R.sanitarias, R.clima] },
   // Aumento de obra: lo ejecuta el mismo contratista del contrato original → sin sugerencia fija.
   { id: 'tipo-2', nombre: 'AUMENTO DE OBRA', estado: 'Activo', descripcion: 'Obras adicionales o aumentos de contrato sobre un proyecto ya adjudicado (mismo rubro del contrato original)', rubrosSugeridos: [] },
@@ -105,12 +105,6 @@ export function saveTiposObraList(list: TipoObraInfo[]): void {
   } catch (e) {
     console.error('Error al guardar tipos de obra:', e);
   }
-}
-
-export function getTiposObraNombres(): string[] {
-  return getTiposObraList()
-    .filter(t => t.estado === 'Activo')
-    .map(t => t.nombre);
 }
 
 /**

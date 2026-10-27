@@ -9,7 +9,7 @@ export const adjudicada = (l: LicitacionProyecto) => Boolean(l.proveedorAdjudica
 const recepcionAprobada = (l: LicitacionProyecto) => l.recepcionConforme?.aprobada === true || l.estadoLifecycle === 'Finalizado';
 const enEjecucion = (l: LicitacionProyecto) => adjudicada(l) && !recepcionAprobada(l) && l.estado !== 'Cerrado';
 
-export interface RepartoProveedor { nombre: string; obras: number; monto: number; pct: number; promedioDesempeno: number | null }
+interface RepartoProveedor { nombre: string; obras: number; monto: number; pct: number; promedioDesempeno: number | null }
 
 export interface IndicadoresGestion {
   proceso: { promedioDias: number | null; n: number; sinFecha: number };

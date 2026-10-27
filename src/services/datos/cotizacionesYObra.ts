@@ -1,4 +1,4 @@
-import { collection, doc, addDoc, updateDoc, getDocs, getDoc, onSnapshot, serverTimestamp, query, orderBy, where, runTransaction, type Unsubscribe } from 'firebase/firestore';
+import { collection, doc, addDoc, updateDoc, getDocs, getDoc, onSnapshot, serverTimestamp, query, orderBy, runTransaction, type Unsubscribe } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { plazoOfertasVencido, textoLimiteOfertas } from '../../utils/plazoOfertas';
 import { type LicitacionProyecto, type Cotizacion, type EstadoPago, type AumentoObra, type HitoDesarrolloProyecto } from '../../types';
@@ -6,20 +6,6 @@ import { type LicitacionProyecto, type Cotizacion, type EstadoPago, type Aumento
 // ═══════════════════════════════════════════════════════════════════
 // COTIZACIONES (Firestore)
 // ═══════════════════════════════════════════════════════════════════
-
-export function subscribeToCotizaciones(
-  licitacionId: string,
-  callback: (cotizaciones: Cotizacion[]) => void
-): Unsubscribe {
-  const q = query(
-    collection(db, 'cotizaciones'),
-    where('licitacionId', '==', licitacionId),
-    orderBy('fechaCarga', 'asc')
-  );
-  return onSnapshot(q, snap => {
-    callback(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Cotizacion, 'id'>) })));
-  });
-}
 
 /** Todas las ofertas, en vivo: con la copia local solo se descargan los cambios, no la colección completa cada vez. */
 export function subscribeToAllCotizaciones(
@@ -61,7 +47,7 @@ export function validarRecepcionOfertasAbierta(
 }
 
 /** true si ya pasó el cierre (fecha Y hora) de la recepción de ofertas de la licitación. */
-export function plazoEntregaVencido(data: Pick<LicitacionProyecto, 'fechaEntregaPropuestas' | 'fechaEvaluacion' | 'horaLimiteOfertas'>): boolean {
+function plazoEntregaVencido(data: Pick<LicitacionProyecto, 'fechaEntregaPropuestas' | 'fechaEvaluacion' | 'horaLimiteOfertas'>): boolean {
   return plazoOfertasVencido(data);
 }
 

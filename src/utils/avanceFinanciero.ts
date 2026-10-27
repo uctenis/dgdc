@@ -43,7 +43,7 @@ export interface ResumenFinancieroProyecto {
 }
 
 /** Pesos mensuales de una Curva S (smoothstep) que suman 1 — arranque y cierre lentos, pico al centro. */
-export function pesosCurvaS(n: number): number[] {
+function pesosCurvaS(n: number): number[] {
   if (n <= 0) return [];
   if (n === 1) return [1];
   const f = (x: number) => 3 * x * x - 2 * x * x * x; // smoothstep, F(0)=0, F(1)=1
@@ -62,7 +62,7 @@ function toYearMonth(fecha?: string): string | undefined {
 }
 
 /** Lista de 'YYYY-MM' entre fechaInicio y fechaFin, ambos inclusive. */
-export function mesesEntreFechas(fechaInicio: string, fechaFin: string): string[] {
+function mesesEntreFechas(fechaInicio: string, fechaFin: string): string[] {
   const inicio = new Date(fechaInicio);
   const fin = new Date(fechaFin);
   if (Number.isNaN(inicio.getTime()) || Number.isNaN(fin.getTime())) return [];
@@ -93,7 +93,7 @@ export function calcularFechaTerminoEfectiva(proyecto: ProyectoMaestro): string 
 }
 
 /** Distribuye `monto` entre los meses [fechaInicio, fechaFin] siguiendo una Curva S. */
-export function distribuirMontoEnMeses(
+function distribuirMontoEnMeses(
   monto: number,
   fechaInicio?: string,
   fechaFin?: string
@@ -110,7 +110,7 @@ export function distribuirMontoEnMeses(
 }
 
 /** Suma los Estados de Pago 'Aprobado' o 'Pagado' agrupados por el mes de su fecha. */
-export function agregarEstadosPagoPorMes(estadosPago: EstadoPago[]): Record<string, number> {
+function agregarEstadosPagoPorMes(estadosPago: EstadoPago[]): Record<string, number> {
   const resultado: Record<string, number> = {};
   for (const ep of estadosPago) {
     if (ep.estado !== 'Aprobado' && ep.estado !== 'Pagado') continue;

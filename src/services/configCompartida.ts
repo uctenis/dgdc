@@ -17,7 +17,7 @@ import { SYSTEM_ADMIN_EMAIL } from '../lib/adminSistema';
 const COLECCION = 'configuracion';
 
 /** Claves de localStorage que se comparten (id del documento = la misma clave). */
-export const CLAVES_CONFIG_COMPARTIDA = [
+const CLAVES_CONFIG_COMPARTIDA = [
   'infra_app_campus_v1',
   'infra_app_centros_costo_v1',
   'infra_app_estados_proyecto_v1',
@@ -38,7 +38,7 @@ const CLAVES = new Set<string>(CLAVES_CONFIG_COMPARTIDA);
 /** Evento de ventana que se emite cuando llega configuración nueva desde Firebase. */
 export const EVENTO_CONFIG_ACTUALIZADA = 'dgdc:config-compartida-actualizada';
 
-export interface EstadoConfigCompartida {
+interface EstadoConfigCompartida {
   sincronizado: boolean;
   error?: string;
   ultimaSincronizacion?: string;
@@ -117,7 +117,7 @@ export function suscribirConfigCompartida(): () => void {
  * Publica un catálogo en Firebase. Solo lo hace el administrador: para el resto de los usuarios lo
  * que guarden queda solo en su navegador (y será reemplazado por la versión oficial al sincronizar).
  */
-export async function publicarConfigCompartida(clave: string, valor: string, registrar = true): Promise<void> {
+async function publicarConfigCompartida(clave: string, valor: string, registrar = true): Promise<void> {
   if (!CLAVES.has(clave) || !esAdmin() || !cargaInicialLista) return;
   await escribirEnFirebase(clave, valor);
   if (registrar) registrarCambio({ accion: 'Modificó', entidad: 'Configuración', entidadId: clave, nombre: clave, cambios: { valor: { despues: resumirValor(valor) } } });

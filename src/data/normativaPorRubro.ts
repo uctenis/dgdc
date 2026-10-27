@@ -17,7 +17,7 @@ export interface ClausulaNormativaRubro {
   normativaAplicable: string;
 }
 
-export const NORMATIVA_POR_RUBRO: Record<string, ClausulaNormativaRubro> = {
+const NORMATIVA_POR_RUBRO: Record<string, ClausulaNormativaRubro> = {
   'Obras Civiles y Estructuras': {
     requisitosOferentesAdicionales:
       'Adicionalmente, por tratarse de obras civiles/estructurales: el profesional residente de obra debe ser Ingeniero Civil, Constructor Civil o Arquitecto con título vigente; si el proyecto requiere revisión estructural independiente (Ley N°20.703 y Art. 5.1.25 de la OGUC), el oferente debe declarar quién la efectuará.',

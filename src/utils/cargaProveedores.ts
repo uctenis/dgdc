@@ -3,9 +3,9 @@ import type { InvitadoLicitacion, LicitacionProyecto } from '../types';
 /** Ventana para medir cuán seguido se invita a un proveedor (rotación). */
 export const MESES_ROTACION = 6;
 /** Desde cuántas invitaciones en la ventana se considera que un proveedor se está repitiendo. */
-export const UMBRAL_INVITACIONES_FRECUENTES = 3;
+const UMBRAL_INVITACIONES_FRECUENTES = 3;
 
-export interface ReferenciaLicitacion {
+interface ReferenciaLicitacion {
   licitacionId: string;
   codigo: string;
   nombre: string;

@@ -1,4 +1,3 @@
-import { guardarConfigCompartida } from '../services/configCompartida';
 import type { SeccionBases, PoliticaGarantias } from './basesTemplateData';
 import { sugerirPoliticaGarantias } from './basesTemplateData';
 
@@ -137,7 +136,7 @@ export function resolverTextosGarantias(politica: PoliticaGarantias | undefined,
  * datos de cada obra y contratista se completan al generar el borrador. Se corrigió la numeración del original
  * (saltaba de la cláusula 18 a la 20) y las referencias cruzadas entre cláusulas.
  */
-export const PLANTILLA_CONTRATO_OBRA_CIVIL: SeccionContrato[] = [
+const PLANTILLA_CONTRATO_OBRA_CIVIL: SeccionContrato[] = [
   {
     id: 'comparecencia',
     titulo: 'Comparecencia',
@@ -294,15 +293,3 @@ export function getPlantillaContratoObraCivil(): SeccionContrato[] {
   }
 }
 
-export function guardarPlantillaContratoObraCivil(secciones: SeccionContrato[]): void {
-  try {
-    guardarConfigCompartida(STORAGE_KEY_CONTRATO_OBRA_CIVIL, secciones);
-  } catch (e) {
-    console.error('Error al guardar la plantilla de contrato:', e);
-  }
-}
-
-export function restaurarPlantillaContratoObraCivil(): SeccionContrato[] {
-  guardarPlantillaContratoObraCivil(PLANTILLA_CONTRATO_OBRA_CIVIL);
-  return PLANTILLA_CONTRATO_OBRA_CIVIL;
-}
