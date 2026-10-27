@@ -13,6 +13,7 @@ import {
   type Piso, type Recinto, type DocumentoEdificio, type CambioRecinto, type FichaEdificio,
 } from '../types/recintos';
 import { ImportarRecintosModal } from './ImportarRecintosModal';
+import { BuscadorEspacios } from './BuscadorEspacios';
 import { formatoFecha } from '../utils/fechas';
 
 const m2 = (n?: number | null) => (n ? `${n.toLocaleString('es-CL', { maximumFractionDigits: 2 })} m²` : '—');
@@ -33,7 +34,9 @@ export function RecintosPage() {
     ...[...new Set(enBase.map(e => e.slice(0, 3)))].filter(s => !siglasConfiguradas.has(s)).sort()
       .map(s => ({ sigla: s, nombre: 'sin configurar (solo en el catastro)' })),
   ];
-  const [campusSigla, setCampusSigla] = useState(campus[0]?.sigla || '');
+  // Se entra sin campus elegido: primero el buscador y el resumen de campus.
+  const [campusSigla, setCampusSigla] = useState('');
+  const [resaltado, setResaltado] = useState<string | null>(null);
   const delCampus = obtenerEdificiosDeCampus(campusSigla);
   const sinConfigurar = enBase.filter(e => e.startsWith(campusSigla) && !delCampus.includes(e) && !configurados.some(c => c.edificios.includes(e)))
     .sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
@@ -61,6 +64,14 @@ export function RecintosPage() {
   }, []);
   useEffect(() => { setEdificio(prev => (edificios.includes(prev) ? prev : edificios[0] || '')); }, [campusSigla, enBase.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Abre el edificio de un resultado del buscador y marca el recinto encontrado.
+  const irA = (codigoEdificio: string, recintoId?: string) => {
+    setCampusSigla(configurados.find(c => c.edificios.includes(codigoEdificio))?.sigla || codigoEdificio.slice(0, 3));
+    setEdificio(codigoEdificio);
+    setVista('recintos');
+    setResaltado(recintoId || null);
+  };
+
   const cargar = useCallback(async () => {
     if (!edificio || !SUPABASE_CONFIGURADO) return;
     setCargando(true);
@@ -75,6 +86,10 @@ export function RecintosPage() {
     }
   }, [edificio]);
   useEffect(() => { cargar(); }, [cargar]);
+
+  useEffect(() => {
+    if (resaltado && !cargando) document.getElementById(`recinto-${resaltado}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [resaltado, cargando, recintos]);
 
   const accion = async (fn: () => Promise<unknown>, alTerminar?: () => void) => {
     setGuardando(true);
@@ -126,18 +141,38 @@ export function RecintosPage() {
           <p className="text-slate-500">Pisos y recintos de cada edificio, con el índice de sus planos vigentes. Los archivos siguen en Drive.</p>
         </div>
         <label className="font-bold text-slate-700">Campus
-          <select value={campusSigla} onChange={e => setCampusSigla(e.target.value)} className={`block mt-1 ${campo} min-w-[200px] font-normal`}>
+          <select value={campusSigla} onChange={e => { setCampusSigla(e.target.value); setResaltado(null); }} className={`block mt-1 ${campo} min-w-[200px] font-normal`}>
+            <option value="">— Elija un campus —</option>
             {campus.map(c => <option key={c.sigla} value={c.sigla}>{c.sigla} — {c.nombre}</option>)}
           </select>
         </label>
-        <label className="font-bold text-slate-700">Edificio o zona
-          <select value={edificio} onChange={e => setEdificio(e.target.value)} className={`block mt-1 ${campo} min-w-[220px] font-normal`}>
-            {edificios.map(e => <option key={e} value={e}>{etiquetaEdificio(e)}{sinConfigurar.includes(e) ? ' (sin configurar)' : ''}{enBase.includes(e) ? '' : ' · sin datos'}</option>)}
-          </select>
-        </label>
+        {campusSigla && (
+          <label className="font-bold text-slate-700">Edificio o zona
+            <select value={edificio} onChange={e => { setEdificio(e.target.value); setResaltado(null); }} className={`block mt-1 ${campo} min-w-[220px] font-normal`}>
+              {edificios.map(e => <option key={e} value={e}>{etiquetaEdificio(e)}{sinConfigurar.includes(e) ? ' (sin configurar)' : ''}{enBase.includes(e) ? '' : ' · sin datos'}</option>)}
+            </select>
+          </label>
+        )}
+        <div className="basis-full"><BuscadorEspacios onElegir={irA} /></div>
       </div>
 
-      {edificio && (
+      {!campusSigla && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {campus.map(c => {
+            const conDatos = enBase.filter(e => (configurados.find(k => k.edificios.includes(e))?.sigla || e.slice(0, 3)) === c.sigla).length;
+            return (
+              <button key={c.sigla} type="button" onClick={() => setCampusSigla(c.sigla)}
+                className="text-left bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:border-teal-400 hover:shadow-md transition">
+                <span className="font-mono font-extrabold text-teal-800">{c.sigla}</span>
+                <span className="block font-bold text-slate-800 leading-tight mt-0.5">{c.nombre}</span>
+                <span className="block text-slate-500 mt-1">{conDatos ? `${conDatos} edificio(s) con datos` : 'Sin datos aún'}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {campusSigla && edificio && (
         <>
           <div className="flex flex-wrap items-center gap-2">
             {(['recintos', 'documentos'] as const).map(v => (
@@ -197,7 +232,7 @@ export function RecintosPage() {
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                             {lista.map(r => (
-                              <tr key={r.id} className={r.estado === 'Eliminado' ? 'text-slate-400 line-through' : ''}>
+                              <tr key={r.id} id={`recinto-${r.id}`} className={`${r.estado === 'Eliminado' ? 'text-slate-400 line-through' : ''} ${r.id === resaltado ? 'bg-amber-100 outline outline-2 outline-amber-400' : ''}`}>
                                 <td className="p-2 font-mono font-bold">{r.codigo}</td>
                                 <td className="p-2">{r.nombre}{r.foto_url && <a href={r.foto_url} target="_blank" rel="noreferrer" className="ml-1.5 text-sky-700 no-underline" title="Ver foto">📷</a>}</td>
                                 <td className="p-2">{r.uso || '—'}</td>

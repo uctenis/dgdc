@@ -28,6 +28,44 @@ export async function listarEdificiosConDatos(): Promise<string[]> {
   return [...new Set([...(p.data as { edificio_codigo: string }[]).map(x => x.edificio_codigo), ...(e.data as { codigo: string }[]).map(x => x.codigo)])];
 }
 
+// ── Búsqueda ──
+
+export interface ResultadoBusqueda {
+  tipo: 'edificio' | 'recinto';
+  edificio_codigo: string;
+  codigo: string;
+  nombre: string;
+  detalle: string;
+  recintoId?: string;
+}
+
+/** Busca en todos los campus edificios (código, nombre, dirección) y recintos (código, nombre, uso, unidad). */
+export async function buscarEspacios(texto: string): Promise<ResultadoBusqueda[]> {
+  // Se quitan los caracteres que tienen significado en el filtro de la base.
+  const t = texto.replace(/[,()%*"\\]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (t.length < 2) return [];
+  const p = `"%${t}%"`;
+  const [e, r] = await Promise.all([
+    supabase.from('edificios').select('codigo, nombre, direccion, uso_principal')
+      .or(`codigo.ilike.${p},nombre.ilike.${p},direccion.ilike.${p}`).order('codigo').limit(10),
+    supabase.from('recintos').select('id, edificio_codigo, codigo, nombre, uso, unidad_usuaria, superficie_m2, estado')
+      .or(`codigo.ilike.${p},nombre.ilike.${p},uso.ilike.${p},unidad_usuaria.ilike.${p}`).order('codigo').limit(40),
+  ]);
+  if (e.error || r.error) throw errorDe(e.error || r.error, 'No se pudo buscar');
+  type FilaEdificio = { codigo: string; nombre: string | null; direccion: string | null; uso_principal: string | null };
+  type FilaRecinto = { id: string; edificio_codigo: string; codigo: string; nombre: string; uso: string | null; unidad_usuaria: string | null; superficie_m2: number | null; estado: string };
+  return [
+    ...(e.data as FilaEdificio[]).map(x => ({
+      tipo: 'edificio' as const, edificio_codigo: x.codigo, codigo: x.codigo, nombre: x.nombre || 'Sin nombre',
+      detalle: [x.uso_principal, x.direccion].filter(Boolean).join(' · '),
+    })),
+    ...(r.data as FilaRecinto[]).map(x => ({
+      tipo: 'recinto' as const, edificio_codigo: x.edificio_codigo, codigo: x.codigo, nombre: x.nombre, recintoId: x.id,
+      detalle: [x.uso, x.unidad_usuaria, x.superficie_m2 ? `${x.superficie_m2} m²` : '', x.estado !== 'Operativo' ? x.estado : ''].filter(Boolean).join(' · '),
+    })),
+  ];
+}
+
 // ── Ficha del edificio ──
 
 export async function obtenerFichaEdificio(codigo: string): Promise<FichaEdificio | null> {
