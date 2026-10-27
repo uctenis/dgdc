@@ -58,6 +58,7 @@ const MisObrasLista = lazy(() => import('./components/MisObrasLista').then(m => 
 const LicitacionDemo = lazy(() => import('./pages/LicitacionDemo').then(m => ({ default: m.LicitacionDemo })));
 const IndicadoresDemo = lazy(() => import('./pages/IndicadoresDemo').then(m => ({ default: m.IndicadoresDemo })));
 const PreciosUnitariosPage = lazy(() => import('./components/PreciosUnitariosPage').then(m => ({ default: m.PreciosUnitariosPage })));
+const RecintosPage = lazy(() => import('./components/RecintosPage').then(m => ({ default: m.RecintosPage })));
 const PreciosDemo = lazy(() => import('./pages/PreciosDemo').then(m => ({ default: m.PreciosDemo })));
 const InscripcionProveedorPage = lazy(() => import('./pages/InscripcionProveedorPage').then(m => ({ default: m.InscripcionProveedorPage })));
 const ArchivoPage = lazy(() => import('./pages/ArchivoPage').then(m => ({ default: m.ArchivoPage })));
@@ -482,6 +483,8 @@ function AdminApp() {
         {activeTab === 'precios' && (
           <PreciosUnitariosPage licitaciones={licitaciones} cotizaciones={cotizaciones} />
         )}
+
+        {activeTab === 'recintos' && <RecintosPage />}
 
         {activeTab === 'reportes' && (
           <ReportesPage licitaciones={licitaciones} cotizaciones={cotizaciones} />

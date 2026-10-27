@@ -40,6 +40,9 @@ jobs:
           # La IA pasa por el intermediario de Supabase (supabase/functions/consultar-ia): la clave, el
           # proveedor y el modelo viven allá, nunca en el código publicado.
           VITE_IA_SERVIDOR: ${{ vars.VITE_IA_SERVIDOR }}
+          # Base de datos del módulo de recintos y planos (Supabase). La clave pública no es secreta: los datos los
+          # protegen las reglas de la base (supabase/migrations).
+          VITE_SUPABASE_CLAVE_PUBLICA: ${{ vars.VITE_SUPABASE_CLAVE_PUBLICA }}
         run: npm run build
 
       - name: Configure Pages
