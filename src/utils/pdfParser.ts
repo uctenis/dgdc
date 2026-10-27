@@ -10,6 +10,12 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString();
 
+/**
+ * Abre un PDF para leerlo. Los PDF que se leen vienen de proveedores y de terceros: con isEvalSupported
+ * desactivado, un PDF malicioso no puede ejecutar código en el navegador (vulnerabilidad CVE-2024-4367).
+ */
+const abrirPdf = (data: ArrayBuffer) => pdfjsLib.getDocument({ data, isEvalSupported: false }).promise;
+
 export interface ParsedPdfData {
   montoNeto?: number;
   montoIva?: number;
@@ -64,7 +70,7 @@ export function extraerItemizadoDesdeTexto(texto: string): ItemCotizacion[] {
  * (solo imágenes) devuelve texto vacío: no se hace reconocimiento de caracteres.
  */
 export async function extraerTextoPdf(file: File, maxCaracteres = 30_000): Promise<{ texto: string; paginas: number; truncado: boolean }> {
-  const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const pdf = await abrirPdf(await file.arrayBuffer());
   let texto = '';
   for (let i = 1; i <= pdf.numPages && texto.length < maxCaracteres; i++) {
     const contenido = await (await pdf.getPage(i)).getTextContent();
@@ -89,8 +95,7 @@ export async function parseCotizacionPdf(file: File): Promise<ParsedPdfData> {
   // 1. Extracción de texto del PDF
   try {
     const arrayBuffer = await file.arrayBuffer();
-    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-    const pdf = await loadingTask.promise;
+    const pdf = await abrirPdf(arrayBuffer);
 
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
@@ -110,7 +115,7 @@ export async function parseCotizacionPdf(file: File): Promise<ParsedPdfData> {
       const arrayBuffer = await file.arrayBuffer();
       const textDecoder = new TextDecoder('latin1');
       const binText = textDecoder.decode(arrayBuffer);
-      const cleanMatches = binText.match(/[A-Za-z0-9\.\,\$\-\:\;\ \n\r\t]{3,}/g);
+      const cleanMatches = binText.match(/[A-Za-z0-9.,$\-:; \n\r\t]{3,}/g);
       if (cleanMatches) {
         fullText = cleanMatches.join(' ');
       }
@@ -152,8 +157,8 @@ export async function parseCotizacionPdf(file: File): Promise<ParsedPdfData> {
   const rutBodiesSet = new Set<number>();
 
   const rutPatterns = [
-    /rut\s*[:;$]?\s*([\d\.\-kK]{7,12})/gi,
-    /\b(\d{1,2}[\.\s]?\d{3}[\.\s]?\d{3}[\-\s]?[0-9kK])\b/gi,
+    /rut\s*[:;$]?\s*([\d.\-kK]{7,12})/gi,
+    /\b(\d{1,2}[.\s]?\d{3}[.\s]?\d{3}[-\s]?[0-9kK])\b/gi,
   ];
 
   for (const regex of rutPatterns) {
@@ -180,7 +185,7 @@ export async function parseCotizacionPdf(file: File): Promise<ParsedPdfData> {
   const montosConSimboloPesos: number[] = [];
 
   // 3.1. Buscar patrones explícitos de NETO (ej: "Neto: $15.000.000", "Subtotal: 15000000")
-  const regexNeto = /(?:neto|subtotal|monto\s+neto|valor\s+neto)\s*[:;$]?\s*\$?\s*([\d\.\,]{5,15})/gi;
+  const regexNeto = /(?:neto|subtotal|monto\s+neto|valor\s+neto)\s*[:;$]?\s*\$?\s*([\d.,]{5,15})/gi;
   let mNeto;
   while ((mNeto = regexNeto.exec(cleanText)) !== null) {
     const cleanNum = Number(mNeto[1].replace(/[^0-9]/g, ''));
@@ -190,7 +195,7 @@ export async function parseCotizacionPdf(file: File): Promise<ParsedPdfData> {
   }
 
   // 3.2. Buscar patrones explícitos de TOTAL (ej: "Total: $17.850.000", "Monto Total: 17850000")
-  const regexTotal = /(?:total|monto\s+total|valor\s+total|presupuesto\s+total)\s*[:;$]?\s*\$?\s*([\d\.\,]{5,15})/gi;
+  const regexTotal = /(?:total|monto\s+total|valor\s+total|presupuesto\s+total)\s*[:;$]?\s*\$?\s*([\d.,]{5,15})/gi;
   let mTotal;
   while ((mTotal = regexTotal.exec(cleanText)) !== null) {
     const cleanNum = Number(mTotal[1].replace(/[^0-9]/g, ''));
@@ -200,7 +205,7 @@ export async function parseCotizacionPdf(file: File): Promise<ParsedPdfData> {
   }
 
   // 3.3. Buscar valores precedidos por el signo $ (ej: "$ 15.000.000")
-  const regexPesos = /\$\s*([\d\.]{5,12})/g;
+  const regexPesos = /\$\s*([\d.]{5,12})/g;
   let mPesos;
   while ((mPesos = regexPesos.exec(cleanText)) !== null) {
     const cleanNum = Number(mPesos[1].replace(/[^0-9]/g, ''));
@@ -277,8 +282,7 @@ export async function parseCotizacionPdf(file: File): Promise<ParsedPdfData> {
 
 async function extraerTextoPosicionadoPorPagina(file: File): Promise<TextoPosicionado[][]> {
   const arrayBuffer = await file.arrayBuffer();
-  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-  const pdf = await loadingTask.promise;
+  const pdf = await abrirPdf(arrayBuffer);
   const paginas: TextoPosicionado[][] = [];
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);

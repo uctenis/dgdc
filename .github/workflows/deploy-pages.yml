@@ -37,13 +37,9 @@ jobs:
       - name: Build site
         env:
           VITE_BASE_PATH: /dgdc/
-          # Clave de IA (secret del repo). Queda visible en el bundle: usar una clave restringida al
-          # dominio del sitio. Al lanzar se reemplaza el secret por la clave de la Dirección.
-          # IA por el servidor (función consultarIA): al activar la variable VITE_IA_SERVIDOR=true en GitHub,
-          # borre el secret VITE_GEMINI_API_KEY para que la clave deje de ir en el código publicado.
+          # La IA pasa por el intermediario de Supabase (supabase/functions/consultar-ia): la clave, el
+          # proveedor y el modelo viven allá, nunca en el código publicado.
           VITE_IA_SERVIDOR: ${{ vars.VITE_IA_SERVIDOR }}
-          VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
-          VITE_GEMINI_MODEL: gemini-3.6-flash
         run: npm run build
 
       - name: Configure Pages

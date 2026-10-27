@@ -32,6 +32,9 @@ async function requireFirebaseUser(req) {
   return getAuth().verifyIdToken(header.slice(7));
 }
 
+/** Personal interno: cuenta Google @uct.cl verificada (mismo criterio que las reglas de Firestore). */
+const esInterno = usuario => usuario.email_verified === true && String(usuario.email || '').toLowerCase().endsWith('@uct.cl');
+
 async function getAdobeToken() {
   if (cachedToken?.expiresAt > Date.now() + 60_000) return cachedToken;
   const response = await fetch(`${adobeApiAccessPoint.value().replace(/\/$/, '')}/oauth/v2/refresh`, {
@@ -288,6 +291,7 @@ export const enviarCorreoAdjudicacion = onRequest({ cors: true, timeoutSeconds: 
   if (req.method !== 'POST') return sendError(res, 405, 'Método no permitido.');
   try {
     const firebaseUser = await requireFirebaseUser(req);
+    if (!esInterno(firebaseUser)) return sendError(res, 403, 'Solo el personal de la UCT puede enviar este correo.');
     const licitacionId = String(req.body?.licitacionId || '').trim();
     if (!licitacionId) return sendError(res, 400, 'Falta el ID de la licitación.');
 
@@ -404,6 +408,7 @@ export const enviarInvitacionesLicitacion = onRequest({
   if (req.method !== 'POST') return sendError(res, 405, 'Método no permitido.');
   try {
     const firebaseUser = await requireFirebaseUser(req);
+    if (!esInterno(firebaseUser)) return sendError(res, 403, 'Solo el personal de la UCT puede enviar invitaciones.');
     const licitacionId = String(req.body?.licitacionId || '').trim();
     if (!licitacionId) return sendError(res, 400, 'Falta el ID de la licitación.');
 
@@ -603,58 +608,5 @@ export const confirmarPropuestaEnviada = onRequest({
     console.error('Error enviando confirmación de oferta', error);
     if (error.message === 'AUTH_REQUIRED') return sendError(res, 401, 'Debe iniciar sesión.');
     return sendError(res, 500, error instanceof Error ? error.message : 'Error inesperado al enviar la confirmación.');
-  }
-});
-
-// ─── IA (Gemini) desde el servidor ─────────────────────────────────────────
-// La clave de Gemini vive solo aquí (secreto GEMINI_API_KEY), nunca en el navegador. El cliente envía el prompt
-// con su sesión de Firebase; solo el personal interno (@uct.cl verificado) puede usarla. La rotación de modelos y
-// los reintentos siguen en el cliente (aiService.ts): esta función hace una sola llamada y devuelve el mismo
-// código de estado de Google, para que el cliente decida si reintenta con otro modelo.
-const geminiApiKey = defineSecret('GEMINI_API_KEY');
-const MAX_PROMPT_CHARS = 400_000;
-const ORIGENES_IA = ['https://uctenis.github.io', /^http:\/\/localhost:\d+$/];
-
-export const consultarIA = onRequest({
-  cors: ORIGENES_IA,
-  timeoutSeconds: 120,
-  secrets: [geminiApiKey],
-}, async (req, res) => {
-  if (req.method !== 'POST') return sendError(res, 405, 'Método no permitido.');
-  let firebaseUser;
-  try {
-    firebaseUser = await requireFirebaseUser(req);
-  } catch {
-    return sendError(res, 401, 'IA_AUTH: debe iniciar sesión.');
-  }
-  const email = String(firebaseUser.email || '').toLowerCase();
-  if (!firebaseUser.email_verified || !email.endsWith('@uct.cl')) {
-    return sendError(res, 403, 'IA_NO_AUTORIZADO: solo personal de la UCT puede usar la IA.');
-  }
-
-  const model = String(req.body?.model || '');
-  const prompt = req.body?.prompt;
-  const maxOutputTokens = Number(req.body?.maxOutputTokens || 0);
-  if (!/^gemini-[a-z0-9.-]+$/i.test(model) || typeof prompt !== 'string' || !prompt || prompt.length > MAX_PROMPT_CHARS
-    || !Number.isFinite(maxOutputTokens) || maxOutputTokens < 1 || maxOutputTokens > 65536) {
-    return sendError(res, 400, 'Solicitud de IA inválida.');
-  }
-
-  try {
-    const respuesta = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiApiKey.value() },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens, temperature: 0.3 },
-      }),
-      signal: AbortSignal.timeout(110_000),
-    });
-    const cuerpo = await respuesta.text();
-    res.status(respuesta.status).type('application/json').send(cuerpo);
-  } catch (error) {
-    console.error('Error llamando a Gemini', error);
-    const timeout = error?.name === 'TimeoutError' || error?.name === 'AbortError';
-    return sendError(res, timeout ? 504 : 502, timeout ? 'La IA no respondió a tiempo.' : 'No se pudo conectar con la IA.');
   }
 });
