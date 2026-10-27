@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluarCotizaciones } from '../services/evaluationEngine';
+import { evaluarCotizaciones, ponderacionesDe, PONDERACIONES_POR_DEFECTO } from '../services/evaluationEngine';
 import type { Cotizacion } from '../types';
 
 const oferta = (id: string, montoTotal: number, aspectosTecnicos: number, sustentable: boolean): Cotizacion => ({
@@ -52,5 +52,28 @@ describe('evaluación de ofertas (55 % económico, 35 % técnico, 10 % sustentab
     const resultado = evaluarCotizaciones([oferta('sinMonto', 0, 3, true), oferta('real', 50_000_000, 3, true)]);
     expect(resultado.find(r => r.proveedorId === 'sinMonto')!.puntajeEconomico).toBe(0);
     expect(resultado.find(r => r.proveedorId === 'real')!.puntajeEconomico).toBe(100);
+  });
+});
+
+describe('ponderaciones configurables', () => {
+  it('se aplican las ponderaciones que se entregan', () => {
+    // 70 / 20 / 10: el precio pesa más y la diferencia se achica (con 55 / 35 / 10 era 89 contra 76).
+    const resultado = evaluarCotizaciones(
+      [oferta('barata', 80_000_000, 2, false), oferta('completa', 100_000_000, 3, true)],
+      { economico: 70, tecnico: 20, sustentabilidad: 10 },
+    );
+    const barata = resultado.find(r => r.proveedorId === 'barata')!;
+    const completa = resultado.find(r => r.proveedorId === 'completa')!;
+    expect(barata.puntajeTotalPonderado).toBe(82); // 100×0,70 + 60×0,20 + 0
+    expect(completa.puntajeTotalPonderado).toBe(86); // 80×0,70 + 100×0,20 + 100×0,10
+    expect(completa.ranking).toBe(1);
+  });
+
+  it('toma los Parámetros SGC solo si suman 100; si no, usa 55 / 35 / 10', () => {
+    expect(ponderacionesDe({ porcentajeEconomico: 60, porcentajeTecnico: 30, porcentajeSustentabilidad: 10 }))
+      .toEqual({ economico: 60, tecnico: 30, sustentabilidad: 10 });
+    expect(ponderacionesDe({ porcentajeEconomico: 60, porcentajeTecnico: 35, porcentajeSustentabilidad: 10 })).toEqual(PONDERACIONES_POR_DEFECTO);
+    expect(ponderacionesDe(undefined)).toEqual(PONDERACIONES_POR_DEFECTO);
+    expect(PONDERACIONES_POR_DEFECTO).toEqual({ economico: 55, tecnico: 35, sustentabilidad: 10 });
   });
 });

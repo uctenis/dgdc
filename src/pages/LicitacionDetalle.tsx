@@ -23,6 +23,7 @@ import { enviarConfirmacionPropuesta } from '../services/confirmacionPropuestaSe
 import { uploadLicitacionDocument } from '../services/storageService';
 import { generarFormatoPresupuestoExcel } from '../services/formatoPresupuestoExporter';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
+import { ponderacionesDeLicitacion } from '../services/ponderaciones';
 import type { LicitacionProyecto, Propuesta, Proveedor, DatosContratista } from '../types';
 import { parseCotizacionExcel } from '../utils/excelParser';
 import { plazoOfertasVencido, textoLimiteOfertas, tiempoRestanteOfertas } from '../utils/plazoOfertas';
@@ -800,14 +801,14 @@ export function LicitacionDetalle({ proveedorIdVista, soloLectura = false, demoL
             <CheckCircle2 className="w-4 h-4 text-sky-400" /> Criterios Técnicos y de Sustentabilidad
           </h3>
           <p className="text-[11px] text-slate-500">
-            Estos factores son considerados en la evaluación (35% técnico + 10% sustentabilidad).
+            Estos factores son considerados en la evaluación ({ponderacionesDeLicitacion(licitacion).tecnico}% técnico + {ponderacionesDeLicitacion(licitacion).sustentabilidad}% sustentabilidad).
             Sea preciso — el administrador puede solicitarle documentación de respaldo.
           </p>
 
           {[
-            { key: 'ajustaRequerimientos', label: 'a) Los procedimientos y materiales propuestos se ajustan a los requerimientos de la UCT', weight: '35%' },
-            { key: 'cuentaExperiencia', label: 'b) Cuenta con experiencia acreditada (cartas de referencia, contratos previos similares)', weight: '35%' },
-            { key: 'cumplePlazoRequerido', label: 'c) El servicio se puede ejecutar dentro del plazo requerido por la institución', weight: '35%' },
+            { key: 'ajustaRequerimientos', label: 'a) Los procedimientos y materiales propuestos se ajustan a los requerimientos de la UCT' },
+            { key: 'cuentaExperiencia', label: 'b) Cuenta con experiencia acreditada (cartas de referencia, contratos previos similares)' },
+            { key: 'cumplePlazoRequerido', label: 'c) El servicio se puede ejecutar dentro del plazo requerido por la institución' },
           ].map(item => (
             <label
               key={item.key}
@@ -837,7 +838,7 @@ export function LicitacionDetalle({ proveedorIdVista, soloLectura = false, demoL
                 className="mt-0.5 w-4 h-4 rounded accent-emerald-500"
               />
               <span className="text-xs text-slate-300 group-hover:text-white transition leading-relaxed">
-                d) Declara cumplimiento sustentable: cuenta con certificación ambiental o firma carta compromiso sustentable (10%)
+                d) Declara cumplimiento sustentable: cuenta con certificación ambiental o firma carta compromiso sustentable ({ponderacionesDeLicitacion(licitacion).sustentabilidad}%)
               </span>
             </label>
             {propuesta.declaraSustentabilidad && (

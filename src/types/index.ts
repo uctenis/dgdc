@@ -720,6 +720,9 @@ export interface LicitacionProyecto {
   };
   esUnicoProveedor?: boolean;
   proyectoMaestroId?: string;  // Referencia a la lista maestra
+  /** Ponderaciones de evaluación (%), fijadas al invitar a los proveedores: un cambio posterior de la
+   * configuración no altera las reglas de un proceso ya convocado (ver services/ponderaciones.ts). */
+  ponderaciones?: { economico: number; tecnico: number; sustentabilidad: number };
 
   // Ubicación y Metadatos Institucionales
   campusSigla?: string;
@@ -979,7 +982,7 @@ export interface EvaluacionResultado {
   puntajeTecnico: number;
   puntajeSustentabilidad: number;
 
-  // Puntajes ponderados (con el 55%, 35%, 10%)
+  // Puntajes ponderados (con las ponderaciones de la licitación; por defecto 55 %, 35 %, 10 %)
   puntajeEconomicoPonderado: number;
   puntajeTecnicoPonderado: number;
   puntajeSustentabilidadPonderado: number;

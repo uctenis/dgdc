@@ -7,7 +7,29 @@ export interface CotizacionOrdenada {
   esAdjudicada: boolean;
 }
 
-export function evaluarCotizaciones(cotizaciones: Cotizacion[]): EvaluacionResultado[] {
+/** Ponderaciones de la evaluación, en % (suman 100). */
+export interface Ponderaciones {
+  economico: number;
+  tecnico: number;
+  sustentabilidad: number;
+}
+
+/** Las del procedimiento PS-FOR-DGDC 0003. */
+export const PONDERACIONES_POR_DEFECTO: Ponderaciones = { economico: 55, tecnico: 35, sustentabilidad: 10 };
+
+/** Ponderaciones desde los Parámetros SGC; si faltan o no suman 100, las de por defecto. */
+export function ponderacionesDe(parametros?: { porcentajeEconomico?: number; porcentajeTecnico?: number; porcentajeSustentabilidad?: number }): Ponderaciones {
+  const p = {
+    economico: Number(parametros?.porcentajeEconomico),
+    tecnico: Number(parametros?.porcentajeTecnico),
+    sustentabilidad: Number(parametros?.porcentajeSustentabilidad),
+  };
+  const valores = [p.economico, p.tecnico, p.sustentabilidad];
+  const validas = valores.every(v => Number.isFinite(v) && v >= 0) && Math.abs(valores.reduce((a, b) => a + b, 0) - 100) < 0.01;
+  return validas ? p : PONDERACIONES_POR_DEFECTO;
+}
+
+export function evaluarCotizaciones(cotizaciones: Cotizacion[], ponderaciones: Ponderaciones = PONDERACIONES_POR_DEFECTO): EvaluacionResultado[] {
   if (!cotizaciones || cotizaciones.length === 0) {
     return [];
   }
@@ -18,7 +40,7 @@ export function evaluarCotizaciones(cotizaciones: Cotizacion[]): EvaluacionResul
 
   // 2. Calcular puntajes para cada cotización
   const resultados: EvaluacionResultado[] = cotizaciones.map(cotizacion => {
-    // --- EVALUACIÓN ECONÓMICA (55%) ---
+    // --- EVALUACIÓN ECONÓMICA ---
     let puntajeEconomico = 0;
     if (precioMinimo > 0 && cotizacion.montoTotal > 0) {
       if (cotizacion.montoTotal === precioMinimo) {
@@ -28,7 +50,7 @@ export function evaluarCotizaciones(cotizaciones: Cotizacion[]): EvaluacionResul
       }
     }
 
-    // --- EVALUACIÓN TÉCNICA (35%) ---
+    // --- EVALUACIÓN TÉCNICA ---
     let aspectosCumplidos = 0;
     if (cotizacion.ajustaRequerimientos) aspectosCumplidos++;
     if (cotizacion.cuentaExperiencia) aspectosCumplidos++;
@@ -40,13 +62,13 @@ export function evaluarCotizaciones(cotizaciones: Cotizacion[]): EvaluacionResul
     else if (aspectosCumplidos === 1) puntajeTecnico = 40;
     else puntajeTecnico = 0;
 
-    // --- EVALUACIÓN SUSTENTABILIDAD (10%) ---
+    // --- EVALUACIÓN SUSTENTABILIDAD ---
     const puntajeSustentabilidad = cotizacion.declaraSustentabilidad ? 100 : 0;
 
     // --- CÁLCULO DE PUNTAJES PONDERADOS ---
-    const puntajeEconomicoPonderado = Number((puntajeEconomico * 0.55).toFixed(2));
-    const puntajeTecnicoPonderado = Number((puntajeTecnico * 0.35).toFixed(2));
-    const puntajeSustentabilidadPonderado = Number((puntajeSustentabilidad * 0.10).toFixed(2));
+    const puntajeEconomicoPonderado = Number((puntajeEconomico * ponderaciones.economico / 100).toFixed(2));
+    const puntajeTecnicoPonderado = Number((puntajeTecnico * ponderaciones.tecnico / 100).toFixed(2));
+    const puntajeSustentabilidadPonderado = Number((puntajeSustentabilidad * ponderaciones.sustentabilidad / 100).toFixed(2));
 
     const puntajeTotalPonderado = Number(
       (puntajeEconomicoPonderado + puntajeTecnicoPonderado + puntajeSustentabilidadPonderado).toFixed(2)
@@ -96,8 +118,9 @@ export function evaluarCotizaciones(cotizaciones: Cotizacion[]): EvaluacionResul
 export function ordenarCotizacionesPorResultado(
   cotizaciones: Cotizacion[],
   adjudicacion?: { cotizacionAdjudicadaId?: string; proveedorAdjudicadoId?: string; proveedorGanadorId?: string },
+  ponderaciones: Ponderaciones = PONDERACIONES_POR_DEFECTO,
 ): CotizacionOrdenada[] {
-  const evaluaciones = evaluarCotizaciones(cotizaciones);
+  const evaluaciones = evaluarCotizaciones(cotizaciones, ponderaciones);
   const porCotizacion = new Map(evaluaciones.map(evaluacion => [evaluacion.cotizacionId, evaluacion]));
   const proveedorGanadorId = adjudicacion?.proveedorAdjudicadoId || adjudicacion?.proveedorGanadorId;
 

@@ -5,6 +5,7 @@ import {
 import type { LicitacionProyecto, Cotizacion, Proveedor, ConfiguracionFirmas, EvaluacionResultado } from '../types';
 import { ubicacionProyecto } from '../data/campusData';
 import { formatoMonedaCLP, evaluarCotizaciones } from '../services/evaluationEngine';
+import { ponderacionesDeLicitacion } from '../services/ponderaciones';
 import { updateLicitacion } from '../services/firestoreService';
 import confetti from 'canvas-confetti';
 import { auth } from '../lib/firebase';
@@ -30,7 +31,8 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
   soloLectura = false,
 }) => {
   const cotizacionesLicitacion = cotizaciones.filter(c => c.licitacionId === licitacion.id);
-  const evaluaciones = evaluarCotizaciones(cotizacionesLicitacion);
+  const ponderaciones = ponderacionesDeLicitacion(licitacion);
+  const evaluaciones = evaluarCotizaciones(cotizacionesLicitacion, ponderaciones);
   const ganadoraDefault = evaluaciones.find(e => e.esPropuestaAdjudicada) || evaluaciones[0];
 
   const [proveedorSeleccionadoId, setProveedorSeleccionadoId] = useState<string>(
@@ -413,7 +415,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
                 <h4 className="font-extrabold text-slate-900 text-xs uppercase">
                   1. Cuadro Comparativo de Ofertas
                 </h4>
-                <span className="text-[10px] text-slate-600 font-medium">Ponderaciones: Económica 55% | Técnica 35% | Sustentabilidad 10%</span>
+                <span className="text-[10px] text-slate-600 font-medium">Ponderaciones: Económica {ponderaciones.economico}% | Técnica {ponderaciones.tecnico}% | Sustentabilidad {ponderaciones.sustentabilidad}%</span>
               </div>
 
               {evaluaciones.length === 0 ? (
@@ -454,7 +456,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
                           <span className="text-[10px] text-slate-600">Menor precio con impuestos incluidos.</span>
                         </td>
                         <td className="p-2 text-center border-r border-slate-300">Cotización</td>
-                        <td className="p-2 text-center font-bold border-r border-slate-300">55%</td>
+                        <td className="p-2 text-center font-bold border-r border-slate-300">{ponderaciones.economico}%</td>
                         {evaluaciones.map(ev => (
                           <React.Fragment key={ev.cotizacionId}>
                             <td className="p-2 text-center border-r border-slate-200">{ev.puntajeEconomico.toFixed(2)}</td>
@@ -470,7 +472,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
                           <span className="text-[10px] text-slate-600">Requerimientos, experiencia y plazo.</span>
                         </td>
                         <td className="p-2 text-center border-r border-slate-300">Referencias y Cotización</td>
-                        <td className="p-2 text-center font-bold border-r border-slate-300">35%</td>
+                        <td className="p-2 text-center font-bold border-r border-slate-300">{ponderaciones.tecnico}%</td>
                         {evaluaciones.map(ev => (
                           <React.Fragment key={ev.cotizacionId}>
                             <td className="p-2 text-center border-r border-slate-200">{ev.puntajeTecnico.toFixed(2)}</td>
@@ -486,7 +488,7 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
                           <span className="text-[10px] text-slate-600">Prácticas o declaración sustentable.</span>
                         </td>
                         <td className="p-2 text-center border-r border-slate-300">Declaración</td>
-                        <td className="p-2 text-center font-bold border-r border-slate-300">10%</td>
+                        <td className="p-2 text-center font-bold border-r border-slate-300">{ponderaciones.sustentabilidad}%</td>
                         {evaluaciones.map(ev => (
                           <React.Fragment key={ev.cotizacionId}>
                             <td className="p-2 text-center border-r border-slate-200">{ev.puntajeSustentabilidad.toFixed(2)}</td>
@@ -586,9 +588,9 @@ export const ActaEvaluacionModal: React.FC<ActaEvaluacionModalProps> = ({
 
               <div className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-[9px] leading-relaxed text-slate-700">
                 <strong className="text-slate-900">Criterios aplicados:</strong>{' '}
-                Oferta económica 55% (menor precio = 100 puntos; restantes: precio menor / precio evaluado × 100);{' '}
-                oferta técnica 35% (cumplimiento de requerimientos, experiencia y plazo);{' '}
-                sustentabilidad 10% (declaración o compromiso acreditado).
+                Oferta económica {ponderaciones.economico}% (menor precio = 100 puntos; restantes: precio menor / precio evaluado × 100);{' '}
+                oferta técnica {ponderaciones.tecnico}% (cumplimiento de requerimientos, experiencia y plazo);{' '}
+                sustentabilidad {ponderaciones.sustentabilidad}% (declaración o compromiso acreditado).
               </div>
 
               {/* Módulo de Firmas Estándar (3 Firmantes: Director, Subdirector, Responsable) */}

@@ -10,6 +10,7 @@ import {
   ChevronUp, ChevronDown, Activity, ShieldAlert, Mail,
 } from 'lucide-react';
 import { formatoMonedaCLP, ordenarCotizacionesPorResultado } from '../services/evaluationEngine';
+import { ponderacionesDeLicitacion } from '../services/ponderaciones';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
 import { HORA_LIMITE_POR_DEFECTO } from '../utils/plazoOfertas';
 import { corregirTextoAvanzado, normalizarNombreProyecto, ATRIBUTOS_ORTOGRAFIA_ES } from '../utils/spellCorrector';
@@ -432,7 +433,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
         {licitacionesFiltradas.map(lic => {
           const isSelected = lic.id === licitacionSeleccionadaId;
           const cotsLic = cotizaciones.filter(c => c.licitacionId === lic.id);
-          const resultadosOfertas = ordenarCotizacionesPorResultado(cotsLic, lic);
+          const resultadosOfertas = ordenarCotizacionesPorResultado(cotsLic, lic, ponderacionesDeLicitacion(lic));
           const cotizacionAdjudicada = cotsLic.find(c => c.id === lic.cotizacionAdjudicadaId)
             || cotsLic.find(c => c.proveedorId === (lic.proveedorAdjudicadoId || lic.proveedorGanadorId));
           const montoAdjudicado = lic.montoAdjudicadoTotal ?? cotizacionAdjudicada?.montoTotal;

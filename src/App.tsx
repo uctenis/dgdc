@@ -30,6 +30,7 @@ import {
   adjudicarLicitacion as fsAdjudicarLicitacion,
 } from './services/firestoreService';
 import { evaluarCotizaciones } from './services/evaluationEngine';
+import { ponderacionesDeLicitacion } from './services/ponderaciones';
 import { esProcesoSimplificado } from './data/contratoTemplateData';
 import { isProjectResponsible } from './services/internalAccessService';
 
@@ -258,7 +259,7 @@ function AdminApp() {
       throw new Error(`Esta licitación solo tiene ${invitadosCount} proveedor(es) invitado(s). Se requiere un mínimo de 3, salvo que esté marcada como "Único Proveedor" en la Ficha del Proyecto.`);
     }
 
-    const evs = evaluarCotizaciones(cots);
+    const evs = evaluarCotizaciones(cots, ponderacionesDeLicitacion(licitacionAAdjudicar));
     const puntajes: Record<string, number> = {};
     evs.forEach(e => {
       puntajes[e.proveedorId] = e.puntajeTotalPonderado;

@@ -20,6 +20,7 @@ import { obtenerClausulaNormativaPorRubro } from '../data/normativaPorRubro';
 import { obtenerCampusPorSigla, obtenerInfoEdificio } from '../data/campusData';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { PARAMETROS_CONTRATO } from '../data/contratoTemplateData';
+import { ponderacionesVigentes } from '../services/ponderaciones';
 
 /** Campos del proyecto que, al cambiar, dejan desactualizado el texto ya generado de las Bases. */
 export const CAMPOS_QUE_AFECTAN_BASES: (keyof ProyectoMaestro)[] = [
@@ -70,6 +71,11 @@ function construirDatosMergeBases(proyecto: ProyectoMaestro): Record<string, str
     diasRevisionEstadoPago: String(PARAMETROS_CONTRATO.diasRevisionEstadoPago),
     diasHabilesMedicion: String(PARAMETROS_CONTRATO.diasHabilesMedicion),
     diasFacturacion: String(PARAMETROS_CONTRATO.diasFacturacion),
+    // Ponderaciones de evaluación vigentes en Configuración (las mismas que quedarán fijas al invitar).
+    ...(() => {
+      const p = ponderacionesVigentes();
+      return { ponderacionEconomica: String(p.economico), ponderacionTecnica: String(p.tecnico), ponderacionSustentabilidad: String(p.sustentabilidad) };
+    })(),
   };
 }
 

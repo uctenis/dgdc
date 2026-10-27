@@ -7,6 +7,7 @@ import { parseCotizacionPdf } from '../utils/pdfParser';
 import { uploadFileToProjectFolder } from '../services/driveService';
 import { uploadLicitacionDocument } from '../services/storageService';
 import { formatoMonedaCLP, ordenarCotizacionesPorResultado } from '../services/evaluationEngine';
+import { ponderacionesDeLicitacion } from '../services/ponderaciones';
 import { subscribeToPropuestas, subscribeToInvitados, convertirPropuestaACotizacion } from '../services/firestoreService';
 import { useOfertasSelladas } from '../hooks/useOfertasSelladas';
 import { useAuth } from '../context/AuthContext';
@@ -550,9 +551,11 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
     }
   };
 
+  const ponderaciones = ponderacionesDeLicitacion(licitacion);
   const cotizacionesProyectoOrdenadas = ordenarCotizacionesPorResultado(
     cotizaciones.filter(c => c.licitacionId === licitacion.id),
     licitacion,
+    ponderaciones,
   );
   const cotizacionesProyecto = cotizacionesProyectoOrdenadas.map(resultado => resultado.cotizacion);
 
@@ -877,11 +880,11 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
                 />
               </div>
 
-              {/* Parámetros Técnicos (Ponderación 35%) */}
+              {/* Parámetros Técnicos */}
               <div className="space-y-2 bg-sky-50/50 p-4 rounded-xl border border-sky-100">
                 <span className="font-bold text-sky-950 block text-xs flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4 text-sky-600" />
-                  <span>Parámetros de Evaluación Técnica (35%)</span>
+                  <span>Parámetros de Evaluación Técnica ({ponderaciones.tecnico}%)</span>
                 </span>
 
                 <label className="flex items-center justify-between cursor-pointer p-2 bg-white rounded-lg border border-slate-200">
@@ -915,11 +918,11 @@ export const QuotationIngestion: React.FC<QuotationIngestionProps> = ({
                 </label>
               </div>
 
-              {/* Parámetro Sustentabilidad (Ponderación 10%) */}
+              {/* Parámetro Sustentabilidad */}
               <div className="space-y-2 bg-emerald-50/50 p-4 rounded-xl border border-emerald-100">
                 <span className="font-bold text-emerald-950 block text-xs flex items-center gap-1.5">
                   <Leaf className="w-4 h-4 text-emerald-600" />
-                  <span>Parámetro de Sustentabilidad Institucional (10%)</span>
+                  <span>Parámetro de Sustentabilidad Institucional ({ponderaciones.sustentabilidad}%)</span>
                 </span>
 
                 <label className="flex items-center justify-between cursor-pointer p-2 bg-white rounded-lg border border-slate-200">

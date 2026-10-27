@@ -3,6 +3,7 @@ import type { LicitacionProyecto, Cotizacion } from '../types';
 import { validarCotizacion } from '../utils/validacionCotizacion';
 import { licitacionCerradaParaOfertas } from '../services/firestoreService';
 import { evaluarCotizaciones, formatoMonedaCLP } from '../services/evaluationEngine';
+import { ponderacionesDeLicitacion } from '../services/ponderaciones';
 import { Trophy, Award, DollarSign, ShieldCheck, Leaf, Sparkles, ArrowRight } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -39,9 +40,10 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
     return { evaluables, noAdmisibles };
   }, [cotizacionesProyecto, licitacion]);
 
+  const ponderaciones = ponderacionesDeLicitacion(licitacion);
   // Calcular evaluación en tiempo real
   const evaluaciones = useMemo(() => {
-    const resultados = evaluarCotizaciones(evaluables);
+    const resultados = evaluarCotizaciones(evaluables, ponderaciones);
     const proveedorAdjudicadoId = licitacion?.proveedorAdjudicadoId || licitacion?.proveedorGanadorId;
     const hayAdjudicacion = Boolean(licitacion?.cotizacionAdjudicadaId || proveedorAdjudicadoId);
     if (!hayAdjudicacion) return resultados;
@@ -57,7 +59,8 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
         if (b.puntajeTotalPonderado !== a.puntajeTotalPonderado) return b.puntajeTotalPonderado - a.puntajeTotalPonderado;
         return a.montoTotal - b.montoTotal;
       });
-  }, [evaluables, licitacion]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [evaluables, licitacion, ponderaciones.economico, ponderaciones.tecnico, ponderaciones.sustentabilidad]);
 
   if (!licitacion) {
     return (
@@ -226,7 +229,7 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {/* Row 1: Oferta Económica (55%) */}
+              {/* Fila 1: Oferta Económica */}
               <tr className="hover:bg-slate-50/80 transition">
                 <td className="p-4 font-medium text-slate-800">
                   <div className="font-bold text-slate-900 flex items-center gap-1.5">
@@ -238,7 +241,7 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
                   </p>
                 </td>
                 <td className="p-4 text-slate-600">Cotización adjunta</td>
-                <td className="p-4 font-extrabold text-slate-900 text-center bg-slate-50">55%</td>
+                <td className="p-4 font-extrabold text-slate-900 text-center bg-slate-50">{ponderaciones.economico}%</td>
                 {evaluaciones.map(ev => (
                   <td key={ev.cotizacionId} className="p-4 text-center border-l border-slate-100">
                     <div className="font-bold text-slate-800">{ev.puntajeEconomico.toFixed(1)} pts</div>
@@ -248,7 +251,7 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
                 ))}
               </tr>
 
-              {/* Row 2: Oferta Técnica (35%) */}
+              {/* Fila 2: Oferta Técnica */}
               <tr className="hover:bg-slate-50/80 transition">
                 <td className="p-4 font-medium text-slate-800">
                   <div className="font-bold text-slate-900 flex items-center gap-1.5">
@@ -260,7 +263,7 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
                   </p>
                 </td>
                 <td className="p-4 text-slate-600">Cartas de referencias y cotización</td>
-                <td className="p-4 font-extrabold text-slate-900 text-center bg-slate-50">35%</td>
+                <td className="p-4 font-extrabold text-slate-900 text-center bg-slate-50">{ponderaciones.tecnico}%</td>
                 {evaluaciones.map(ev => (
                   <td key={ev.cotizacionId} className="p-4 text-center border-l border-slate-100">
                     <div className="font-bold text-slate-800">{ev.puntajeTecnico.toFixed(0)} pts</div>
@@ -270,7 +273,7 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
                 ))}
               </tr>
 
-              {/* Row 3: Sustentabilidad (10%) */}
+              {/* Fila 3: Sustentabilidad */}
               <tr className="hover:bg-slate-50/80 transition">
                 <td className="p-4 font-medium text-slate-800">
                   <div className="font-bold text-slate-900 flex items-center gap-1.5">
@@ -282,7 +285,7 @@ export const EvaluationMatrix: React.FC<EvaluationMatrixProps> = ({
                   </p>
                 </td>
                 <td className="p-4 text-slate-600">Carta Compromiso / Certificado</td>
-                <td className="p-4 font-extrabold text-slate-900 text-center bg-slate-50">10%</td>
+                <td className="p-4 font-extrabold text-slate-900 text-center bg-slate-50">{ponderaciones.sustentabilidad}%</td>
                 {evaluaciones.map(ev => (
                   <td key={ev.cotizacionId} className="p-4 text-center border-l border-slate-100">
                     <div className="font-bold text-slate-800">{ev.puntajeSustentabilidad.toFixed(0)} pts</div>

@@ -145,7 +145,7 @@ const PLANTILLA_OBRA_CIVIL: SeccionBases[] = [
   {
     id: 'criterios-evaluacion',
     titulo: '9. Criterios de Evaluación',
-    contenido: 'Ponderación conforme a los parámetros vigentes: Oferta Económica 55%, Oferta Técnica 35% (experiencia, plazo, metodología, cumplimiento de requerimientos y calidad de materiales), Sustentabilidad 10%. Verificar que estos porcentajes coincidan con los configurados en Parámetros de Licitación antes de convocar.',
+    contenido: 'Ponderación conforme a los parámetros vigentes: Oferta Económica {{ponderacionEconomica}}%, Oferta Técnica {{ponderacionTecnica}}% (experiencia, plazo, metodología, cumplimiento de requerimientos y calidad de materiales), Sustentabilidad {{ponderacionSustentabilidad}}%.',
   },
   {
     id: 'recepcion',
@@ -204,7 +204,7 @@ const PLANTILLA_OBRA_MENOR: SeccionBases[] = [
   {
     id: 'criterios-evaluacion',
     titulo: '9. Criterios de Evaluación',
-    contenido: 'Ponderación conforme a los parámetros vigentes: Oferta Económica 55%, Oferta Técnica 35% (experiencia, plazo, metodología), Sustentabilidad 10%. Verificar que estos porcentajes coincidan con los configurados en Parámetros de Licitación antes de convocar.',
+    contenido: 'Ponderación conforme a los parámetros vigentes: Oferta Económica {{ponderacionEconomica}}%, Oferta Técnica {{ponderacionTecnica}}% (experiencia, plazo, metodología), Sustentabilidad {{ponderacionSustentabilidad}}%.',
   },
   {
     id: 'recepcion',
@@ -263,7 +263,7 @@ const PLANTILLA_DISENO: SeccionBases[] = [
   {
     id: 'criterios-evaluacion',
     titulo: '9. Criterios de Evaluación',
-    contenido: 'Ponderación conforme a los parámetros vigentes: Oferta Económica 55%, Oferta Técnica 35% (experiencia del equipo profesional, metodología y plazo de desarrollo), Sustentabilidad 10%. Verificar que estos porcentajes coincidan con los configurados en Parámetros de Licitación antes de convocar.',
+    contenido: 'Ponderación conforme a los parámetros vigentes: Oferta Económica {{ponderacionEconomica}}%, Oferta Técnica {{ponderacionTecnica}}% (experiencia del equipo profesional, metodología y plazo de desarrollo), Sustentabilidad {{ponderacionSustentabilidad}}%.',
   },
   {
     id: 'recepcion',
@@ -322,7 +322,7 @@ const PLANTILLA_SUMINISTRO: SeccionBases[] = [
   {
     id: 'criterios-evaluacion',
     titulo: '9. Criterios de Evaluación',
-    contenido: 'Ponderación conforme a los parámetros vigentes: Oferta Económica 55%, Oferta Técnica 35% (plazo de entrega, calidad/marca, garantía post-venta), Sustentabilidad 10%. Verificar que estos porcentajes coincidan con los configurados en Parámetros de Licitación antes de convocar.',
+    contenido: 'Ponderación conforme a los parámetros vigentes: Oferta Económica {{ponderacionEconomica}}%, Oferta Técnica {{ponderacionTecnica}}% (plazo de entrega, calidad/marca, garantía post-venta), Sustentabilidad {{ponderacionSustentabilidad}}%.',
   },
   {
     id: 'recepcion',

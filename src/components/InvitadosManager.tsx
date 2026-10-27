@@ -22,6 +22,7 @@ import { useAuth } from '../context/AuthContext';
 import { enviarInvitacionesLicitacion, ENVIO_CORREOS_REAL } from '../services/invitacionService';
 import { calcularCargaProveedores, advertenciaCarga, MESES_ROTACION, type CargaProveedor } from '../utils/cargaProveedores';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
+import { ponderacionesVigentes } from '../services/ponderaciones';
 import { advertenciaDesempeno, nivelDesempeno, promedioDesempenoPonderado } from '../utils/scorecardProveedor';
 
 const ESTILO_NIVEL_CARGA: Record<CargaProveedor['nivel'], string> = {
@@ -329,6 +330,9 @@ export const InvitadosManager: React.FC<InvitadosManagerProps> = ({
       const ccExtra = configFirmas?.subdirectorInfraestructura.email ? [configFirmas.subdirectorInfraestructura.email] : [];
       // Cada invitado recibe su enlace personal: se garantiza su código antes de enviar.
       const conToken = await asegurarTokensInvitados(licitacion.id, invitados);
+      // Desde que se convoca, la licitación queda con las ponderaciones vigentes: un cambio posterior de la
+      // configuración no altera las reglas de este proceso.
+      if (!licitacion.ponderaciones) await updateLicitacion(licitacion.id, { ponderaciones: ponderacionesVigentes() });
       const envio = await enviarInvitacionesLicitacion(user, licitacion, portalUrl, ccExtra, conToken);
       // Constancia de lo que se envió (o se habría enviado, en modo prueba): asunto, copias y mensaje exacto.
       try {
