@@ -9,6 +9,7 @@ import {
   INSTRUMENTOS_GARANTIA, TIPOS_GARANTIA,
   type GarantiaLicitacion, type InstrumentoGarantia, type LicitacionProyecto, type Proveedor, type TipoGarantia,
 } from '../types';
+import { formatoFecha } from '../utils/fechas';
 
 interface Props {
   licitacion: LicitacionProyecto;
@@ -247,7 +248,7 @@ export function GarantiasManager({ licitacion, proveedores }: Props) {
                   {(g.observaciones || g.fechaCambioEstado) && (
                     <p className="text-[10px] text-slate-400">
                       {g.observaciones}
-                      {g.estado !== 'Vigente' && g.fechaCambioEstado && ` ${g.estado} el ${new Date(g.fechaCambioEstado).toLocaleDateString('es-CL')}.`}
+                      {g.estado !== 'Vigente' && g.fechaCambioEstado && ` ${g.estado} el ${formatoFecha(g.fechaCambioEstado)}.`}
                     </p>
                   )}
                 </div>

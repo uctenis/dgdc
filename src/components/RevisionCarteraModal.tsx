@@ -10,6 +10,7 @@ import { resumenPartidasParaIA } from '../utils/presupuestoImportado';
 import { HistorialRevisionLista } from './HistorialRevisionProyecto';
 import { TraspasoCarteraPanel } from './TraspasoCarteraPanel';
 import { useAuth } from '../context/AuthContext';
+import { formatoFecha } from '../utils/fechas';
 
 interface RevisionCarteraModalProps {
   anio: number;
@@ -175,7 +176,7 @@ export function RevisionCarteraModal({ anio, proyectos, configFirmas, onSaveConf
             {cierre ? (
               <>
                 <Lock className="w-3.5 h-3.5 inline -mt-0.5 mr-1 text-indigo-600" />
-                Revisión cerrada el <strong>{new Date(cierre.fecha).toLocaleDateString('es-CL')}</strong>: presupuesto {anio} fijado en <strong>{formatoMonedaCLP(presupuestoFijado)}</strong> ({cierre.proyectos} proyecto(s)).
+                Revisión cerrada el <strong>{formatoFecha(cierre.fecha)}</strong>: presupuesto {anio} fijado en <strong>{formatoMonedaCLP(presupuestoFijado)}</strong> ({cierre.proyectos} proyecto(s)).
                 {resumen.aprobado.monto !== presupuestoFijado && (
                   <span className="block text-amber-700 font-semibold mt-0.5">
                     Los aprobados hoy suman {formatoMonedaCLP(resumen.aprobado.monto)}: si corresponde, cierre la revisión de nuevo para actualizar el presupuesto.

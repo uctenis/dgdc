@@ -36,6 +36,7 @@ import { useAuth } from '../context/AuthContext';
 import { anioDeCartera, aniosDeCartera, presupuestoDelAnio, resumenRevisionCartera, leerAnioCarteraElegido, guardarAnioCarteraElegido } from '../utils/carteraAnual';
 import { itemizadoDesdeImportado, totalItemizadoConIva, resumenPartidasParaIA } from '../utils/presupuestoImportado';
 import type { ProyectoMaestro, LicitacionProyecto, Proveedor, ConfiguracionFirmas, ItemItemizadoProyecto } from '../types';
+import { formatoFecha } from '../utils/fechas';
 
 interface ProyectosMaestrosProps {
   onSelectProyecto?: (p: ProyectoMaestro) => void;
@@ -582,7 +583,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
               <>
                 <span className="block text-sm font-black text-indigo-900 tabular-nums">{formatoMonedaCLP(presupuestoAnualAprobado)}</span>
                 <span className={`block text-[10px] font-bold ${presupuestoColor}`}>
-                  {pctPresupuestoUsado}% comprometido{cierreRevision ? ` · fijado el ${new Date(cierreRevision.fecha).toLocaleDateString('es-CL')}` : ''}
+                  {pctPresupuestoUsado}% comprometido{cierreRevision ? ` · fijado el ${formatoFecha(cierreRevision.fecha)}` : ''}
                 </span>
               </>
             ) : (
@@ -994,7 +995,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                             onClick={() => handleToggleAprobacionPresupuesto(p)}
                             disabled={!isAdmin}
                             title={(p.presupuesto?.aprobado
-                              ? `Aprobado para Presupuesto Anual por ${p.presupuesto.aprobadoPorNombre || p.presupuesto.aprobadoPorEmail || '—'} el ${p.presupuesto.fecha ? new Date(p.presupuesto.fecha).toLocaleDateString('es-CL') : '—'}.`
+                              ? `Aprobado para Presupuesto Anual por ${p.presupuesto.aprobadoPorNombre || p.presupuesto.aprobadoPorEmail || '—'} el ${p.presupuesto.fecha ? formatoFecha(p.presupuesto.fecha) : '—'}.`
                               : 'Fuera del Presupuesto Anual Proyectado.')
                               + (isAdmin ? (p.presupuesto?.aprobado ? ' Clic para retirar.' : ' Clic para aprobar.') : ' Solo el administrador puede aprobar presupuestos.')}
                             className={`text-[9px] font-extrabold rounded-full px-2 py-0.5 border transition whitespace-nowrap disabled:cursor-default ${
@@ -1067,7 +1068,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                               p.bases ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200' :
                               'text-slate-400 bg-slate-50 hover:bg-slate-100 border-slate-200'
                             }`}
-                            title={p.bases ? `Continuar Bases (${p.bases.estado}) — última edición ${new Date(p.bases.fechaActualizacion).toLocaleDateString('es-CL')}` : 'Generar Bases Administrativas y Técnicas'}
+                            title={p.bases ? `Continuar Bases (${p.bases.estado}) — última edición ${formatoFecha(p.bases.fechaActualizacion)}` : 'Generar Bases Administrativas y Técnicas'}
                           >
                             <ScrollText className="w-3.5 h-3.5" />
                           </button>

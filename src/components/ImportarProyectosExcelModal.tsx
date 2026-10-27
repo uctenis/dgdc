@@ -7,6 +7,7 @@ import { obtenerCampusPorSigla } from '../data/campusData';
 import { useAuth } from '../context/AuthContext';
 import { normalizarNombreProyecto } from '../utils/spellCorrector';
 import type { ProyectoMaestro } from '../types';
+import { formatoFecha } from '../utils/fechas';
 
 interface ImportarProyectosExcelModalProps {
   onClose: () => void;
@@ -202,9 +203,9 @@ export function ImportarProyectosExcelModal({ onClose, onImportado, anio, proyec
                             <td className="p-2 text-right text-slate-500">{f.datos.itemizado?.length || '—'}</td>
                             <td className="p-2">{f.datos.campusSigla || '—'}</td>
                             <td className="p-2 text-[10px] text-slate-500 whitespace-nowrap">
-                              {f.datos.fechaInicio ? new Date(f.datos.fechaInicio).toLocaleDateString('es-CL') : '—'}
+                              {f.datos.fechaInicio ? formatoFecha(f.datos.fechaInicio) : '—'}
                               {' → '}
-                              {f.datos.fechaTermino ? new Date(f.datos.fechaTermino).toLocaleDateString('es-CL') : '—'}
+                              {f.datos.fechaTermino ? formatoFecha(f.datos.fechaTermino) : '—'}
                             </td>
                             <td className="p-2 text-center">
                               {isAdmin && f.datos.presupuestoAprobado ? <span className="text-indigo-700 font-bold">✓</span> : <span className="text-slate-300">-</span>}

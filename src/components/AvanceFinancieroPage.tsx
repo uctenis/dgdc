@@ -14,6 +14,7 @@ import {
 } from '../utils/avanceFinanciero';
 import { aniosDeCartera, presupuestoDelAnio } from '../utils/carteraAnual';
 import type { ProyectoMaestro, LicitacionProyecto, EstadoPago, ConfiguracionFirmas } from '../types';
+import { formatoFecha } from '../utils/fechas';
 
 interface AvanceFinancieroPageProps {
   configFirmas?: ConfiguracionFirmas;
@@ -299,9 +300,9 @@ export const AvanceFinancieroPage: React.FC<AvanceFinancieroPageProps> = ({ conf
                   <span className="text-[10px] text-slate-400">{r.proyecto.codigoProyecto}</span>
                 </td>
                 <td className="px-2 py-2.5 text-center text-[10px] text-slate-500 whitespace-nowrap">
-                  {r.fechaInicio ? new Date(r.fechaInicio).toLocaleDateString('es-CL') : '—'}
+                  {r.fechaInicio ? formatoFecha(r.fechaInicio) : '—'}
                   {' → '}
-                  {r.fechaTermino ? new Date(r.fechaTermino).toLocaleDateString('es-CL') : '—'}
+                  {r.fechaTermino ? formatoFecha(r.fechaTermino) : '—'}
                 </td>
                 <td className="px-2 py-2.5 text-center">
                   <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">

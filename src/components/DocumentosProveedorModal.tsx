@@ -4,6 +4,7 @@ import { uploadDocumentoProveedor } from '../services/storageService';
 import { useAuth } from '../context/AuthContext';
 import { COLOR_VENCIMIENTO, estadoVencimiento, nombreDocumento, DIAS_AVISO_VENCIMIENTO } from '../utils/vencimientos';
 import { TIPOS_DOCUMENTO_PROVEEDOR, type DocumentoProveedor, type Proveedor, type TipoDocumentoProveedor } from '../types';
+import { formatoFecha } from '../utils/fechas';
 
 interface Props {
   proveedor: Proveedor;
@@ -116,7 +117,7 @@ export function DocumentosProveedorModal({ proveedor, onUpdateProveedor, onClose
                       <p className="text-xs font-bold text-slate-800">{nombreDocumento(d)}</p>
                       <p className="text-[10px] text-slate-500">
                         {d.fechaEmision ? `Emitido el ${new Date(`${d.fechaEmision}T12:00:00`).toLocaleDateString('es-CL')} · ` : ''}
-                        Cargado el {new Date(d.fechaCarga).toLocaleDateString('es-CL')}
+                        Cargado el {formatoFecha(d.fechaCarga)}
                       </p>
                     </div>
                     <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${COLOR_VENCIMIENTO[venc.nivel]}`}>{venc.texto}</span>

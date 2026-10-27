@@ -1111,7 +1111,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <span>Matriz de Ponderaciones (PS-FOR-DGDC 0003)</span>
                       </h4>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        Defina los pesos de ponderación para la evaluación objetiva de ofertas de infraestructura.
+                        Pesos con que se evalúan las ofertas de infraestructura, según el procedimiento PS-FOR-DGDC 0003.
+                      </p>
+                      <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 mt-1.5">
+                        Hoy son fijos (55 % / 35 % / 10 %): la evaluación de ofertas, las actas, el cuadro comparativo y el portal de proveedores los usan así.
+                        Cambiarlos requiere modificar el procedimiento y el sistema a la vez, por eso aquí solo se muestran.
                       </p>
                     </div>
 
@@ -1143,6 +1147,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           min={0}
                           max={100}
                           value={paramSgc.porcentajeEconomico}
+                          disabled
                           onChange={e =>
                             updateFormData(prev => ({
                               ...prev,
@@ -1164,6 +1169,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           min={0}
                           max={100}
                           value={paramSgc.porcentajeTecnico}
+                          disabled
                           onChange={e =>
                             updateFormData(prev => ({
                               ...prev,
@@ -1185,6 +1191,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           min={0}
                           max={100}
                           value={paramSgc.porcentajeSustentabilidad}
+                          disabled
                           onChange={e =>
                             updateFormData(prev => ({
                               ...prev,

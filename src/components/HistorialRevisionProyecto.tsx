@@ -5,6 +5,7 @@ import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { reenviarProyectoAjustado } from '../services/firestoreService';
 import { anioDeCartera, compararConBaseAjuste, decisionDeCartera } from '../utils/carteraAnual';
 import { useAuth } from '../context/AuthContext';
+import { formatoFecha } from '../utils/fechas';
 
 const ETIQUETA: Record<RevisionCarteraEntrada['decision'], string> = {
   aprobado: 'Aprobado',
@@ -34,7 +35,7 @@ export function HistorialRevisionLista({ historial }: { historial: RevisionCarte
         <div key={`${h.fecha}-${i}`} className="rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] text-slate-700 space-y-0.5">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className={`rounded-full border px-2 py-0.5 text-[9px] font-extrabold uppercase ${COLOR[h.decision]}`}>{ETIQUETA[h.decision]}</span>
-            <span className="text-slate-500">{new Date(h.fecha).toLocaleDateString('es-CL')} · Cartera {h.anio}{h.usuario ? ` · ${h.usuario}` : ''}</span>
+            <span className="text-slate-500">{formatoFecha(h.fecha)} · Cartera {h.anio}{h.usuario ? ` · ${h.usuario}` : ''}</span>
             <strong className="ml-auto tabular-nums">
               {h.valorAnterior !== undefined && h.valorAnterior !== h.valor ? `${formatoMonedaCLP(h.valorAnterior)} → ` : ''}{formatoMonedaCLP(h.valor)}
             </strong>

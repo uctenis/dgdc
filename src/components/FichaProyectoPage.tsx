@@ -771,10 +771,12 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
     }
   };
 
-  // Validar checklist cuando cambian los documentos o el itemizado (ch-04: Presupuesto Detallado)
+  // Validar el checklist cuando cambian los documentos o lo generado en el sistema: Bases (ch-01), EETT (ch-02),
+  // itemizado (ch-04) y Programa de Trabajo (ch-05; sin él, la Carta Gantt recién generada no se marcaba hasta recargar).
   useEffect(() => {
     validateChecklistFromDocuments(documentos);
-  }, [documentos, proyectoMaestroEfectivo?.itemizado, proyectoMaestroEfectivo?.bases, proyectoMaestroEfectivo?.eett]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentos, proyectoMaestroEfectivo?.itemizado, proyectoMaestroEfectivo?.bases, proyectoMaestroEfectivo?.eett, proyectoMaestroEfectivo?.programaTrabajo]);
 
   const [menuMasAbierto, setMenuMasAbierto] = useState(false);
 

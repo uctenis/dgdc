@@ -11,6 +11,7 @@ import { updateLicitacion, updateProyectoMaestro } from '../services/firestoreSe
 import { uploadLicitacionDocument } from '../services/storageService';
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { useAuth } from '../context/AuthContext';
+import { formatoFecha } from '../utils/fechas';
 
 // ─── BANDEJA DE SOLICITUDES DE OP ───────────────────────────────────────────
 // Flujo institucional: acta de adjudicación firmada → Secretaría la ingresa en Kellun (sistema
@@ -43,11 +44,7 @@ const fechaFirmaActa = (l: LicitacionProyecto): string | undefined => {
   return fechas[fechas.length - 1] || l.actaFirmaDigital?.fechaActualizacion;
 };
 
-const formatearFecha = (iso?: string) => {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' });
-};
+const formatearFecha = (iso?: string) => (iso ? formatoFecha(iso, { day: '2-digit', month: 'short', year: 'numeric' }, iso) : '—');
 
 const diasDesde = (iso?: string) => {
   if (!iso) return undefined;

@@ -7,6 +7,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { CORREO_ADQUISICIONES_REGISTRO, REQUISITOS_INSCRIPCION, diasDesdeEmision } from '../data/inscripcionProveedores';
 import type { EstadoInscripcion, InscripcionProveedor, Proveedor } from '../types';
+import { formatoFecha } from '../utils/fechas';
 
 const ESTILO_ESTADO: Record<EstadoInscripcion, string> = {
   Invitada: 'bg-slate-100 text-slate-700',
@@ -24,7 +25,7 @@ const ETIQUETA_ESTADO: Partial<Record<EstadoInscripcion, string>> = {
   Observada: 'Con correcciones pendientes',
   Rechazada: 'No aprobada',
 };
-const fecha = (iso?: string) => (iso ? new Date(iso).toLocaleDateString('es-CL') : '—');
+const fecha = (iso?: string) => (iso ? formatoFecha(iso) : '—');
 const normalizarRut = (r = '') => r.replace(/[^0-9kK]/g, '').toUpperCase();
 const enlace = (codigo: string) => `${window.location.origin}${import.meta.env.BASE_URL}proveedores/inscripcion?t=${codigo}`;
 

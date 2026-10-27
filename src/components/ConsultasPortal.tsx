@@ -3,6 +3,7 @@ import { HelpCircle, Loader2, Send, MessageSquare, Clock } from 'lucide-react';
 import { addConsulta, subscribeToMisConsultas, subscribeToConsultasPublicadas } from '../services/firestoreService';
 import { fechaLimiteConsultas, formatoFechaHoraChile } from '../utils/plazoOfertas';
 import type { ConsultaLicitacion, ConsultaPublicada, LicitacionProyecto } from '../types';
+import { formatoFecha } from '../utils/fechas';
 
 interface Props {
   licitacion: LicitacionProyecto;
@@ -18,7 +19,7 @@ interface Props {
 }
 
 const TARJETA = { background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)' };
-const fechaCorta = (iso: string) => new Date(iso).toLocaleDateString('es-CL');
+const fechaCorta = (iso: string) => formatoFecha(iso);
 
 const consultasDemo = (): ConsultaPublicada[] => {
   const hoy = new Date().toISOString();
