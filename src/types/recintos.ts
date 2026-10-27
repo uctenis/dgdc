@@ -27,7 +27,10 @@ export interface Recinto {
   codigo: string;
   nombre: string;
   uso?: string | null;
+  /** Superficie interior útil. */
   superficie_m2?: number | null;
+  /** Superficie según OGUC (incluye muros). */
+  superficie_oguc_m2?: number | null;
   capacidad?: number | null;
   estado: EstadoRecinto;
   unidad_usuaria?: string | null;

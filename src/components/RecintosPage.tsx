@@ -83,7 +83,7 @@ export function RecintosPage() {
   const porEspecialidad = ESPECIALIDADES.map(e => ({ especialidad: e, lista: documentosVisibles.filter(d => d.especialidad === e) })).filter(g => g.lista.length);
 
   const nuevoRecinto = (pisoId: string): RecintoEditable => ({
-    edificio_codigo: edificio, piso_id: pisoId, codigo: '', nombre: '', uso: '', superficie_m2: null, capacidad: null,
+    edificio_codigo: edificio, piso_id: pisoId, codigo: '', nombre: '', uso: '', superficie_m2: null, superficie_oguc_m2: null, capacidad: null,
     estado: 'Operativo', unidad_usuaria: '', foto_url: '', observaciones: '', atributos: {}, origen: 'Manual',
   });
   const nuevoDocumento = (base?: DocumentoEdificio): DocumentoNuevo => base
@@ -127,7 +127,7 @@ export function RecintosPage() {
                 {v === 'recintos' ? `Recintos (${activos.length})` : `Planos y documentos (${documentos.filter(d => d.vigente).length} vigentes)`}
               </button>
             ))}
-            <span className="ml-auto text-slate-500">{pisos.length} piso(s) · superficie registrada <strong className="text-slate-800">{m2(superficieTotal)}</strong></span>
+            <span className="ml-auto text-slate-500">{pisos.length} piso(s) · superficie útil <strong className="text-slate-800">{m2(superficieTotal)}</strong> · OGUC <strong className="text-slate-800">{m2(activos.reduce((s, r) => s + (Number(r.superficie_oguc_m2) || 0), 0))}</strong></span>
             {cargando && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
           </div>
 
@@ -170,7 +170,7 @@ export function RecintosPage() {
                       <div className="overflow-x-auto">
                         <table className="w-full min-w-[720px]">
                           <thead className="text-slate-500 text-[10px] uppercase">
-                            <tr><th className="p-2 text-left">Código</th><th className="p-2 text-left">Nombre</th><th className="p-2 text-left">Uso</th><th className="p-2 text-right">Superficie</th><th className="p-2 text-right">Capacidad</th><th className="p-2 text-left">Estado</th><th className="p-2 text-left">Unidad</th><th className="p-2 w-24"></th></tr>
+                            <tr><th className="p-2 text-left">Código</th><th className="p-2 text-left">Nombre</th><th className="p-2 text-left">Uso</th><th className="p-2 text-right">m² útil</th><th className="p-2 text-right">m² OGUC</th><th className="p-2 text-right">Capacidad</th><th className="p-2 text-left">Estado</th><th className="p-2 text-left">Unidad</th><th className="p-2 w-24"></th></tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                             {lista.map(r => (
@@ -179,6 +179,7 @@ export function RecintosPage() {
                                 <td className="p-2">{r.nombre}{r.foto_url && <a href={r.foto_url} target="_blank" rel="noreferrer" className="ml-1.5 text-sky-700 no-underline" title="Ver foto">📷</a>}</td>
                                 <td className="p-2">{r.uso || '—'}</td>
                                 <td className="p-2 text-right">{m2(r.superficie_m2)}</td>
+                                <td className="p-2 text-right">{m2(r.superficie_oguc_m2)}</td>
                                 <td className="p-2 text-right">{r.capacidad ?? '—'}</td>
                                 <td className="p-2">{r.estado}</td>
                                 <td className="p-2">{r.unidad_usuaria || '—'}</td>
@@ -274,7 +275,8 @@ export function RecintosPage() {
                 {ESTADOS_RECINTO.map(s => <option key={s}>{s}</option>)}
               </select>
             </label>
-            <label className="font-bold">Superficie (m²)<input type="number" min={0} step="0.01" value={recintoEditando.superficie_m2 ?? ''} onChange={e => setRecintoEditando({ ...recintoEditando, superficie_m2: e.target.value === '' ? null : Number(e.target.value) })} className={`mt-1 ${campo} font-normal`} /></label>
+            <label className="font-bold">Superficie útil (m²)<input type="number" min={0} step="0.01" value={recintoEditando.superficie_m2 ?? ''} onChange={e => setRecintoEditando({ ...recintoEditando, superficie_m2: e.target.value === '' ? null : Number(e.target.value) })} className={`mt-1 ${campo} font-normal`} /></label>
+            <label className="font-bold">Superficie OGUC (m²)<input type="number" min={0} step="0.01" value={recintoEditando.superficie_oguc_m2 ?? ''} onChange={e => setRecintoEditando({ ...recintoEditando, superficie_oguc_m2: e.target.value === '' ? null : Number(e.target.value) })} className={`mt-1 ${campo} font-normal`} /></label>
             <label className="font-bold">Capacidad (personas)<input type="number" min={0} value={recintoEditando.capacidad ?? ''} onChange={e => setRecintoEditando({ ...recintoEditando, capacidad: e.target.value === '' ? null : Number(e.target.value) })} className={`mt-1 ${campo} font-normal`} /></label>
             <label className="font-bold">Unidad usuaria<input value={recintoEditando.unidad_usuaria || ''} onChange={e => setRecintoEditando({ ...recintoEditando, unidad_usuaria: e.target.value })} placeholder="Fac. de Ingeniería" className={`mt-1 ${campo} font-normal`} /></label>
             <label className="font-bold sm:col-span-3">Foto de referencia (enlace de Drive)<input value={recintoEditando.foto_url || ''} onChange={e => setRecintoEditando({ ...recintoEditando, foto_url: e.target.value.trim() })} placeholder="https://drive.google.com/…" className={`mt-1 ${campo} font-normal`} /></label>
@@ -346,7 +348,7 @@ function siguienteVersion(v: string): string {
 
 const ETIQUETAS: Partial<Record<keyof Recinto, string>> = {
   codigo: 'código', nombre: 'nombre', uso: 'uso', superficie_m2: 'superficie', capacidad: 'capacidad', estado: 'estado',
-  unidad_usuaria: 'unidad', piso_id: 'piso', foto_url: 'foto', observaciones: 'observaciones',
+  unidad_usuaria: 'unidad', piso_id: 'piso', foto_url: 'foto', observaciones: 'observaciones', superficie_oguc_m2: 'superficie OGUC',
 };
 function diferencias(antes?: Partial<Recinto> | null, despues?: Partial<Recinto> | null): string {
   if (!antes || !despues) return '';

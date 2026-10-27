@@ -2,6 +2,7 @@
 // directamente: todo pasa por aquí.
 import { supabase } from '../lib/supabase';
 import type { CambioRecinto, DocumentoEdificio, Piso, Recinto } from '../types/recintos';
+import { datosDePiso } from '../utils/importacionRecintos';
 
 /** Convierte el error de la base en un mensaje entendible. */
 function errorDe(error: { message?: string; code?: string } | null, accion: string): Error {
@@ -65,34 +66,47 @@ export async function historialRecinto(id: string): Promise<CambioRecinto[]> {
 }
 
 /**
- * Carga recintos desde una planilla: crea los pisos que falten y, por cada recinto, lo crea o actualiza según su
- * código dentro del edificio (no duplica). Devuelve cuántos se crearon y actualizaron.
+ * Carga recintos desde una planilla (de uno o de varios edificios): crea los pisos que falten y, por cada recinto,
+ * lo crea o actualiza según su código dentro de su edificio (no duplica). `alAvanzar` informa el edificio en curso.
  */
 export async function importarRecintos(
-  edificioCodigo: string,
-  filas: { piso: string; recinto: Omit<Recinto, 'id' | 'piso_id' | 'edificio_codigo' | 'estado' | 'origen'> & { estado?: Recinto['estado'] } }[],
-): Promise<{ creados: number; actualizados: number; pisosNuevos: number }> {
-  const pisos = await listarPisos(edificioCodigo);
-  const porCodigo = new Map(pisos.map(p => [p.codigo.toUpperCase(), p]));
+  filas: { edificio: string; piso: string; recinto: Omit<Recinto, 'id' | 'piso_id' | 'edificio_codigo' | 'origen'> }[],
+  alAvanzar?: (hechos: number, total: number, edificio: string) => void,
+): Promise<{ creados: number; actualizados: number; pisosNuevos: number; edificios: number }> {
+  const porEdificio = new Map<string, typeof filas>();
+  filas.forEach(f => porEdificio.set(f.edificio, [...(porEdificio.get(f.edificio) || []), f]));
+  let creados = 0;
+  let actualizados = 0;
   let pisosNuevos = 0;
-  let orden = pisos.reduce((m, p) => Math.max(m, p.orden), 0);
-  for (const codigo of [...new Set(filas.map(f => f.piso.trim().toUpperCase()))]) {
-    if (!codigo || porCodigo.has(codigo)) continue;
-    porCodigo.set(codigo, await guardarPiso({ edificio_codigo: edificioCodigo, codigo, nombre: `Piso ${codigo}`, orden: ++orden }));
-    pisosNuevos++;
+  let hechos = 0;
+  for (const [edificio, lista] of porEdificio) {
+    alAvanzar?.(hechos, porEdificio.size, edificio);
+    const pisos = await listarPisos(edificio);
+    const porCodigo = new Map(pisos.map(p => [p.codigo.toUpperCase(), p]));
+    for (const codigo of [...new Set(lista.map(f => f.piso.trim().toUpperCase()))]) {
+      if (!codigo || porCodigo.has(codigo)) continue;
+      porCodigo.set(codigo, await guardarPiso({ edificio_codigo: edificio, codigo, ...datosDePiso(codigo) }));
+      pisosNuevos++;
+    }
+    const existentes = new Set((await listarRecintos(edificio)).map(r => r.codigo.toUpperCase()));
+    const registros = lista.map(f => ({
+      ...f.recinto,
+      edificio_codigo: edificio,
+      piso_id: porCodigo.get(f.piso.trim().toUpperCase())!.id,
+      origen: 'Planilla' as const,
+    }));
+    // En tandas, para no enviar miles de filas en una sola solicitud.
+    for (let i = 0; i < registros.length; i += 400) {
+      const { error } = await supabase.from('recintos').upsert(registros.slice(i, i + 400), { onConflict: 'edificio_codigo,codigo' });
+      if (error) throw errorDe(error, `No se pudo importar el edificio ${edificio}`);
+    }
+    const yaEstaban = registros.filter(r => existentes.has(r.codigo.toUpperCase())).length;
+    actualizados += yaEstaban;
+    creados += registros.length - yaEstaban;
+    hechos++;
   }
-  const existentes = new Set((await listarRecintos(edificioCodigo)).map(r => r.codigo.toUpperCase()));
-  const registros = filas.map(f => ({
-    ...f.recinto,
-    estado: f.recinto.estado || 'Operativo',
-    edificio_codigo: edificioCodigo,
-    piso_id: porCodigo.get(f.piso.trim().toUpperCase())!.id,
-    origen: 'Planilla' as const,
-  }));
-  const { error } = await supabase.from('recintos').upsert(registros, { onConflict: 'edificio_codigo,codigo' });
-  if (error) throw errorDe(error, 'No se pudo importar la planilla');
-  const actualizados = registros.filter(r => existentes.has(r.codigo.toUpperCase())).length;
-  return { creados: registros.length - actualizados, actualizados, pisosNuevos };
+  alAvanzar?.(hechos, porEdificio.size, '');
+  return { creados, actualizados, pisosNuevos, edificios: porEdificio.size };
 }
 
 // ── Documentos y planos ──
