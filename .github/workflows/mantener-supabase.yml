@@ -1,0 +1,24 @@
+name: Mantener Supabase activo
+
+# El plan gratuito de Supabase pausa el proyecto tras una semana sin actividad, y con él se apagan la IA del sitio y
+# el módulo de recintos. Cada tres días se hace una consulta mínima (sin datos: las reglas de la base no muestran nada
+# sin sesión) para que cuente como actividad. Si se pasa al plan pagado, este flujo se puede borrar.
+on:
+  schedule:
+    - cron: '17 12 */3 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  consulta:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consulta minima a la base
+        env:
+          CLAVE: ${{ vars.VITE_SUPABASE_CLAVE_PUBLICA }}
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "apikey: $CLAVE" "https://etjoutfnzqqjrudosjkg.supabase.co/rest/v1/pisos?select=id&limit=1")
+          echo "Respuesta de Supabase: $code"
+          test "$code" = "200"
