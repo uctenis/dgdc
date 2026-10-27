@@ -14,6 +14,7 @@ import {
 } from '../types/recintos';
 import { ImportarRecintosModal } from './ImportarRecintosModal';
 import { BuscadorEspacios } from './BuscadorEspacios';
+import { PlanoInteractivo } from './PlanoInteractivo';
 import { formatoFecha } from '../utils/fechas';
 
 const m2 = (n?: number | null) => (n ? `${n.toLocaleString('es-CL', { maximumFractionDigits: 2 })} m²` : '—');
@@ -42,7 +43,7 @@ export function RecintosPage() {
     .sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
   const edificios = [...delCampus, ...sinConfigurar];
   const [edificio, setEdificio] = useState('');
-  const [vista, setVista] = useState<'recintos' | 'documentos'>('recintos');
+  const [vista, setVista] = useState<'recintos' | 'plano' | 'documentos'>('recintos');
   const [pisos, setPisos] = useState<Piso[]>([]);
   const [recintos, setRecintos] = useState<Recinto[]>([]);
   const [documentos, setDocumentos] = useState<DocumentoEdificio[]>([]);
@@ -175,10 +176,10 @@ export function RecintosPage() {
       {campusSigla && edificio && (
         <>
           <div className="flex flex-wrap items-center gap-2">
-            {(['recintos', 'documentos'] as const).map(v => (
+            {(['recintos', 'plano', 'documentos'] as const).map(v => (
               <button key={v} type="button" onClick={() => setVista(v)}
                 className={`px-3 py-1.5 rounded-lg font-bold border ${vista === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
-                {v === 'recintos' ? `Recintos (${activos.length})` : `Planos y documentos (${documentos.filter(d => d.vigente).length} vigentes)`}
+                {v === 'recintos' ? `Recintos (${activos.length})` : v === 'plano' ? 'Plano interactivo' : `Planos y documentos (${documentos.filter(d => d.vigente).length} vigentes)`}
               </button>
             ))}
             <span className="ml-auto text-slate-500">{pisos.length} piso(s) · suma de recintos: útil <strong className="text-slate-800">{m2(superficieTotal)}</strong> · OGUC <strong className="text-slate-800">{m2(superficieOguc)}</strong></span>
@@ -256,6 +257,11 @@ export function RecintosPage() {
                 );
               })}
             </div>
+          )}
+
+          {vista === 'plano' && (
+            <PlanoInteractivo documentos={documentos} recintos={activos} destacado={resaltado}
+              onEditarRecinto={r => setRecintoEditando(r)} onRecargar={cargar} />
           )}
 
           {vista === 'documentos' && (
@@ -418,7 +424,7 @@ function diferencias(antes?: Partial<Recinto> | null, despues?: Partial<Recinto>
 
 function Ventana({ titulo, children, onClose, onGuardar, guardando, error }: { titulo: string; children: ReactNode; onClose: () => void; onGuardar?: () => void; guardando?: boolean; error?: string }) {
   return (
-    <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4">
+    <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[80] flex items-center justify-center p-2 sm:p-4">
       <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl flex flex-col max-h-[92vh] overflow-hidden border border-slate-200 text-xs">
         <div className="flex items-center justify-between px-5 py-3 border-b">
           <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2"><DoorOpen className="w-4 h-4 text-indigo-600" /> {titulo}</h3>

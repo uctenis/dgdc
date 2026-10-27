@@ -1,7 +1,7 @@
 // Acceso a datos del módulo de recintos y planos (Postgres en Supabase). Las pantallas no hablan con la base
 // directamente: todo pasa por aquí.
 import { supabase } from '../lib/supabase';
-import type { CambioRecinto, DocumentoEdificio, FichaEdificio, Piso, Recinto } from '../types/recintos';
+import type { CambioRecinto, DocumentoEdificio, FichaEdificio, Piso, Recinto, ZonaRecinto } from '../types/recintos';
 import { datosDePiso } from '../utils/importacionRecintos';
 
 /** Convierte el error de la base en un mensaje entendible. */
@@ -182,4 +182,46 @@ export async function registrarDocumento(documento: Omit<DocumentoEdificio, 'id'
   const { data, error } = await supabase.from('documentos').insert({ ...documento, vigente: true }).select().single();
   if (error) throw errorDe(error, 'No se pudo registrar el documento');
   return data as DocumentoEdificio;
+}
+
+// ── Visor de planos ──
+
+/** Guarda (o reemplaza) la copia en PDF de una lámina para mostrarla en el visor. */
+export async function subirLaminaVisor(documento: DocumentoEdificio, archivo: File): Promise<string> {
+  if (archivo.type && archivo.type !== 'application/pdf') throw new Error('La lámina debe ser un archivo PDF.');
+  const ruta = `${documento.edificio_codigo}/${documento.id}.pdf`;
+  const subida = await supabase.storage.from('laminas').upload(ruta, archivo, { upsert: true, contentType: 'application/pdf' });
+  if (subida.error) throw errorDe({ message: subida.error.message }, 'No se pudo subir la lámina');
+  const { error } = await supabase.from('documentos').update({ archivo_visor: ruta }).eq('id', documento.id);
+  if (error) throw errorDe(error, 'La lámina se subió, pero no se pudo asociar al documento');
+  return ruta;
+}
+
+export async function descargarLamina(ruta: string): Promise<ArrayBuffer> {
+  const { data, error } = await supabase.storage.from('laminas').download(ruta);
+  if (error || !data) throw errorDe({ message: error?.message }, 'No se pudo abrir la lámina');
+  return data.arrayBuffer();
+}
+
+export async function guardarEscalaDocumento(documentoId: string, escala: string): Promise<void> {
+  const { error } = await supabase.from('documentos').update({ escala: escala || null }).eq('id', documentoId);
+  if (error) throw errorDe(error, 'No se pudo guardar la escala');
+}
+
+export async function listarZonas(documentoId: string): Promise<ZonaRecinto[]> {
+  const { data, error } = await supabase.from('zonas_recinto').select('id, documento_id, recinto_id, pagina, poligono').eq('documento_id', documentoId);
+  if (error) throw errorDe(error, 'No se pudieron leer los recintos ubicados en el plano');
+  return data as ZonaRecinto[];
+}
+
+/** Guarda el contorno de un recinto en una lámina (si ya tenía uno, lo reemplaza). */
+export async function guardarZona(zona: Omit<ZonaRecinto, 'id'>): Promise<ZonaRecinto> {
+  const { data, error } = await supabase.from('zonas_recinto').upsert(zona, { onConflict: 'documento_id,recinto_id' }).select('id, documento_id, recinto_id, pagina, poligono').single();
+  if (error) throw errorDe(error, 'No se pudo guardar el contorno del recinto');
+  return data as ZonaRecinto;
+}
+
+export async function eliminarZona(id: string): Promise<void> {
+  const { error } = await supabase.from('zonas_recinto').delete().eq('id', id);
+  if (error) throw errorDe(error, 'No se pudo quitar el recinto del plano');
 }

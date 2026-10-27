@@ -82,8 +82,21 @@ export interface DocumentoEdificio {
   drive_url: string;
   proyecto_codigo?: string | null;
   observaciones?: string | null;
+  /** Copia de la lámina en el almacenamiento privado "laminas", para el visor (el original sigue en Drive). */
+  archivo_visor?: string | null;
+  /** Escala de la lámina impresa ("1:65"), para medir superficies sobre el plano. */
+  escala?: string | null;
   creado_en?: string;
   creado_por?: string;
+}
+
+/** Contorno de un recinto sobre una lámina; puntos entre 0 y 1 respecto del ancho y alto de la página. */
+export interface ZonaRecinto {
+  id: string;
+  documento_id: string;
+  recinto_id: string;
+  pagina: number;
+  poligono: [number, number][];
 }
 
 export interface CambioRecinto {
