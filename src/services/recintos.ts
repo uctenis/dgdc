@@ -21,6 +21,13 @@ export async function listarPisos(edificioCodigo: string): Promise<Piso[]> {
   return data as Piso[];
 }
 
+/** Códigos de todos los edificios que tienen pisos en la base, estén o no en la configuración de campus. */
+export async function listarEdificiosConDatos(): Promise<string[]> {
+  const { data, error } = await supabase.from('pisos').select('edificio_codigo');
+  if (error) throw errorDe(error, 'No se pudieron leer los edificios');
+  return [...new Set((data as { edificio_codigo: string }[]).map(p => p.edificio_codigo))];
+}
+
 export async function guardarPiso(piso: Omit<Piso, 'id'> & { id?: string }): Promise<Piso> {
   const { id, ...datos } = piso;
   const consulta = id

@@ -5,7 +5,7 @@ import {
 import { getCampusList, obtenerEdificiosDeCampus, etiquetaEdificio } from '../data/campusData';
 import { SUPABASE_CONFIGURADO } from '../lib/supabase';
 import {
-  listarPisos, guardarPiso, eliminarPiso, listarRecintos, guardarRecinto, eliminarRecinto, historialRecinto,
+  listarPisos, listarEdificiosConDatos, guardarPiso, eliminarPiso, listarRecintos, guardarRecinto, eliminarRecinto, historialRecinto,
   listarDocumentos, registrarDocumento,
 } from '../services/recintos';
 import {
@@ -23,9 +23,20 @@ type DocumentoNuevo = Omit<DocumentoEdificio, 'id' | 'vigente' | 'creado_en' | '
 
 /** Módulo de control documental: pisos y recintos de cada edificio, y el índice de sus planos (los archivos siguen en Drive). */
 export function RecintosPage() {
-  const campus = getCampusList();
+  const [enBase, setEnBase] = useState<string[]>([]);
+  // Campus y edificios de la configuración, más los que solo existen en la base (códigos del catastro aún no configurados).
+  const configurados = getCampusList();
+  const siglasConfiguradas = new Set(configurados.map(c => c.sigla));
+  const campus = [
+    ...configurados.map(c => ({ sigla: c.sigla, nombre: c.nombre })),
+    ...[...new Set(enBase.map(e => e.slice(0, 3)))].filter(s => !siglasConfiguradas.has(s)).sort()
+      .map(s => ({ sigla: s, nombre: 'sin configurar (solo en el catastro)' })),
+  ];
   const [campusSigla, setCampusSigla] = useState(campus[0]?.sigla || '');
-  const edificios = obtenerEdificiosDeCampus(campusSigla);
+  const delCampus = obtenerEdificiosDeCampus(campusSigla);
+  const sinConfigurar = enBase.filter(e => e.startsWith(campusSigla) && !delCampus.includes(e) && !configurados.some(c => c.edificios.includes(e)))
+    .sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
+  const edificios = [...delCampus, ...sinConfigurar];
   const [edificio, setEdificio] = useState('');
   const [vista, setVista] = useState<'recintos' | 'documentos'>('recintos');
   const [pisos, setPisos] = useState<Piso[]>([]);
@@ -41,7 +52,8 @@ export function RecintosPage() {
   const [importando, setImportando] = useState(false);
   const [guardando, setGuardando] = useState(false);
 
-  useEffect(() => { setEdificio(prev => (edificios.includes(prev) ? prev : edificios[0] || '')); }, [campusSigla]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (SUPABASE_CONFIGURADO) listarEdificiosConDatos().then(setEnBase).catch(() => {}); }, []);
+  useEffect(() => { setEdificio(prev => (edificios.includes(prev) ? prev : edificios[0] || '')); }, [campusSigla, enBase.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const cargar = useCallback(async () => {
     if (!edificio || !SUPABASE_CONFIGURADO) return;
@@ -113,7 +125,7 @@ export function RecintosPage() {
         </label>
         <label className="font-bold text-slate-700">Edificio o zona
           <select value={edificio} onChange={e => setEdificio(e.target.value)} className={`block mt-1 ${campo} min-w-[220px] font-normal`}>
-            {edificios.map(e => <option key={e} value={e}>{etiquetaEdificio(e)}</option>)}
+            {edificios.map(e => <option key={e} value={e}>{etiquetaEdificio(e)}{sinConfigurar.includes(e) ? ' (sin configurar)' : ''}{enBase.includes(e) ? '' : ' · sin datos'}</option>)}
           </select>
         </label>
       </div>
