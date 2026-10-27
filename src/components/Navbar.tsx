@@ -15,11 +15,11 @@ import {
   HardHat,
   Search,
   Calculator,
-  DoorOpen,
   Menu,
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { SelectorModulos } from './SelectorModulos';
 
 interface NavbarProps {
   activeTab: string;
@@ -43,7 +43,6 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onBusca
     { id: 'evaluacion',   label: 'Evaluación', icon: FileCheck2, contextual: true },
     { id: 'documentos',   label: 'Actas', icon: FileText, contextual: true },
     { id: 'precios', label: 'Precios unitarios', corto: 'Precios', icon: Calculator },
-    { id: 'recintos', label: 'Recintos y planos', corto: 'Recintos', icon: DoorOpen },
     { id: 'reportes', label: 'Reportes y Auditoría', corto: 'Reportes', icon: BarChart3 },
     { id: 'configuracion', label: 'Configuración', icon: Settings, adminOnly: true },
   ];
@@ -96,9 +95,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onBusca
                 </span>
                 <span className="text-[10px] text-slate-400 hidden sm:inline">DGDC</span>
               </div>
-              <h1 className="text-sm lg:text-base font-bold tracking-tight text-white leading-tight truncate" style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-                Gestor de Adjudicaciones
-              </h1>
+              <SelectorModulos actual="adjudicaciones" />
             </div>
           </div>
 
