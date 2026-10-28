@@ -154,7 +154,7 @@ export function ImportarRecintosModal({ edificioCodigo, etiquetaEdificio, onClos
                 {guardarResto && (
                   <label className="flex items-center gap-2 mt-1 text-slate-600">
                     <input type="checkbox" checked={incluirDatosPersonales} onChange={e => setIncluirDatosPersonales(e.target.checked)} />
-                    Incluir datos de personas (nombre, RUT, cargo, anexo, contrato). <span className="text-amber-700">Recomendado: no, el recinto no es un registro de personal.</span>
+                    Incluir también RUT, anexo y tipo de contrato. <span className="text-amber-700">Recomendado: no. El nombre y el cargo de los ocupantes se guardan igual, en su lista de ocupantes.</span>
                   </label>
                 )}
               </div>
@@ -163,7 +163,7 @@ export function ImportarRecintosModal({ edificioCodigo, etiquetaEdificio, onClos
                 <div>
                   <h4 className="font-bold text-slate-800 mb-1.5">
                     Revisión: {validas.length} recinto(s) listo(s) para cargar{variosEdificios ? ` en ${edificios.size} edificio(s)` : ''}
-                    {repetidas ? ` · ${repetidas} fila(s) repiten un código (p. ej. una por ocupante) y se usa la primera` : ''}
+                    {repetidas ? ` · ${repetidas} fila(s) repiten un código (una por ocupante): sus ocupantes se suman al recinto` : ''}
                     {conProblemas ? ` · ${conProblemas} con problemas (no se cargan)` : ''}
                   </h4>
                   <div className="border border-slate-200 rounded-lg overflow-x-auto max-h-72">

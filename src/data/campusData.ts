@@ -1,4 +1,5 @@
 import { guardarConfigCompartida } from '../services/configCompartida';
+import { comoTitulo } from '../utils/texto';
 export interface CampusInfo {
   sigla: string;
   nombre: string;
@@ -329,34 +330,35 @@ const INITIAL_CAMPUS_UCT: CampusInfo[] = [
     "nombre": "Campus San Nicolás (Curacautín)",
     "ciudad": "Curacautín",
     "edificios": [
-      "CSN01",
-      "CSN05",
+      "CSN",
+      "CSN11",
+      "CSN12",
+      "CSN13",
+      "CSN14",
       "CSN15",
       "CSN16",
       "CSN17",
-      "CSN18",
-      "CSN19",
-      "CSN20",
-      "CSN101",
-      "CSN102",
-      "CSN105",
-      "CSN110",
-      "CSN111",
-      "CSN115",
-      "CSN116",
-      "CSN117",
-      "CSN118",
-      "CSN120",
-      "CSN121",
-      "CSN122",
-      "CSN123",
-      "CSN124",
-      "CSN125",
-      "CSN130",
-      "CSN170",
-      "CSN180",
-      "CSN190",
-      "CSN195"
+      "CSN21",
+      "CSN31",
+      "CSN_101",
+      "CSN_105",
+      "CSN_110",
+      "CSN_111",
+      "CSN_115",
+      "CSN_116",
+      "CSN_117",
+      "CSN_118",
+      "CSN_120",
+      "CSN_121",
+      "CSN_122",
+      "CSN_123",
+      "CSN_124",
+      "CSN_125",
+      "CSN_130",
+      "CSN_170",
+      "CSN_180",
+      "CSN_190",
+      "CSN_195"
     ]
   },
   {
@@ -388,7 +390,8 @@ export function getCampusList(): CampusInfo[] {
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed;
+      // Los nombres de campus se muestran siempre como título, aunque se hayan escrito en mayúsculas.
+      return (parsed as CampusInfo[]).map(c => ({ ...c, nombre: comoTitulo(c.nombre) }));
     }
     return INITIAL_CAMPUS_UCT;
   } catch (e) {
@@ -446,7 +449,7 @@ export function importarCarpetasDrive(lista: CampusInfo[], archivo: CarpetasDriv
     }
     for (const [siglaRaw, ed] of Object.entries(dato.edificios || {})) {
       const sigla = siglaRaw.trim().toUpperCase();
-      if (!/^[A-Z0-9-]{2,12}$/.test(sigla)) continue;
+      if (!/^[A-Z0-9_-]{2,12}$/.test(sigla)) continue;   // admite espacios comunes del catastro («CSN_110»)
       if (!edificios.includes(sigla)) {
         edificios.push(sigla);
         resumen.edificiosAgregados.push(sigla);

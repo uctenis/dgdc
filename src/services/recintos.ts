@@ -21,11 +21,19 @@ export async function listarPisos(edificioCodigo: string): Promise<Piso[]> {
   return data as Piso[];
 }
 
-/** Códigos de todos los edificios con ficha o con pisos en la base, estén o no en la configuración de campus. */
-export async function listarEdificiosConDatos(): Promise<string[]> {
-  const [p, e] = await Promise.all([supabase.from('pisos').select('edificio_codigo'), supabase.from('edificios').select('codigo')]);
+/**
+ * Edificios con ficha o con pisos en la base, estén o no en la configuración de campus: sus códigos y, para los que
+ * tienen ficha, el nombre y la categoría que les da el catastro (1 edificio, 2 construcción menor, 3 espacio común).
+ */
+export async function listarEdificiosConDatos(): Promise<{ codigos: string[]; nombres: Record<string, string>; categorias: Record<string, string> }> {
+  const [p, e] = await Promise.all([supabase.from('pisos').select('edificio_codigo'), supabase.from('edificios').select('codigo, nombre, categoria')]);
   if (p.error || e.error) throw errorDe(p.error || e.error, 'No se pudieron leer los edificios');
-  return [...new Set([...(p.data as { edificio_codigo: string }[]).map(x => x.edificio_codigo), ...(e.data as { codigo: string }[]).map(x => x.codigo)])];
+  const fichas = e.data as { codigo: string; nombre: string | null; categoria: string | null }[];
+  return {
+    codigos: [...new Set([...(p.data as { edificio_codigo: string }[]).map(x => x.edificio_codigo), ...fichas.map(x => x.codigo)])],
+    nombres: Object.fromEntries(fichas.filter(x => x.nombre?.trim()).map(x => [x.codigo, x.nombre!.trim()])),
+    categorias: Object.fromEntries(fichas.filter(x => x.categoria?.trim()).map(x => [x.codigo, x.categoria!.trim()])),
+  };
 }
 
 // ── Búsqueda ──
@@ -37,32 +45,50 @@ export interface ResultadoBusqueda {
   nombre: string;
   detalle: string;
   recintoId?: string;
+  /** Ocupante que coincide con lo buscado («Pérez, Ana · Secretaria»), si la búsqueda fue por persona. */
+  ocupante?: string;
 }
 
-/** Busca en todos los campus edificios (código, nombre, dirección) y recintos (código, nombre, uso, unidad). */
+/** Texto en minúsculas y sin tildes, igual que la columna «busqueda» de la base. */
+export const normalizarBusqueda = (s: string) => s.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
+
+/**
+ * Busca en todos los campus edificios (código, nombre, dirección) y recintos (código, nombre, uso, unidad y nombre,
+ * cargo o unidad de sus ocupantes). Con varias palabras, el recinto debe tenerlas todas, en cualquier orden: «Ana
+ * Pérez» encuentra a «PÉREZ SOTO, ANA MARÍA».
+ */
 export async function buscarEspacios(texto: string): Promise<ResultadoBusqueda[]> {
   // Se quitan los caracteres que tienen significado en el filtro de la base.
   const t = texto.replace(/[,()%*"\\]/g, ' ').replace(/\s+/g, ' ').trim();
   if (t.length < 2) return [];
   const p = `"%${t}%"`;
+  const palabras = normalizarBusqueda(t).split(' ').filter(Boolean);
+  let consultaRecintos = supabase.from('recintos').select('id, edificio_codigo, codigo, nombre, uso, unidad_usuaria, superficie_m2, estado, ocupantes');
+  for (const palabra of palabras) consultaRecintos = consultaRecintos.ilike('busqueda', `%${palabra}%`);
   const [e, r] = await Promise.all([
     supabase.from('edificios').select('codigo, nombre, direccion, uso_principal')
       .or(`codigo.ilike.${p},nombre.ilike.${p},direccion.ilike.${p}`).order('codigo').limit(10),
-    supabase.from('recintos').select('id, edificio_codigo, codigo, nombre, uso, unidad_usuaria, superficie_m2, estado')
-      .or(`codigo.ilike.${p},nombre.ilike.${p},uso.ilike.${p},unidad_usuaria.ilike.${p}`).order('codigo').limit(40),
+    consultaRecintos.order('codigo').limit(60),
   ]);
   if (e.error || r.error) throw errorDe(e.error || r.error, 'No se pudo buscar');
   type FilaEdificio = { codigo: string; nombre: string | null; direccion: string | null; uso_principal: string | null };
-  type FilaRecinto = { id: string; edificio_codigo: string; codigo: string; nombre: string; uso: string | null; unidad_usuaria: string | null; superficie_m2: number | null; estado: string };
+  type FilaRecinto = Pick<Recinto, 'id' | 'edificio_codigo' | 'codigo' | 'nombre' | 'uso' | 'unidad_usuaria' | 'superficie_m2' | 'estado' | 'ocupantes'>;
+  const coincide = (texto: string) => palabras.every(w => normalizarBusqueda(texto).includes(w));
   return [
     ...(e.data as FilaEdificio[]).map(x => ({
       tipo: 'edificio' as const, edificio_codigo: x.codigo, codigo: x.codigo, nombre: x.nombre || 'Sin nombre',
       detalle: [x.uso_principal, x.direccion].filter(Boolean).join(' · '),
     })),
-    ...(r.data as FilaRecinto[]).map(x => ({
-      tipo: 'recinto' as const, edificio_codigo: x.edificio_codigo, codigo: x.codigo, nombre: x.nombre, recintoId: x.id,
-      detalle: [x.uso, x.unidad_usuaria, x.superficie_m2 ? `${x.superficie_m2} m²` : '', x.estado !== 'Operativo' ? x.estado : ''].filter(Boolean).join(' · '),
-    })),
+    ...(r.data as FilaRecinto[]).map(x => {
+      // Si no calza por los datos del recinto, es por uno de sus ocupantes: se muestra cuál.
+      const porRecinto = coincide([x.codigo, x.nombre, x.uso, x.unidad_usuaria].filter(Boolean).join(' '));
+      const ocupante = porRecinto ? undefined : (x.ocupantes || []).find(o => coincide([o.nombre, o.cargo, o.unidad].filter(Boolean).join(' ')));
+      return {
+        tipo: 'recinto' as const, edificio_codigo: x.edificio_codigo, codigo: x.codigo, nombre: x.nombre, recintoId: x.id,
+        ocupante: ocupante ? [ocupante.nombre, ocupante.cargo].filter(Boolean).join(' · ') : undefined,
+        detalle: [x.uso, x.unidad_usuaria, x.superficie_m2 ? `${x.superficie_m2} m²` : '', x.estado !== 'Operativo' ? x.estado : ''].filter(Boolean).join(' · '),
+      };
+    }),
   ];
 }
 
@@ -195,6 +221,13 @@ export async function subirLaminaVisor(documento: DocumentoEdificio, archivo: Fi
   const { error } = await supabase.from('documentos').update({ archivo_visor: ruta }).eq('id', documento.id);
   if (error) throw errorDe(error, 'La lámina se subió, pero no se pudo asociar al documento');
   return ruta;
+}
+
+/** Láminas vigentes de todos los edificios de un campus (su código empieza con la sigla del campus). */
+export async function listarLaminasDeCampus(siglaCampus: string): Promise<DocumentoEdificio[]> {
+  const { data, error } = await supabase.from('documentos').select('*').like('edificio_codigo', `${siglaCampus}%`).eq('tipo', 'Plano').eq('vigente', true);
+  if (error) throw errorDe(error, 'No se pudieron leer las láminas del campus');
+  return data as DocumentoEdificio[];
 }
 
 export async function descargarLamina(ruta: string): Promise<ArrayBuffer> {

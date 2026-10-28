@@ -43,6 +43,13 @@ export interface Piso {
   observaciones?: string | null;
 }
 
+/** Persona o unidad que ocupa un recinto, según el catastro (sin RUT ni datos de contrato). */
+export interface Ocupante {
+  nombre: string;
+  cargo?: string | null;
+  unidad?: string | null;
+}
+
 export interface Recinto {
   id: string;
   edificio_codigo: string;
@@ -57,6 +64,8 @@ export interface Recinto {
   capacidad?: number | null;
   estado: EstadoRecinto;
   unidad_usuaria?: string | null;
+  /** Personas o unidades que lo ocupan (una por fila del catastro). */
+  ocupantes?: Ocupante[];
   foto_url?: string | null;
   observaciones?: string | null;
   /** Columnas propias de cada planilla que no calzan en las fijas. */

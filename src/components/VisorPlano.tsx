@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import {
-  Loader2, ZoomIn, ZoomOut, Maximize2, Minimize2, Scan, Pencil, Trash2, MapPin, CheckCircle2, Circle, X, Undo2, Check, AlertTriangle,
+  Loader2, ZoomIn, ZoomOut, Maximize2, Minimize2, Scan, Pencil, Trash2, MapPin, CheckCircle2, Circle, X, Undo2, Check, AlertTriangle, Wand2, Tag,
 } from 'lucide-react';
 import type { DocumentoEdificio, Recinto, ZonaRecinto } from '../types/recintos';
 import { descargarLamina, eliminarZona, guardarEscalaDocumento, guardarZona, listarZonas } from '../services/recintos';
 import { areaRealM2, centroide, colorDeCategoria, limites, puntoEnPoligono, type Punto } from '../utils/geometriaPlano';
+import { predibujarRecintos } from '../utils/predibujoPlano';
+import { comoTitulo } from '../utils/texto';
 
 // Worker local, igual que en el resto del sistema (no depende de descargas externas).
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.js', import.meta.url).toString();
@@ -27,8 +29,9 @@ interface Props {
 
 /**
  * Visor de una lámina: el plano en alta resolución con zoom y desplazamiento, y encima el contorno de cada recinto,
- * coloreado por uso, estado o unidad. Permite dibujar el contorno de un recinto (clic en cada vértice) y compara el
- * área medida en el plano con la superficie registrada.
+ * coloreado por uso, estado o unidad. Al abrir una lámina sin recintos ubicados, los predibuja a partir de los códigos
+ * escritos en el plano. Cada contorno se corrige arrastrando sus vértices o se redibuja (clic en cada esquina), y el
+ * área medida en el plano se compara con la superficie registrada.
  */
 export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, onEscalaGuardada }: Props) {
   const lienzo = useRef<HTMLCanvasElement>(null);
@@ -48,7 +51,15 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
   const [pantallaCompleta, setPantallaCompleta] = useState(false);
   const [escala, setEscala] = useState(documento.escala || '');
   const [guardando, setGuardando] = useState(false);
+  const [mostrarRotulos, setMostrarRotulos] = useState(false);
+  const [editandoContorno, setEditandoContorno] = useState(false);   // muestra los vértices del recinto elegido
+  const [predibujando, setPredibujando] = useState(false);
+  const [aviso, setAviso] = useState('');
   const arrastre = useRef<{ x: number; y: number; vx: number; vy: number; movio: boolean } | null>(null);
+  // Vértice que se arrastra; `nuevo` si se acaba de agregar desde el punto medio de un borde.
+  const arrastreVertice = useRef<{ zona: ZonaRecinto; indice: number; poligono: Punto[]; x: number; y: number; movio: boolean; nuevo: boolean } | null>(null);
+  const [verticeMarcado, setVerticeMarcado] = useState<number | null>(null);   // esquina elegida para quitarla
+  const predibujoAutomatico = useRef(false);
 
   const recintoPorId = useMemo(() => new Map(recintos.map(r => [r.id, r])), [recintos]);
   const zonasPagina = useMemo(() => zonas.filter(z => z.pagina === pagina && recintoPorId.has(z.recinto_id)), [zonas, pagina, recintoPorId]);
@@ -119,6 +130,44 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
 
   useEffect(() => { if (destacado && tam) { setSeleccion(destacado); enfocar(destacado); } }, [destacado, tam]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /**
+   * Detecta y guarda el contorno de los recintos cuyo código aparece escrito en la lámina: los aún no ubicados o, con
+   * `todos`, también los ya ubicados (se reemplaza su contorno).
+   */
+  const predibujar = useCallback(async (automatico: boolean, todos = false) => {
+    if (!pdf) return;
+    const pendientes = todos ? recintos : recintos.filter(r => !zonaDe.has(r.id));
+    if (!pendientes.length) return;
+    setPredibujando(true); setAviso('');
+    try {
+      const nuevas: ZonaRecinto[] = [];
+      for (let p = 1; p <= pdf.numPages; p++) {
+        const faltan = pendientes.filter(r => !nuevas.some(z => z.recinto_id === r.id));
+        if (!faltan.length) break;
+        const detectados = await predibujarRecintos(await pdf.getPage(p), faltan, escala);
+        for (const d of detectados) nuevas.push(await guardarZona({ documento_id: documento.id, recinto_id: d.recinto_id, pagina: p, poligono: d.poligono }));
+      }
+      setZonas(prev => [...prev.filter(z => !nuevas.some(n => n.recinto_id === z.recinto_id)), ...nuevas]);
+      if (nuevas.length) setAviso(`Se predibujaron ${nuevas.length} recinto(s) a partir de los códigos del plano. Revíselos: arrastre los vértices para corregir un contorno.`);
+      else if (!automatico) setAviso('No se encontraron en la lámina los códigos de los recintos que faltan ubicar. Puede dibujarlos a mano con «Ubicar en plano».');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPredibujando(false);
+    }
+  }, [pdf, recintos, zonaDe, escala, documento.id]);
+
+  // Al cambiar de recinto, sus vértices vuelven a quedar ocultos.
+  useEffect(() => { setEditandoContorno(false); }, [seleccion]);
+  useEffect(() => { setVerticeMarcado(null); }, [seleccion, editandoContorno]);
+
+  // La primera vez que se abre una lámina sin recintos ubicados, se predibujan solos.
+  useEffect(() => {
+    if (!pdf || cargando || zonas.length || predibujoAutomatico.current) return;
+    predibujoAutomatico.current = true;
+    void predibujar(true);
+  }, [pdf, cargando, zonas.length, predibujar]);
+
   // Zoom con la rueda del mouse, centrado en el puntero.
   useEffect(() => {
     const m = marco.current;
@@ -153,10 +202,38 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
   const zonaEn = (p: Punto) => [...zonasPagina].reverse().find(z => puntoEnPoligono(p, z.poligono));
 
   const alPresionar = (e: React.PointerEvent) => {
+    const vertice = (e.target as Element).getAttribute?.('data-vertice');
+    const medio = (e.target as Element).getAttribute?.('data-medio');
+    const zona = seleccion ? zonaDe.get(seleccion) : undefined;
+    if ((vertice != null || medio != null) && zona && editandoContorno && !dibujando) {
+      const base = { zona, x: e.clientX, y: e.clientY, movio: false };
+      if (vertice != null) {
+        arrastreVertice.current = { ...base, indice: Number(vertice), poligono: zona.poligono, nuevo: false };
+      } else {
+        // Punto medio de un borde: se agrega ahí una esquina nueva, que se puede arrastrar de inmediato.
+        const i = Number(medio), a = zona.poligono[i], b = zona.poligono[(i + 1) % zona.poligono.length];
+        const poligono = [...zona.poligono.slice(0, i + 1), [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] as Punto, ...zona.poligono.slice(i + 1)];
+        arrastreVertice.current = { ...base, indice: i + 1, poligono, nuevo: true };
+        setZonas(prev => prev.map(z => (z.id === zona.id ? { ...z, poligono } : z)));
+      }
+      (e.target as Element).setPointerCapture?.(e.pointerId);
+      return;
+    }
     arrastre.current = { x: e.clientX, y: e.clientY, vx: vista.x, vy: vista.y, movio: false };
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
   };
   const alMover = (e: React.PointerEvent) => {
+    const av = arrastreVertice.current;
+    if (av) {
+      if (!av.movio && Math.abs(e.clientX - av.x) + Math.abs(e.clientY - av.y) <= 3) return;   // aún es un clic
+      av.movio = true;
+      const p = aPagina(e.clientX, e.clientY);
+      if (!p) return;
+      const punto: Punto = [Math.min(Math.max(p[0], 0), 1), Math.min(Math.max(p[1], 0), 1)];
+      av.poligono = av.poligono.map((q, i) => (i === av.indice ? punto : q));
+      setZonas(prev => prev.map(z => (z.id === av.zona.id ? { ...z, poligono: av.poligono } : z)));
+      return;
+    }
     const a = arrastre.current;
     if (a) {
       const dx = e.clientX - a.x, dy = e.clientY - a.y;
@@ -170,13 +247,32 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
     const r = marco.current!.getBoundingClientRect();
     setEncima(z ? { id: z.recinto_id, x: e.clientX - r.left, y: e.clientY - r.top } : null);
   };
+  /** Guarda el contorno corregido; si falla, lo devuelve a como estaba. */
+  const guardarContorno = async (zona: ZonaRecinto, poligono: Punto[]) => {
+    setZonas(prev => prev.map(z => (z.id === zona.id ? { ...z, poligono } : z)));
+    try {
+      await guardarZona({ documento_id: zona.documento_id, recinto_id: zona.recinto_id, pagina: zona.pagina, poligono });
+    } catch (e) {
+      setZonas(prev => prev.map(z => (z.id === zona.id ? zona : z)));
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const alSoltar = (e: React.PointerEvent) => {
+    const av = arrastreVertice.current;
+    if (av) {
+      arrastreVertice.current = null;
+      if (av.movio || av.nuevo) { void guardarContorno(av.zona, av.poligono); setVerticeMarcado(null); }
+      else setVerticeMarcado(m => (m === av.indice ? null : av.indice));   // clic en una esquina: la marca para quitarla
+      return;
+    }
     const a = arrastre.current;
     arrastre.current = null;
     if (!a || a.movio) return;
     const p = aPagina(e.clientX, e.clientY);
     if (!p) return;
     if (dibujando) { setDibujando(d => d && { ...d, puntos: [...d.puntos, p] }); return; }
+    if (editandoContorno) { setVerticeMarcado(null); return; }   // mientras se edita, un clic no cambia de recinto
     setSeleccion(zonaEn(p)?.recinto_id || null);
   };
 
@@ -202,11 +298,44 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
       if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
       if (e.key === 'Escape') { if (dibujando) { setDibujando(null); setCursor(null); } else if (pantallaCompleta) setPantallaCompleta(false); else setSeleccion(null); }
       if (dibujando && e.key === 'Enter') void terminarDibujo();
+      if (!dibujando && verticeMarcado != null && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); quitarVerticeMarcado(); }
       if (dibujando && (e.key === 'Backspace' || (e.key === 'z' && (e.ctrlKey || e.metaKey)))) { e.preventDefault(); setDibujando(d => d && { ...d, puntos: d.puntos.slice(0, -1) }); }
     };
     window.addEventListener('keydown', tecla);
     return () => window.removeEventListener('keydown', tecla);
-  }, [dibujando, pantallaCompleta, terminarDibujo]);
+  }, [dibujando, pantallaCompleta, terminarDibujo, verticeMarcado]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Quita la esquina marcada del recinto elegido (un contorno necesita al menos tres). */
+  function quitarVerticeMarcado() {
+    const zona = seleccion ? zonaDe.get(seleccion) : undefined;
+    if (!zona || verticeMarcado == null || zona.poligono.length <= 3) return;
+    void guardarContorno(zona, zona.poligono.filter((_, i) => i !== verticeMarcado));
+    setVerticeMarcado(null);
+  }
+
+  /** Doble clic sobre un vértice del recinto elegido lo quita; sobre un borde, agrega uno nuevo ahí. */
+  const editarVertice = (e: React.MouseEvent) => {
+    const zona = seleccion ? zonaDe.get(seleccion) : undefined;
+    const p = aPagina(e.clientX, e.clientY);
+    if (!editandoContorno || !zona || !p || !tam || zona.pagina !== pagina) return;
+    const vertice = (e.target as Element).getAttribute?.('data-vertice');
+    if (vertice != null) {
+      if (zona.poligono.length > 3) void guardarContorno(zona, zona.poligono.filter((_, i) => i !== Number(vertice)));
+      return;
+    }
+    // Borde más cercano, medido en pantalla.
+    const enPantalla = ([x, y]: Punto): Punto => [x * tam.w * vista.k, y * tam.h * vista.k];
+    const [px, py] = enPantalla(p);
+    let mejor = -1, distMin = 10;
+    zona.poligono.forEach((a, i) => {
+      const [ax, ay] = enPantalla(a), [bx, by] = enPantalla(zona.poligono[(i + 1) % zona.poligono.length]);
+      const largo2 = (bx - ax) ** 2 + (by - ay) ** 2 || 1;
+      const t = Math.min(Math.max(((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / largo2, 0), 1);
+      const d = Math.hypot(px - (ax + t * (bx - ax)), py - (ay + t * (by - ay)));
+      if (d < distMin) { distMin = d; mejor = i; }
+    });
+    if (mejor >= 0) void guardarContorno(zona, [...zona.poligono.slice(0, mejor + 1), p, ...zona.poligono.slice(mejor + 1)]);
+  };
 
   const quitarDelPlano = async (recintoId: string) => {
     const z = zonaDe.get(recintoId);
@@ -256,6 +385,19 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
             <option value="uso">Uso</option><option value="estado">Estado</option><option value="unidad">Unidad usuaria</option>
           </select>
         </label>
+        <button type="button" disabled={predibujando || !pdf || !recintos.length}
+          onClick={() => {
+            if (ubicados < recintos.length) void predibujar(false);
+            else if (confirm('Todos los recintos ya están ubicados. ¿Volver a predibujarlos? Se reemplazarán los contornos de los que se encuentren en la lámina.')) void predibujar(false, true);
+          }}
+          title="Ubica los recintos buscando su código escrito en la lámina (si ya están todos, los vuelve a dibujar)"
+          className="flex items-center gap-1 px-2 py-1 rounded-lg border border-teal-300 font-bold text-teal-800 hover:bg-teal-50 disabled:opacity-40">
+          {predibujando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />} Predibujar recintos
+        </button>
+        <button type="button" onClick={() => setMostrarRotulos(m => !m)} title="Mostrar u ocultar los códigos y la leyenda de colores sobre el plano"
+          className={`flex items-center gap-1 px-2 py-1 rounded-lg border font-bold ${mostrarRotulos ? 'bg-slate-700 border-slate-700 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+          <Tag className="w-3.5 h-3.5" /> Rótulos
+        </button>
         <div className="ml-auto flex items-center gap-1">
           <button type="button" title="Alejar" onClick={() => zoom(1 / 1.4)} className="p-1.5 rounded-lg hover:bg-slate-100"><ZoomOut className="w-4 h-4" /></button>
           <span className="w-12 text-center text-slate-500 tabular-nums">{tam ? Math.round(vista.k * 100) : 0}%</span>
@@ -266,6 +408,13 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
           </button>
         </div>
       </div>
+
+      {aviso && (
+        <div className="flex items-start gap-2 bg-teal-50 border border-teal-200 rounded-lg p-2.5 text-teal-900">
+          <Wand2 className="w-4 h-4 shrink-0" /><span className="flex-1">{aviso}</span>
+          <button type="button" onClick={() => setAviso('')}><X className="w-4 h-4" /></button>
+        </div>
+      )}
 
       {error && (
         <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 rounded-lg p-2.5 text-rose-800">
@@ -279,7 +428,7 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
         <div ref={marco}
           className={`relative flex-1 min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-[radial-gradient(circle,#e2e8f0_1px,transparent_1px)] [background-size:18px_18px] bg-slate-50 select-none touch-none ${dibujando ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'}`}
           onPointerDown={alPresionar} onPointerMove={alMover} onPointerUp={alSoltar} onPointerLeave={() => setEncima(null)}
-          onDoubleClick={() => dibujando && void terminarDibujo()}>
+          onDoubleClick={e => (dibujando ? void terminarDibujo() : editarVertice(e))}>
           <div className="absolute left-0 top-0 origin-top-left" style={{ transform: `translate(${vista.x}px, ${vista.y}px) scale(${vista.k})`, width: tam?.w, height: tam?.h }}>
             <canvas ref={lienzo} className="block bg-white shadow-xl" style={{ width: tam?.w, height: tam?.h }} />
             {tam && (
@@ -294,10 +443,26 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
                     <g key={z.id}>
                       <polygon points={pts} fill={color} fillOpacity={activo ? 0.5 : sobre ? 0.42 : 0.26}
                         stroke={activo ? '#f59e0b' : color} strokeWidth={activo ? grosor * 2.2 : grosor} strokeLinejoin="round" />
-                      <text x={cx * tam.w} y={cy * tam.h} textAnchor="middle" dominantBaseline="middle" fontSize={letra} fontWeight={700}
+                      {mostrarRotulos && <text x={cx * tam.w} y={cy * tam.h} textAnchor="middle" dominantBaseline="middle" fontSize={letra} fontWeight={700}
                         fill="#0f172a" stroke="white" strokeWidth={letra * 0.25} paintOrder="stroke" style={{ pointerEvents: 'none' }}>
                         {r?.codigo.replace(`${r.edificio_codigo}_`, '') || ''}
-                      </text>
+                      </text>}
+                      {activo && editandoContorno && !dibujando && z.poligono.map(([x, y], i) => {
+                        const [sx, sy] = z.poligono[(i + 1) % z.poligono.length];
+                        return (
+                          <circle key={`m${i}`} data-medio={i} cx={((x + sx) / 2) * tam.w} cy={((y + sy) / 2) * tam.h} r={3.5 / vista.k}
+                            fill="#f59e0b" fillOpacity={0.55} stroke="white" strokeWidth={grosor} className="cursor-copy">
+                            <title>Arrastre o haga clic para agregar una esquina aquí</title>
+                          </circle>
+                        );
+                      })}
+                      {activo && editandoContorno && !dibujando && z.poligono.map(([x, y], i) => (
+                        <circle key={i} data-vertice={i} cx={x * tam.w} cy={y * tam.h} r={(i === verticeMarcado ? 6.5 : 5) / vista.k}
+                          fill={i === verticeMarcado ? '#e11d48' : 'white'} stroke={i === verticeMarcado ? 'white' : '#f59e0b'} strokeWidth={grosor * 1.4}
+                          className="cursor-move">
+                          <title>Arrastre para mover; clic para marcarla y quitarla</title>
+                        </circle>
+                      ))}
                     </g>
                   );
                 })}
@@ -314,6 +479,12 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
             )}
           </div>
 
+          {predibujando && (
+            <div className="absolute left-1/2 -translate-x-1/2 top-3 flex items-center gap-2 bg-teal-900 text-white rounded-xl px-3 py-2 shadow-xl">
+              <Loader2 className="w-4 h-4 animate-spin" /> Buscando los recintos en la lámina…
+            </div>
+          )}
+
           {cargando && <div className="absolute inset-0 grid place-items-center bg-white/60"><Loader2 className="w-6 h-6 animate-spin text-teal-700" /></div>}
 
           {encima && !dibujando && (() => {
@@ -325,6 +496,7 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
                 <p className="font-mono font-bold">{r.codigo}</p>
                 <p>{r.nombre}</p>
                 <p className="text-slate-300">{[r.uso, r.estado !== 'Operativo' ? r.estado : ''].filter(Boolean).join(' · ')}</p>
+                {!!r.ocupantes?.length && <p className="text-slate-300">{r.ocupantes.slice(0, 3).map(o => comoTitulo(o.nombre)).join(', ')}{r.ocupantes.length > 3 ? ` y ${r.ocupantes.length - 3} más` : ''}</p>}
                 <p className="text-slate-300">Registrado {m2(r.superficie_m2)}{med != null ? ` · medido ${m2(Math.round(med * 100) / 100)}` : ''}</p>
               </div>
             );
@@ -342,7 +514,7 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
             </div>
           )}
 
-          {leyenda.length > 0 && (
+          {mostrarRotulos && leyenda.length > 0 && (
             <div className="absolute left-3 bottom-3 bg-white/95 border border-slate-200 rounded-lg px-2.5 py-2 shadow max-h-[40%] overflow-y-auto" onPointerDown={e => e.stopPropagation()}>
               {leyenda.map(([nombre, { color, n }]) => (
                 <p key={nombre} className="flex items-center gap-1.5 text-[11px] text-slate-700">
@@ -369,6 +541,14 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
                 <dt className="text-slate-400">Uso</dt><dd>{sel.uso || '—'}</dd>
                 <dt className="text-slate-400">Estado</dt><dd>{sel.estado}</dd>
                 <dt className="text-slate-400">Unidad</dt><dd>{sel.unidad_usuaria || '—'}</dd>
+                {!!sel.ocupantes?.length && (<>
+                  <dt className="text-slate-400 col-span-2 pt-1">Ocupantes ({sel.ocupantes.length})</dt>
+                  <dd className="col-span-2 space-y-0.5">
+                    {sel.ocupantes.map((o, i) => (
+                      <p key={i}><span className="font-semibold">{comoTitulo(o.nombre)}</span>{o.cargo && <span className="text-slate-500"> · {o.cargo}</span>}</p>
+                    ))}
+                  </dd>
+                </>)}
                 <dt className="text-slate-400">m² registrado</dt><dd className="font-bold">{m2(sel.superficie_m2)}</dd>
                 <dt className="text-slate-400">m² OGUC</dt><dd>{m2(sel.superficie_oguc_m2)}</dd>
                 {(() => {
@@ -384,9 +564,29 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
                   </>);
                 })()}
               </dl>
+              {zonaDe.has(sel.id) && editandoContorno && (
+                <div className="space-y-1.5">
+                  <p className="text-[11px] text-slate-500">
+                    Arrastre las esquinas (puntos blancos) para moverlas. Para <strong>agregar</strong> una, arrastre el punto naranjo del medio de un borde.
+                    Para <strong>quitar</strong> una, haga clic en ella y pulse Supr o «Quitar esquina».
+                  </p>
+                  {verticeMarcado != null && (
+                    <button type="button" onClick={quitarVerticeMarcado} disabled={(zonaDe.get(sel.id)?.poligono.length || 0) <= 3}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg border border-rose-300 font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-40">
+                      <Trash2 className="w-3.5 h-3.5" /> Quitar esquina
+                    </button>
+                  )}
+                </div>
+              )}
               {zonaDe.has(sel.id) && medida(sel.id) == null && <p className="text-[11px] text-slate-500">Indique la escala de la lámina para medir su superficie en el plano.</p>}
               <div className="flex flex-wrap gap-1.5 pt-1">
                 <button type="button" onClick={() => onEditarRecinto(sel)} className="flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-300 font-bold text-slate-700 hover:bg-slate-50"><Pencil className="w-3.5 h-3.5" /> Ficha</button>
+                {zonaDe.has(sel.id) && (
+                  <button type="button" onClick={() => setEditandoContorno(e => !e)}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-lg border font-bold ${editandoContorno ? 'bg-amber-500 border-amber-500 text-white' : 'border-amber-300 text-amber-800 hover:bg-amber-50'}`}>
+                    {editandoContorno ? <><Check className="w-3.5 h-3.5" /> Listo</> : <><Pencil className="w-3.5 h-3.5" /> Editar contorno</>}
+                  </button>
+                )}
                 <button type="button" onClick={() => setDibujando({ recintoId: sel.id, puntos: [] })} className="flex items-center gap-1 px-2 py-1 rounded-lg border border-teal-300 font-bold text-teal-800 hover:bg-teal-50">
                   <MapPin className="w-3.5 h-3.5" /> {zonaDe.has(sel.id) ? 'Redibujar' : 'Ubicar en plano'}
                 </button>

@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { Search, Loader2, Building2, DoorOpen, X } from 'lucide-react';
+import { Search, Loader2, Building2, DoorOpen, X, UserRound } from 'lucide-react';
 import { getCampusList, etiquetaEdificio } from '../data/campusData';
 import { buscarEspacios, type ResultadoBusqueda } from '../services/recintos';
+import { comoTitulo } from '../utils/texto';
 
 /**
  * Buscador universal del Gestor de Espacios: encuentra edificios y recintos de todos los campus por código, nombre,
- * uso, unidad o dirección. Al elegir un resultado se abre su edificio (y se marca el recinto).
+ * uso, unidad, dirección o por las personas que los ocupan. Al elegir un resultado se abre su edificio (y se marca el
+ * recinto).
  */
 export function BuscadorEspacios({ onElegir }: { onElegir: (edificio: string, recintoId?: string) => void }) {
   const [texto, setTexto] = useState('');
@@ -59,7 +61,7 @@ export function BuscadorEspacios({ onElegir }: { onElegir: (edificio: string, re
           onChange={e => { setTexto(e.target.value); setAbierto(true); }}
           onFocus={() => setAbierto(true)}
           onKeyDown={e => { if (e.key === 'Enter' && resultados[0]) elegir(resultados[0]); if (e.key === 'Escape') setAbierto(false); }}
-          placeholder="Buscar en todos los campus: código (CSF12, CJP01_201), nombre, uso, unidad o dirección…"
+          placeholder="Buscar en todos los campus: código (CSF12, CJP01_201), nombre, uso, unidad, persona o dirección…"
           className="flex-1 min-w-0 outline-none text-sm bg-transparent"
         />
         {buscando && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
@@ -77,6 +79,9 @@ export function BuscadorEspacios({ onElegir }: { onElegir: (edificio: string, re
                 : <DoorOpen className="w-4 h-4 mt-0.5 text-indigo-600 shrink-0" />}
               <span className="flex-1 min-w-0">
                 <span className="block"><span className="font-mono font-bold text-slate-900">{r.codigo}</span> <span className="text-slate-700">{r.nombre}</span></span>
+                {r.ocupante && (
+                  <span className="flex items-center gap-1 text-[11px] font-semibold text-teal-800"><UserRound className="w-3 h-3" /> {comoTitulo(r.ocupante.split(' · ')[0])}{r.ocupante.includes(' · ') && <span className="font-normal text-slate-500"> · {r.ocupante.split(' · ').slice(1).join(' · ')}</span>}</span>
+                )}
                 <span className="block text-[11px] text-slate-500 truncate">
                   {r.tipo === 'recinto' ? `${r.edificio_codigo}${r.detalle ? ' · ' + r.detalle : ''}` : r.detalle || 'Edificio'}
                 </span>

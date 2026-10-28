@@ -4,7 +4,7 @@ import { ChevronDown, FolderKanban, DoorOpen, Check } from 'lucide-react';
 
 // Módulos del sistema DGDC. Cada uno tiene su propia entrada y menú; comparten el inicio de sesión y se cruzan datos.
 const MODULOS = [
-  { id: 'adjudicaciones', nombre: 'Gestor de Adjudicaciones', detalle: 'Cartera, licitaciones, obras y proveedores', ruta: '/', icono: FolderKanban },
+  { id: 'adjudicaciones', nombre: 'Gestor de Adjudicaciones', detalle: 'Cartera, licitaciones, obras y proveedores', ruta: '/adjudicaciones', icono: FolderKanban },
   { id: 'espacios', nombre: 'Gestor de Espacios', detalle: 'Campus, edificios, recintos y planos', ruta: '/espacios', icono: DoorOpen },
 ] as const;
 export type IdModulo = typeof MODULOS[number]['id'];

@@ -502,7 +502,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     let n = 0;
     for (const [siglaRaw, nombre, facultad, superficie, uso] of filas) {
       const sigla = siglaRaw.toUpperCase();
-      if (!/^[A-Z0-9-]{2,12}$/.test(sigla) || !/\d/.test(sigla)) continue; // omite encabezados ("Sigla") u otras filas
+      if (!/^[A-Z0-9_-]{2,12}$/.test(sigla) || !/\d/.test(sigla)) continue; // omite encabezados ("Sigla") u otras filas; admite «CSN_110»
       if (!edificios.includes(sigla)) edificios.push(sigla);
       const m2 = Number(String(superficie || '').replace(/\./g, '').replace(',', '.'));
       info[sigla] = {

@@ -541,9 +541,11 @@ export function App() {
       <BrowserRouter basename={import.meta.env.BASE_URL}>
         <Suspense fallback={<div className="min-h-screen bg-slate-950" />}>
         <Routes>
-          {/* Rutas internas */}
+          {/* Inicio: formas de ingreso y elección de módulo (Licitaciones o Espacios). */}
+          <Route path="/" element={<BloqueaProveedor><InternalLoginPage /></BloqueaProveedor>} />
           <Route path="/login" element={<BloqueaProveedor><InternalLoginPage /></BloqueaProveedor>} />
-          <Route path="/" element={<BloqueaProveedor><ProtectedInternalRoute><AdminApp /></ProtectedInternalRoute></BloqueaProveedor>} />
+          {/* Rutas internas */}
+          <Route path="/adjudicaciones" element={<BloqueaProveedor><ProtectedInternalRoute><AdminApp /></ProtectedInternalRoute></BloqueaProveedor>} />
           {/* Gestor de Espacios: módulo propio, con su entrada y su menú (comparte el inicio de sesión). */}
           <Route path="/espacios" element={<BloqueaProveedor><ProtectedInternalRoute><EspaciosApp /></ProtectedInternalRoute></BloqueaProveedor>} />
           <Route path="/libro-obra" element={<BloqueaProveedor><ProtectedInternalRoute><LibroObraMovilPage /></ProtectedInternalRoute></BloqueaProveedor>} />

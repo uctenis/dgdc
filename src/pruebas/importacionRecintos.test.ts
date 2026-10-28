@@ -24,15 +24,20 @@ describe('importador de recintos', () => {
 
   it('asigna solo las columnas reconocibles', () => {
     const a = asignarAutomatico(FILAS[2]);
-    expect(a).toMatchObject({ edificio: 1, piso: 2, codigo: 3, existe: 4, nombre: 5, superficie_m2: 8, superficie_oguc_m2: 9, unidad_usuaria: 10 });
+    expect(a).toMatchObject({ edificio: 1, piso: 2, codigo: 3, existe: 4, nombre: 5, ocupante: 6, superficie_m2: 8, superficie_oguc_m2: 9, unidad_usuaria: 10 });
   });
 
   it('revisa cada fila: repetidas por ocupante, eliminados, guiones y datos faltantes', () => {
     const encabezados = FILAS[2];
     const r = revisarFilas(encabezados, FILAS.slice(3), 3, asignarAutomatico(encabezados), { edificioPorDefecto: 'X', guardarResto: true, incluirDatosPersonales: false });
     const porCodigo = (c: string) => r.filter(x => x.recinto.codigo === c);
-    // Mismo código dos veces (dos ocupantes): la segunda fila se omite sin ser error.
+    // Mismo código dos veces (dos ocupantes): la segunda fila se omite sin ser error y su ocupante se suma a la primera.
     expect(porCodigo('CML01_101').map(x => x.repetida)).toEqual([false, true]);
+    expect(porCodigo('CML01_101')[0].recinto.ocupantes).toEqual([
+      { nombre: 'PÉREZ, ANA', cargo: null, unidad: 'CONTABILIDAD' },
+      { nombre: 'SOTO, LUIS', cargo: null, unidad: 'CONTABILIDAD' },
+    ]);
+    expect(porCodigo('CML01_100')[0].recinto.ocupantes).toEqual([]);
     // EXISTE = 0 queda como recinto eliminado.
     expect(porCodigo('CML01_200')[0].recinto.estado).toBe('Eliminado');
     // Sin nombre ni uso: no se carga; la superficie "n/d" se avisa.
@@ -44,13 +49,14 @@ describe('importador de recintos', () => {
     expect(porCodigo('CDS01_001')[0].edificio).toBe('CDS01');
   });
 
-  it('no guarda datos de personas salvo que se pida', () => {
+  it('guarda el nombre del ocupante, pero no el RUT salvo que se pida', () => {
     const encabezados = FILAS[2];
     const opciones = { edificioPorDefecto: 'X', guardarResto: true };
     const sin = revisarFilas(encabezados, FILAS.slice(4, 5), 3, asignarAutomatico(encabezados), { ...opciones, incluirDatosPersonales: false });
     expect(Object.keys(sin[0].recinto.atributos)).toEqual(['CAMPUS']);
+    expect(sin[0].recinto.ocupantes?.[0].nombre).toBe('PÉREZ, ANA');
     const con = revisarFilas(encabezados, FILAS.slice(4, 5), 3, asignarAutomatico(encabezados), { ...opciones, incluirDatosPersonales: true });
-    expect(con[0].recinto.atributos).toMatchObject({ 'NOMBRE PERSONA': 'PÉREZ, ANA', RUT: '11.111.111-1' });
+    expect(con[0].recinto.atributos).toMatchObject({ RUT: '11.111.111-1' });
     expect(DATOS_PERSONALES.test(sinTildes('Nombre Persona'))).toBe(true);
   });
 

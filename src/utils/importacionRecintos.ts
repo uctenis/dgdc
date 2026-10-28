@@ -1,7 +1,7 @@
 // Lógica del importador de recintos desde planillas (sin pantalla, para poder probarla): leer el archivo,
 // encontrar la fila de encabezados, adivinar qué columna es cada dato y revisar fila por fila.
 import ExcelJS from 'exceljs';
-import { ESTADOS_RECINTO, type EstadoRecinto, type Recinto } from '../types/recintos';
+import { ESTADOS_RECINTO, type EstadoRecinto, type Ocupante, type Recinto } from '../types/recintos';
 
 export const CAMPOS_IMPORTACION = [
   { id: 'edificio', etiqueta: 'Edificio (código)', obligatorio: false, pistas: ['edificio'] },
@@ -15,12 +15,17 @@ export const CAMPOS_IMPORTACION = [
   { id: 'existe', etiqueta: 'Existe (1 / 0)', obligatorio: false, pistas: ['existe'] },
   { id: 'estado', etiqueta: 'Estado', obligatorio: false, pistas: ['estado'] },
   { id: 'unidad_usuaria', etiqueta: 'Unidad usuaria', obligatorio: false, pistas: ['unidad', 'facultad', 'departamento'] },
+  { id: 'ocupante', etiqueta: 'Ocupante (persona o unidad)', obligatorio: false, pistas: ['nombre persona', 'ocupante', 'persona'] },
+  { id: 'cargo', etiqueta: 'Cargo del ocupante', obligatorio: false, pistas: ['cargo'] },
   { id: 'observaciones', etiqueta: 'Observaciones', obligatorio: false, pistas: ['observacion', 'obs', 'notas'] },
 ] as const;
 type IdCampo = typeof CAMPOS_IMPORTACION[number]['id'];
 export type Asignacion = Partial<Record<IdCampo, number>>;
 
-/** Columnas con datos de personas: no se guardan con el recinto salvo que se pida (el recinto no es un registro de personal). */
+/**
+ * Columnas con datos de personas que no se guardan con el recinto salvo que se pida (RUT, contrato, anexo). El nombre y
+ * el cargo del ocupante, si se asignan a su campo, quedan en la lista de ocupantes del recinto.
+ */
 export const DATOS_PERSONALES = /\b(rut|nombre persona|cargo|anexo|tipo de ctto|contrato)\b/;
 
 export type Tabla = { hojas: string[]; filasPorHoja: Record<string, string[][]> };
@@ -146,7 +151,7 @@ export function revisarFilas(
   // Encabezados repetidos ("COMENTARIO" dos veces) se distinguen por su columna.
   const limpios = Array.from(encabezados, c => (c || '').replace(/\s+/g, ' ').trim());
   const nombres = limpios.map((c, i) => (limpios.indexOf(c) !== i || limpios.lastIndexOf(c) !== i ? `${c} (col. ${letraColumna(i)})` : c));
-  return datos.map((fila, i) => {
+  const filas: FilaRevisada[] = datos.map((fila, i) => {
     const problemas: string[] = [];
     const avisos: string[] = [];
     const edificio = (col(fila, 'edificio') || opciones.edificioPorDefecto).toUpperCase();
@@ -172,6 +177,10 @@ export function revisarFilas(
     if (textoEstado && !estado) avisos.push(`estado "${textoEstado}" no reconocido`);
     const existe = col(fila, 'existe');
     if (existe && /^(0|no|n|false)$/i.test(existe)) estado = 'Eliminado';
+    const nombreOcupante = col(fila, 'ocupante');
+    const ocupantes: Ocupante[] = nombreOcupante
+      ? [{ nombre: nombreOcupante, cargo: col(fila, 'cargo') || null, unidad: col(fila, 'unidad_usuaria') || null }]
+      : [];
     const atributos: Record<string, string> = {};
     if (opciones.guardarResto) {
       encabezados.forEach((cab, idx) => {
@@ -195,11 +204,24 @@ export function revisarFilas(
         capacidad: capacidad !== null ? Math.round(capacidad) : null,
         estado: estado || 'Operativo',
         unidad_usuaria: col(fila, 'unidad_usuaria') || null,
+        ocupantes,
         observaciones: col(fila, 'observaciones') || null,
         atributos,
       },
     };
   });
+  // Una fila por ocupante: los de las filas repetidas se suman a la primera fila de ese recinto.
+  const primera = new Map<string, FilaRevisada>();
+  for (const f of filas) {
+    const clave = `${f.edificio}|${f.recinto.codigo}`;
+    const base = primera.get(clave);
+    if (!base) { primera.set(clave, f); continue; }
+    for (const o of f.recinto.ocupantes || []) {
+      if (!base.recinto.ocupantes!.some(x => x.nombre === o.nombre && x.cargo === o.cargo)) base.recinto.ocupantes!.push(o);
+    }
+    base.recinto.unidad_usuaria ||= f.recinto.unidad_usuaria;
+  }
+  return filas;
 }
 
 /** Nombre y orden de un piso a partir de su código: "1" → Piso 1, "-1" → Subterráneo 1, "0" → Piso 0 (zócalo). */
