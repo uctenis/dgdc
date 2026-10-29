@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Building2, Layers, Plus, Pencil, Trash2, History, FileSpreadsheet, FileText, Loader2, AlertTriangle, X, ExternalLink, Copy, DoorOpen, ChevronRight, ChevronDown, ArrowLeft, Trees,
+  Building2, Layers, Plus, Pencil, Trash2, History, FileSpreadsheet, FileText, Loader2, AlertTriangle, X, ExternalLink, Copy, DoorOpen, ChevronRight, ChevronDown, ArrowLeft, Trees, Download, ClipboardCheck,
 } from 'lucide-react';
 import { getCampusList, obtenerEdificiosDeCampus, etiquetaEdificio, obtenerInfoEdificio } from '../data/campusData';
 import { SUPABASE_CONFIGURADO } from '../lib/supabase';
 import {
   listarPisos, listarEdificiosConDatos, obtenerFichaEdificio, listarUsos, guardarPiso, eliminarPiso, listarRecintos, guardarRecinto, eliminarRecinto, historialRecinto,
-  listarDocumentos, registrarDocumento,
+  listarDocumentos, registrarDocumento, listarRecintosDeCampus,
 } from '../services/recintos';
 import {
   ESTADOS_RECINTO, TIPOS_DOCUMENTO, ESPECIALIDADES, FORMATOS_DOCUMENTO,
@@ -17,6 +17,8 @@ import { ImportarRecintosModal } from './ImportarRecintosModal';
 import { BuscadorEspacios } from './BuscadorEspacios';
 import { PlanoInteractivo } from './PlanoInteractivo';
 import { SubirLaminasCampus } from './SubirLaminasCampus';
+import { RevisionCampus } from './RevisionCampus';
+import { alertasRecinto, observacionesSinNotas } from '../utils/alertasRecinto';
 import { formatoFecha } from '../utils/fechas';
 import { comoTitulo } from '../utils/texto';
 
@@ -89,6 +91,9 @@ export function RecintosPage() {
   const [recintoEditando, setRecintoEditando] = useState<RecintoEditable | null>(null);
   const [historial, setHistorial] = useState<{ recinto: Recinto; cambios: CambioRecinto[] } | null>(null);
   const [fichaRecinto, setFichaRecinto] = useState<Recinto | null>(null);
+  const [revisando, setRevisando] = useState(false);
+  const [descargando, setDescargando] = useState(false);
+  const [fichaPorAbrir, setFichaPorAbrir] = useState<string | null>(null);   // recinto cuya ficha se abre al cargar su edificio
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set());   // recintos marcados para sumar sus superficies
   const [documentoNuevo, setDocumentoNuevo] = useState<DocumentoNuevo | null>(null);
   const [verAnteriores, setVerAnteriores] = useState(false);
@@ -105,6 +110,26 @@ export function RecintosPage() {
   const irA = (codigoEdificio: string, recintoId?: string) => {
     ir({ campus: configurados.find(c => c.edificios.includes(codigoEdificio))?.sigla || codigoEdificio.slice(0, 3), edificio: codigoEdificio, vista: 'recintos' });
     setResaltado(recintoId || null);
+  };
+  /** Nombre de cada edificio para los reportes: el del catastro o el de la configuración. */
+  const nombresEdificios = () => Object.fromEntries([...new Set([...enBase, ...edificios])].map(e => [e, nombreEdificio(e)]));
+  /** Descarga a Excel los recintos de un edificio (con los datos ya cargados) o de todo el campus. */
+  const descargar = async (alcance: 'edificio' | 'campus') => {
+    setDescargando(true); setError('');
+    try {
+      const { exportarRecintosExcel } = await import('../utils/exportarRecintos');
+      if (alcance === 'edificio') {
+        const porPiso = new Map(pisos.map(p => [p.id, p]));
+        await exportarRecintosExcel(recintos.map(r => ({ ...r, piso: porPiso.get(r.piso_id) })), nombresEdificios(), etiqueta(edificio));
+      } else {
+        const nombreCampus = campus.find(c => c.sigla === campusSigla)?.nombre || campusSigla;
+        await exportarRecintosExcel(await listarRecintosDeCampus(campusSigla), nombresEdificios(), `${campusSigla} ${nombreCampus}`);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDescargando(false);
+    }
   };
 
   const cargar = useCallback(async () => {
@@ -147,6 +172,11 @@ export function RecintosPage() {
   });
   // Al cambiar de edificio, todos los pisos parten desplegados.
   useEffect(() => { setPisosContraidos(new Set()); setSeleccion(new Set()); }, [edificio]);
+  useEffect(() => {
+    if (!fichaPorAbrir || cargando) return;
+    const r = recintos.find(x => x.id === fichaPorAbrir);
+    if (r) { setFichaRecinto(r); setFichaPorAbrir(null); }
+  }, [fichaPorAbrir, cargando, recintos]);
   const marcar = (ids: string[], marcado: boolean) => setSeleccion(prev => {
     const nuevo = new Set(prev);
     ids.forEach(id => (marcado ? nuevo.add(id) : nuevo.delete(id)));
@@ -167,6 +197,7 @@ export function RecintosPage() {
     return mapa;
   }, [recintos]);
   const activos = recintos.filter(r => r.estado !== 'Eliminado');
+  const porRevisar = activos.filter(r => alertasRecinto(r).length).length;
   const superficieTotal = activos.reduce((s, r) => s + (Number(r.superficie_m2) || 0), 0);
   const superficieOguc = activos.reduce((s, r) => s + (Number(r.superficie_oguc_m2) || 0), 0);
   const documentosVisibles = documentos.filter(d => verAnteriores || d.vigente);
@@ -249,6 +280,14 @@ export function RecintosPage() {
         edificios.length ? (
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
+              <button type="button" onClick={() => setRevisando(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-300 bg-white font-bold text-amber-800 hover:bg-amber-50">
+                <ClipboardCheck className="w-3.5 h-3.5" /> Por revisar
+              </button>
+              <button type="button" disabled={descargando} onClick={() => void descargar('campus')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                {descargando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />} Descargar Excel del campus
+              </button>
               <SubirLaminasCampus siglaCampus={campusSigla} />
             </div>
             {[
@@ -292,7 +331,16 @@ export function RecintosPage() {
                 {v === 'recintos' ? `Recintos (${activos.length})` : v === 'plano' ? 'Plano interactivo' : `Planos y documentos (${documentos.filter(d => d.vigente).length} vigentes)`}
               </button>
             ))}
-            <span className="ml-auto text-slate-500">{pisos.length} piso(s) · suma de recintos: útil <strong className="text-slate-800">{m2(superficieTotal)}</strong> · OGUC <strong className="text-slate-800">{m2(superficieOguc)}</strong></span>
+            <span className="ml-auto text-slate-500">{pisos.length} piso(s) · útil <strong className="text-slate-800">{m2(superficieTotal)}</strong> · OGUC <strong className="text-slate-800">{m2(superficieOguc)}</strong></span>
+            {porRevisar > 0 && (
+              <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 font-bold" title="Recintos con superficies faltantes o dudosas, sin tipo o con una nota «Por revisar»">
+                <AlertTriangle className="w-3.5 h-3.5" /> {porRevisar} por revisar
+              </span>
+            )}
+            <button type="button" disabled={descargando || !recintos.length} onClick={() => void descargar('edificio')} title="Descargar los recintos de este edificio en Excel"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 bg-white font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+              {descargando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />} Excel
+            </button>
             {cargando && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
           </div>
 
@@ -379,7 +427,9 @@ export function RecintosPage() {
                                 <td className="pl-3 py-2" onClick={e => e.stopPropagation()}>
                                   <input type="checkbox" checked={seleccion.has(r.id)} onChange={e => marcar([r.id], e.target.checked)} className="accent-indigo-600" title="Marcar para sumar su superficie" />
                                 </td>
-                                <td className="px-3 py-2 font-mono font-bold truncate" title={r.codigo}>{r.codigo}</td>
+                                <td className="px-3 py-2 font-mono font-bold truncate" title={[r.codigo, ...alertasRecinto(r).map(a => `• ${a}`)].join('\n')}>
+                                  {alertasRecinto(r).length > 0 && <AlertTriangle className="inline w-3.5 h-3.5 mr-1 -mt-0.5 text-amber-500" />}{r.codigo}
+                                </td>
                                 <td className="px-3 py-2 truncate" title={r.nombre}>{r.nombre}{r.foto_url && <a href={r.foto_url} target="_blank" rel="noreferrer" className="ml-1.5 text-sky-700 no-underline" title="Ver foto">📷</a>}</td>
                                 <td className="px-3 py-2 truncate text-slate-600" title={r.uso || ''}>{r.uso || '—'}</td>
                                 <td className="px-3 py-2 text-right tabular-nums">{m2Tabla(r.superficie_m2)}</td>
@@ -530,6 +580,12 @@ export function RecintosPage() {
         </Ventana>
       )}
 
+      {revisando && (
+        <RevisionCampus prefijo={campusSigla} titulo={campus.find(c => c.sigla === campusSigla)?.nombre || campusSigla} nombres={nombresEdificios()}
+          onClose={() => setRevisando(false)}
+          onAbrir={(e, id) => { setRevisando(false); irA(e, id); setFichaPorAbrir(id); }} />
+      )}
+
       {fichaRecinto && (
         <FichaRecinto recinto={fichaRecinto} piso={pisos.find(p => p.id === fichaRecinto.piso_id)} onClose={() => setFichaRecinto(null)}
           onEditar={() => { setRecintoEditando(fichaRecinto); setFichaRecinto(null); }}
@@ -621,11 +677,14 @@ function Ventana({ titulo, children, onClose, onGuardar, guardando, error }: { t
 /** Datos del edificio completo según el catastro (hoja de edificios): superficies, terreno, rol, año y permisos. */
 function TarjetaFicha({ ficha, sumaUtil, sumaOguc }: { ficha: FichaEdificio; sumaUtil: number; sumaOguc: number }) {
   // Si el catastro no trae la superficie del edificio (en la planilla es una suma de sus recintos), se muestra esa suma.
-  const util = ficha.superficie_m2 ?? (sumaUtil || null);
-  const oguc = ficha.superficie_oguc_m2 ?? (sumaOguc || null);
+  // El sistema es el registro oficial: la superficie del edificio es la suma de sus recintos. La del catastro anterior
+  // se muestra solo si difiere, como referencia.
+  const util = sumaUtil || ficha.superficie_m2 || null;
+  const oguc = sumaOguc || ficha.superficie_oguc_m2 || null;
+  const difiere = (catastro?: number | null, suma?: number) => !!catastro && !!suma && Math.abs(catastro - suma) > 0.5;
   const datos: [string, ReactNode][] = [
-    ['Superficie útil', <>{m2(util)}{ficha.superficie_m2 == null && sumaUtil > 0 && <span className="text-slate-400"> (suma de recintos)</span>}</>],
-    ['Superficie OGUC', <>{m2(oguc)}{ficha.superficie_oguc_m2 == null && sumaOguc > 0 && <span className="text-slate-400"> (suma de recintos)</span>}</>],
+    ['Superficie útil', <>{m2(util)}{difiere(ficha.superficie_m2, sumaUtil) && <span className="block text-[10px] font-normal text-slate-400">catastro anterior: {m2(ficha.superficie_m2)}</span>}</>],
+    ['Superficie OGUC', <>{m2(oguc)}{difiere(ficha.superficie_oguc_m2, sumaOguc) && <span className="block text-[10px] font-normal text-slate-400">catastro anterior: {m2(ficha.superficie_oguc_m2)}</span>}</>],
     ['Terreno', m2(ficha.superficie_terreno_m2)],
     ['Uso principal', ficha.uso_principal || '—'],
     ['Año de construcción', ficha.anio_construccion || '—'],
@@ -713,9 +772,8 @@ function FichaRecinto({ recinto: r, piso, onClose, onEditar, onHistorial, onVerE
     <div><dt className="text-[10px] font-bold uppercase text-slate-400">{etiqueta}</dt><dd className="font-semibold text-slate-800">{valor || '—'}</dd></div>
   );
   // «Revisar en el catastro» se destaca aparte del resto de las observaciones.
-  const lineas = (r.observaciones || '').split('\n').map(l => l.trim()).filter(Boolean);
-  const revisar = lineas.filter(l => l.startsWith('Revisar en el catastro:'));
-  const otras = lineas.filter(l => !l.startsWith('Revisar en el catastro:'));
+  const revisar = alertasRecinto(r);
+  const otras = observacionesSinNotas(r.observaciones);
   const atributos = Object.entries(r.atributos || {}).filter(([, v]) => v !== '' && v != null);
   return (
     <Ventana titulo={`${r.codigo} — ${r.nombre}`} onClose={onClose}>
@@ -732,7 +790,12 @@ function FichaRecinto({ recinto: r, piso, onClose, onEditar, onHistorial, onVerE
 
         {revisar.length > 0 && (
           <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-amber-900">
-            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" /><div>{revisar.map((l, i) => <p key={i}>{l}</p>)}</div>
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold">Por revisar</p>
+              {revisar.map((l, i) => <p key={i}>• {l.charAt(0).toUpperCase() + l.slice(1)}</p>)}
+              <p className="text-amber-700 mt-1">Corríjalo con «Editar». Las notas escritas se borran desde las observaciones.</p>
+            </div>
           </div>
         )}
 
@@ -771,7 +834,10 @@ function FichaRecinto({ recinto: r, piso, onClose, onEditar, onHistorial, onVerE
           <details className="border border-slate-200 rounded-lg">
             <summary className="px-3 py-1.5 cursor-pointer font-bold text-slate-600">Otros datos del catastro ({atributos.length})</summary>
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 px-3 pb-2">
-              {atributos.map(([k, v]) => (<><dt key={`k-${k}`} className="text-slate-400">{k}</dt><dd key={`v-${k}`} className="text-slate-700">{String(v)}</dd></>))}
+              {atributos.flatMap(([k, v]) => [
+                <dt key={`k-${k}`} className="text-slate-400">{k}</dt>,
+                <dd key={`v-${k}`} className="text-slate-700">{String(v)}</dd>,
+              ])}
             </dl>
           </details>
         )}

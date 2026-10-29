@@ -63,13 +63,19 @@ export async function buscarEspacios(texto: string): Promise<ResultadoBusqueda[]
   if (t.length < 2) return [];
   const p = `"%${t}%"`;
   const palabras = normalizarBusqueda(t).split(' ').filter(Boolean);
-  let consultaRecintos = supabase.from('recintos').select('id, edificio_codigo, codigo, nombre, uso, unidad_usuaria, superficie_m2, estado, ocupantes');
+  const columnas = 'id, edificio_codigo, codigo, nombre, uso, unidad_usuaria, superficie_m2, estado, ocupantes';
+  let consultaRecintos = supabase.from('recintos').select(columnas);
   for (const palabra of palabras) consultaRecintos = consultaRecintos.ilike('busqueda', `%${palabra}%`);
-  const [e, r] = await Promise.all([
+  let [e, r] = await Promise.all([
     supabase.from('edificios').select('codigo, nombre, direccion, uso_principal')
       .or(`codigo.ilike.${p},nombre.ilike.${p},direccion.ilike.${p}`).order('codigo').limit(10),
     consultaRecintos.order('codigo').limit(60),
   ]);
+  // Si la base aún no tiene la columna de búsqueda (migración 0006 pendiente), se busca como antes: sin ocupantes.
+  if (r.error && /busqueda/.test(r.error.message)) {
+    r = await supabase.from('recintos').select(columnas)
+      .or(`codigo.ilike.${p},nombre.ilike.${p},uso.ilike.${p},unidad_usuaria.ilike.${p}`).order('codigo').limit(60);
+  }
   if (e.error || r.error) throw errorDe(e.error || r.error, 'No se pudo buscar');
   type FilaEdificio = { codigo: string; nombre: string | null; direccion: string | null; uso_principal: string | null };
   type FilaRecinto = Pick<Recinto, 'id' | 'edificio_codigo' | 'codigo' | 'nombre' | 'uso' | 'unidad_usuaria' | 'superficie_m2' | 'estado' | 'ocupantes'>;
@@ -221,6 +227,21 @@ export async function subirLaminaVisor(documento: DocumentoEdificio, archivo: Fi
   const { error } = await supabase.from('documentos').update({ archivo_visor: ruta }).eq('id', documento.id);
   if (error) throw errorDe(error, 'La lámina se subió, pero no se pudo asociar al documento');
   return ruta;
+}
+
+/**
+ * Recintos de todos los edificios cuyo código empieza con `prefijo` (un campus: «CSF»; vacío: todos), con el código y
+ * nombre de su piso. Se leen en tandas porque la base entrega como máximo 1.000 filas por consulta.
+ */
+export async function listarRecintosDeCampus(prefijo: string): Promise<(Recinto & { piso: Pick<Piso, 'codigo' | 'nombre'> | null })[]> {
+  const todos: (Recinto & { piso: Pick<Piso, 'codigo' | 'nombre'> | null })[] = [];
+  for (let desde = 0; ; desde += 1000) {
+    const { data, error } = await supabase.from('recintos').select('*, piso:pisos(codigo, nombre)')
+      .like('edificio_codigo', `${prefijo}%`).order('edificio_codigo').order('codigo').range(desde, desde + 999);
+    if (error) throw errorDe(error, 'No se pudieron leer los recintos');
+    todos.push(...(data as typeof todos));
+    if (data.length < 1000) return todos;
+  }
 }
 
 /** Láminas vigentes de todos los edificios de un campus (su código empieza con la sigla del campus). */
