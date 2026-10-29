@@ -128,7 +128,7 @@ export function AnalisisEspacios({ onAbrirRecinto, onCerrar }: Props) {
         ))}
         <label className="flex items-center gap-1.5 px-2.5 py-1.5 border border-slate-300 rounded-lg focus-within:ring-2 focus-within:ring-teal-400">
           <Search className="w-3.5 h-3.5 text-slate-400" />
-          <input value={consulta.f.texto || ''} onChange={e => ponerFiltros({ ...consulta.f, texto: e.target.value })} placeholder="Persona, código o texto" className="outline-none w-44" />
+          <CampoTexto valor={consulta.f.texto || ''} onCambiar={texto => ponerFiltros({ ...consulta.f, texto })} />
         </label>
         {hayFiltros && <button type="button" onClick={() => ponerFiltros({})} className="ml-auto px-2.5 py-1.5 rounded-lg text-rose-700 font-bold hover:bg-rose-50">Limpiar filtros</button>}
       </div>
@@ -213,6 +213,23 @@ function PreguntasFrecuentes({ filas, filtros, nombreEdificio, nombreCampus, onE
 }
 
 // ── Piezas ──
+
+/**
+ * Búsqueda por texto que no pierde letras: lo escrito queda en el campo al instante y la consulta (que va en la
+ * dirección de la página y recalcula todo) se actualiza cuando se deja de escribir.
+ */
+function CampoTexto({ valor, onCambiar }: { valor: string; onCambiar: (v: string) => void }) {
+  const [texto, setTexto] = useState(valor);
+  const enviado = useRef(valor);
+  // Si la consulta cambia desde afuera (limpiar filtros, preguntas frecuentes), el campo la sigue.
+  useEffect(() => { if (valor !== enviado.current) { enviado.current = valor; setTexto(valor); } }, [valor]);
+  useEffect(() => {
+    if (texto === enviado.current) return;
+    const espera = setTimeout(() => { enviado.current = texto; onCambiar(texto); }, 250);
+    return () => clearTimeout(espera);
+  }, [texto]); // eslint-disable-line react-hooks/exhaustive-deps
+  return <input value={texto} onChange={e => setTexto(e.target.value)} placeholder="Persona, código o texto" className="outline-none w-44" />;
+}
 
 function Cifra({ titulo, valor, detalle }: { titulo: string; valor: string; detalle?: string }) {
   return (

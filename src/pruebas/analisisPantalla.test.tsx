@@ -49,6 +49,22 @@ describe('pantalla de consultas y análisis', () => {
     await desmontar();
   });
 
+  it('la búsqueda por texto no pierde letras al escribir rápido', async () => {
+    const { contenedor, desmontar } = await montar({});
+    const campo = contenedor.querySelector('input[placeholder="Persona, código o texto"]') as HTMLInputElement;
+    // Escribe «solis» letra por letra, sin pausas, como React recibe cada tecla.
+    const escribir = (v: string) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(campo, v);
+      campo.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    for (const parcial of ['s', 'so', 'sol', 'soli', 'solis']) await act(async () => { escribir(parcial); });
+    expect(campo.value).toBe('solis');
+    await act(async () => { await new Promise(r => setTimeout(r, 300)); });
+    expect(campo.value).toBe('solis');
+    expect(contenedor.textContent).toContain('que coinciden con «solis»');
+    await desmontar();
+  });
+
   it('una pregunta frecuente arma la consulta con un clic', async () => {
     const { contenedor, desmontar } = await montar({ f: { edificio: ['CJP08'] } });
     const boton = [...contenedor.querySelectorAll('button')].find(b => b.textContent?.startsWith('¿Cómo se reparten oficinas y salas'));
