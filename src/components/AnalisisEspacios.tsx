@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { cargarDatosAnalisis } from '../services/analisisEspacios';
 import {
-  agrupar, cruzar, DIMENSIONES, filtrar, formatoM2, formatoMedida, fraseRespuesta, MEDIDAS, totales, valorMedida,
+  agrupar, cruzar, DIMENSIONES, filtrar, formatoM2, formatoMedida, fraseRespuesta, MEDIDAS, SIN_DATO, totales, valorMedida,
   type Dimension, type FilaAnalisis, type Filtros, type Grupo, type Medida,
 } from '../utils/analisisEspacios';
 import { comoTitulo } from '../utils/texto';
@@ -120,12 +120,16 @@ export function AnalisisEspacios({ onAbrirRecinto, onCerrar }: Props) {
 
       {/* Filtros: una fila, sobre todo lo demás */}
       <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm flex flex-wrap items-center gap-2">
-        {DIMENSIONES.map(d => (
-          <FiltroMultiple key={d.id} titulo={d.nombre} elegidos={consulta.f[d.id] || []}
-            opciones={agrupar(filtrar(base, consulta.f, d.id), d.id, 'recintos').map(g => ({ valor: g.clave, etiqueta: etiqueta(d.id, g.clave), n: g.recintos }))}
-            ordenAlfabetico={d.id !== 'piso'}
-            onCambiar={v => ponerFiltros({ ...consulta.f, [d.id]: v })} />
-        ))}
+        {DIMENSIONES.map(d => {
+          const opciones = agrupar(filtrar(base, consulta.f, d.id), d.id, 'recintos').map(g => ({ valor: g.clave, etiqueta: etiqueta(d.id, g.clave), n: g.recintos }));
+          // Un filtro que hoy no distingue nada (todo «Sin dato», como útil/común antes de clasificar los tipos) no se muestra.
+          if (!consulta.f[d.id]?.length && opciones.every(o => o.valor === SIN_DATO)) return null;
+          return (
+            <FiltroMultiple key={d.id} titulo={d.nombre} elegidos={consulta.f[d.id] || []} opciones={opciones}
+              ordenAlfabetico={d.id !== 'piso'}
+              onCambiar={v => ponerFiltros({ ...consulta.f, [d.id]: v })} />
+          );
+        })}
         <label className="flex items-center gap-1.5 px-2.5 py-1.5 border border-slate-300 rounded-lg focus-within:ring-2 focus-within:ring-teal-400">
           <Search className="w-3.5 h-3.5 text-slate-400" />
           <CampoTexto valor={consulta.f.texto || ''} onCambiar={texto => ponerFiltros({ ...consulta.f, texto })} />
@@ -290,11 +294,18 @@ function FiltroMultiple({ titulo, opciones, elegidos, onCambiar, ordenAlfabetico
       </button>
       {abierto && (
         <div className="absolute left-0 top-full mt-1 w-80 bg-white border border-slate-200 rounded-xl shadow-2xl z-40">
-          <div className="p-2 border-b border-slate-100 flex items-center gap-2">
-            <Search className="w-3.5 h-3.5 text-slate-400" />
-            <input autoFocus value={buscar} onChange={e => setBuscar(e.target.value)} placeholder={`Buscar ${titulo.toLowerCase()}`} className="flex-1 outline-none" />
-            {elegidos.length > 0 && <button type="button" onClick={() => onCambiar([])} className="text-rose-700 font-bold">Quitar</button>}
-          </div>
+          {/* El buscador solo aparece cuando hay muchas opciones; con pocas basta la lista. */}
+          {opciones.length > 8 ? (
+            <div className="p-2 border-b border-slate-100 flex items-center gap-2">
+              <Search className="w-3.5 h-3.5 text-slate-400" />
+              <input autoFocus value={buscar} onChange={e => setBuscar(e.target.value)} placeholder={`Buscar ${titulo.toLowerCase()}`} className="flex-1 outline-none" />
+              {elegidos.length > 0 && <button type="button" onClick={() => onCambiar([])} className="text-rose-700 font-bold">Quitar</button>}
+            </div>
+          ) : elegidos.length > 0 && (
+            <div className="px-3 py-1.5 border-b border-slate-100 text-right">
+              <button type="button" onClick={() => onCambiar([])} className="text-rose-700 font-bold">Quitar filtro</button>
+            </div>
+          )}
           <ul className="max-h-72 overflow-y-auto py-1">
             {lista.map(o => (
               <li key={o.valor}>
