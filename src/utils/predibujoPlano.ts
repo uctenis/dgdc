@@ -5,6 +5,7 @@ import type * as pdfjsLib from 'pdfjs-dist';
 import type { Recinto } from '../types/recintos';
 import { COLOR_CIERRE, detectarRecintos, lineasDeCierre, mapaDeTrazos, mejorSemilla } from './deteccionRecintos';
 import { contextoSoloMuros, segmentosDeMuro } from './lienzoMuros';
+import { getConfigEspacios } from '../data/espaciosConfig';
 import { denominadorEscala, type Punto } from './geometriaPlano';
 
 const LADO_MAYOR_PX = 2500;   // resolución de trabajo: suficiente para ver los muros sin hacer lenta la detección
@@ -79,8 +80,9 @@ export async function predibujarRecintos(page: pdfjsLib.PDFPageProxy, recintos: 
   const ancho = Math.round(viewport.width), alto = Math.round(viewport.height);
   const cajas = rotulos.map(r => r.caja);
 
-  // Los tamaños se piensan en metros reales; sin escala, se supone 1:100.
-  const metrosPorPx = ((0.0254 / 72) * (denominadorEscala(escala) || 100)) / factor;
+  // Los tamaños se piensan en metros reales; sin escala, se usa la escala por defecto de la configuración.
+  const parametros = getConfigEspacios().parametros;
+  const metrosPorPx = ((0.0254 / 72) * (denominadorEscala(escala) || denominadorEscala(parametros.escalaPorDefecto) || 100)) / factor;
   const m = (metros: number) => metros / metrosPorPx;
   const opciones = {
     tolerancia: m(0.05),
@@ -95,14 +97,14 @@ export async function predibujarRecintos(page: pdfjsLib.PDFPageProxy, recintos: 
   // 1. Solo los muros: trazos rectos de al menos 1 m, con los vanos de hasta 1,2 m cerrados.
   let segmentos: ReturnType<typeof contextoSoloMuros>['segmentos'] = [], grosores: number[] = [];
   const datosMuros = await dibujar(page, viewport, ctx => {
-    const envuelto = contextoSoloMuros(ctx, m(1));
+    const envuelto = contextoSoloMuros(ctx, m(parametros.largoMinimoMuroM));
     segmentos = envuelto.segmentos; grosores = envuelto.grosores;
     return envuelto.ctx;
   }, ctx => {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.strokeStyle = COLOR_CIERRE; ctx.lineWidth = 3; ctx.lineCap = 'round';
     ctx.beginPath();
-    for (const [x1, y1, x2, y2] of lineasDeCierre(segmentosDeMuro(segmentos, grosores, ancho, alto), 3, m(1.2), 6)) { ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); }
+    for (const [x1, y1, x2, y2] of lineasDeCierre(segmentosDeMuro(segmentos, grosores, ancho, alto), 3, m(parametros.vanoMaximoM), 6)) { ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); }
     ctx.stroke();
   });
   const muros = mapaDeTrazos(datosMuros, ancho, alto, cajas);

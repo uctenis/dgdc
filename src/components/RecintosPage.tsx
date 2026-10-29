@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Building2, Layers, Plus, Pencil, Trash2, History, FileSpreadsheet, FileText, Loader2, AlertTriangle, X, ExternalLink, Copy, DoorOpen, ChevronRight, ChevronDown, ArrowLeft, Trees, Download, ClipboardCheck,
+  Building2, Layers, Plus, Pencil, Trash2, History, FileSpreadsheet, FileText, Loader2, AlertTriangle, X, ExternalLink, Copy, DoorOpen, ChevronRight, ChevronDown, ArrowLeft, Trees, Download, ClipboardCheck, BarChart3,
 } from 'lucide-react';
 import { getCampusList, obtenerEdificiosDeCampus, etiquetaEdificio, obtenerInfoEdificio } from '../data/campusData';
 import { SUPABASE_CONFIGURADO } from '../lib/supabase';
@@ -21,6 +21,7 @@ import { RevisionCampus } from './RevisionCampus';
 import { alertasRecinto, observacionesSinNotas } from '../utils/alertasRecinto';
 import { formatoFecha } from '../utils/fechas';
 import { comoTitulo } from '../utils/texto';
+import { getConfigEspacios } from '../data/espaciosConfig';
 
 const m2 = (n?: number | null) => (n ? `${n.toLocaleString('es-CL', { maximumFractionDigits: 2 })} m²` : '—');
 /** Superficie para las tablas: siempre con dos decimales, para que las cifras queden alineadas. */
@@ -173,6 +174,15 @@ export function RecintosPage() {
   // Al cambiar de edificio, todos los pisos parten desplegados.
   useEffect(() => { setPisosContraidos(new Set()); setSeleccion(new Set()); }, [edificio]);
   useEffect(() => {
+    const recinto = parametros.get('recinto');
+    if (!recinto) return;
+    setResaltado(recinto); setFichaPorAbrir(recinto);
+    const nuevo = new URLSearchParams(parametros); nuevo.delete('recinto');
+    setParametros(nuevo, { replace: true });
+  }, [parametros]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Abre «Consultas y análisis» con filtros ya puestos (el campus o el edificio en que se está). */
+  const analizar = (consulta: object) => setParametros(new URLSearchParams({ seccion: 'analisis', consulta: JSON.stringify(consulta) }));
+  useEffect(() => {
     if (!fichaPorAbrir || cargando) return;
     const r = recintos.find(x => x.id === fichaPorAbrir);
     if (r) { setFichaRecinto(r); setFichaPorAbrir(null); }
@@ -280,6 +290,10 @@ export function RecintosPage() {
         edificios.length ? (
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
+              <button type="button" onClick={() => analizar({ f: { campus: [campusSigla] }, g: 'edificio', m: 'util', cf: 'edificio', cc: 'tipo' })}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-700 hover:bg-teal-800 font-bold text-white">
+                <BarChart3 className="w-3.5 h-3.5" /> Analizar campus
+              </button>
               <button type="button" onClick={() => setRevisando(true)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-300 bg-white font-bold text-amber-800 hover:bg-amber-50">
                 <ClipboardCheck className="w-3.5 h-3.5" /> Por revisar
@@ -340,6 +354,10 @@ export function RecintosPage() {
             <button type="button" disabled={descargando || !recintos.length} onClick={() => void descargar('edificio')} title="Descargar los recintos de este edificio en Excel"
               className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 bg-white font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
               {descargando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />} Excel
+            </button>
+            <button type="button" onClick={() => analizar({ f: { edificio: [edificio] }, g: 'tipo', m: 'util', cf: 'piso', cc: 'tipo' })} title="Cruces de superficies de este edificio por piso, tipo y unidad"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-700 hover:bg-teal-800 font-bold text-white">
+              <BarChart3 className="w-3.5 h-3.5" /> Análisis
             </button>
             {cargando && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
           </div>
@@ -525,13 +543,14 @@ export function RecintosPage() {
           }}>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             <label className="font-bold">Código *<input value={recintoEditando.codigo} onChange={e => setRecintoEditando({ ...recintoEditando, codigo: e.target.value })} placeholder="A102" className={`mt-1 ${campo} font-normal`} /></label>
-            <label className="font-bold sm:col-span-2">Nombre *<input value={recintoEditando.nombre} onChange={e => setRecintoEditando({ ...recintoEditando, nombre: e.target.value })} placeholder="Sala de clases" className={`mt-1 ${campo} font-normal`} /></label>
+            <label className="font-bold sm:col-span-2">Nombre (tipo de recinto) *<input list="tipos-oficiales" value={recintoEditando.nombre} onChange={e => setRecintoEditando({ ...recintoEditando, nombre: e.target.value })} placeholder="Sala de clases" className={`mt-1 ${campo} font-normal`} /></label>
+            <datalist id="tipos-oficiales">{getConfigEspacios().tipos.map(t => <option key={t.nombre} value={t.nombre} />)}</datalist>
             <label className="font-bold">Piso
               <select value={recintoEditando.piso_id} onChange={e => setRecintoEditando({ ...recintoEditando, piso_id: e.target.value })} className={`mt-1 ${campo} font-normal`}>
                 {pisos.map(p => <option key={p.id} value={p.id}>{p.codigo} — {p.nombre}</option>)}
               </select>
             </label>
-            <label className="font-bold">Uso<SelectorUso valor={recintoEditando.uso || ''} usos={usos} onChange={uso => setRecintoEditando({ ...recintoEditando, uso })} /></label>
+            <label className="font-bold">Uso<SelectorUso valor={recintoEditando.uso || ''} usos={getConfigEspacios().usos.length ? getConfigEspacios().usos : usos} onChange={uso => setRecintoEditando({ ...recintoEditando, uso })} /></label>
             <label className="font-bold">Estado
               <select value={recintoEditando.estado} onChange={e => setRecintoEditando({ ...recintoEditando, estado: e.target.value as Recinto['estado'] })} className={`mt-1 ${campo} font-normal`}>
                 {ESTADOS_RECINTO.map(s => <option key={s}>{s}</option>)}
@@ -540,7 +559,8 @@ export function RecintosPage() {
             <label className="font-bold">Superficie útil (m²)<input type="number" min={0} step="0.01" value={recintoEditando.superficie_m2 ?? ''} onChange={e => setRecintoEditando({ ...recintoEditando, superficie_m2: e.target.value === '' ? null : Number(e.target.value) })} className={`mt-1 ${campo} font-normal`} /></label>
             <label className="font-bold">Superficie OGUC (m²)<input type="number" min={0} step="0.01" value={recintoEditando.superficie_oguc_m2 ?? ''} onChange={e => setRecintoEditando({ ...recintoEditando, superficie_oguc_m2: e.target.value === '' ? null : Number(e.target.value) })} className={`mt-1 ${campo} font-normal`} /></label>
             <label className="font-bold">Capacidad (personas)<input type="number" min={0} value={recintoEditando.capacidad ?? ''} onChange={e => setRecintoEditando({ ...recintoEditando, capacidad: e.target.value === '' ? null : Number(e.target.value) })} className={`mt-1 ${campo} font-normal`} /></label>
-            <label className="font-bold">Unidad usuaria<input value={recintoEditando.unidad_usuaria || ''} onChange={e => setRecintoEditando({ ...recintoEditando, unidad_usuaria: e.target.value })} placeholder="Fac. de Ingeniería" className={`mt-1 ${campo} font-normal`} /></label>
+            <label className="font-bold">Unidad usuaria<input list="unidades-oficiales" value={recintoEditando.unidad_usuaria || ''} onChange={e => setRecintoEditando({ ...recintoEditando, unidad_usuaria: e.target.value })} placeholder="Fac. de Ingeniería" className={`mt-1 ${campo} font-normal`} /></label>
+            <datalist id="unidades-oficiales">{getConfigEspacios().unidades.map(u => <option key={u} value={u} />)}</datalist>
             <label className="font-bold sm:col-span-3">Foto de referencia (enlace de Drive)<input value={recintoEditando.foto_url || ''} onChange={e => setRecintoEditando({ ...recintoEditando, foto_url: e.target.value.trim() })} placeholder="https://drive.google.com/…" className={`mt-1 ${campo} font-normal`} /></label>
             <EditorOcupantes ocupantes={recintoEditando.ocupantes || []} onChange={ocupantes => setRecintoEditando({ ...recintoEditando, ocupantes })} />
             <label className="font-bold sm:col-span-3">Observaciones<textarea rows={2} value={recintoEditando.observaciones || ''} onChange={e => setRecintoEditando({ ...recintoEditando, observaciones: e.target.value })} className={`mt-1 ${campo} font-normal`} /></label>

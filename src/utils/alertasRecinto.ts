@@ -2,6 +2,7 @@
 // Lo que no se puede calcular (p. ej. un código que no calza con su edificio) queda como nota «Por revisar:» en sus
 // observaciones y también se muestra como alerta.
 import type { Recinto } from '../types/recintos';
+import { getConfigEspacios, type ParametrosEspacios } from '../data/espaciosConfig';
 
 export const PREFIJO_POR_REVISAR = 'Por revisar:';
 
@@ -20,8 +21,11 @@ export function observacionesSinNotas(observaciones?: string | null): string[] {
 
 type DatosAlerta = Pick<Recinto, 'codigo' | 'edificio_codigo' | 'nombre' | 'estado' | 'superficie_m2' | 'superficie_oguc_m2' | 'observaciones'>;
 
-/** Problemas del recinto que conviene revisar. Los recintos eliminados no se revisan. */
-export function alertasRecinto(r: DatosAlerta): string[] {
+/**
+ * Problemas del recinto que conviene revisar. Los recintos eliminados no se revisan. Los umbrales salen de la
+ * configuración del Gestor (Parámetros).
+ */
+export function alertasRecinto(r: DatosAlerta, p: Pick<ParametrosEspacios, 'factorOguc' | 'diferenciaOgucM2'> = getConfigEspacios().parametros): string[] {
   if (r.estado === 'Eliminado') return [];
   const alertas: string[] = [];
   const util = Number(r.superficie_m2) || 0;
@@ -29,7 +33,7 @@ export function alertasRecinto(r: DatosAlerta): string[] {
   if (!util && !oguc) alertas.push('sin superficies');
   else if (!util) alertas.push(`sin superficie útil (OGUC ${m2(oguc)})`);
   else if (oguc && util > oguc + 0.01) alertas.push(`la superficie útil (${m2(util)}) es mayor que la OGUC (${m2(oguc)})`);
-  else if (oguc > util * 1.6 && oguc - util > 3) alertas.push(`la OGUC (${m2(oguc)}) es muy superior a la útil (${m2(util)})`);
+  else if (oguc > util * p.factorOguc && oguc - util > p.diferenciaOgucM2) alertas.push(`la OGUC (${m2(oguc)}) es muy superior a la útil (${m2(util)})`);
   if (!r.nombre?.trim() || /^(\?|sin tipo)/i.test(r.nombre.trim())) alertas.push('sin tipo de recinto');
   return [...alertas, ...notasPorRevisar(r.observaciones)];
 }

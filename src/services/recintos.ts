@@ -279,3 +279,78 @@ export async function eliminarZona(id: string): Promise<void> {
   const { error } = await supabase.from('zonas_recinto').delete().eq('id', id);
   if (error) throw errorDe(error, 'No se pudo quitar el recinto del plano');
 }
+
+// ── Configuración del Gestor: valores en uso, unificar y fichas de edificios ──
+
+export interface ValorEnUso { valor: string; recintos: number; m2: number }
+
+/**
+ * Tipos (nombre), usos y unidades usuarias que tienen hoy los recintos vigentes, con cuántos recintos y m² útiles
+ * suma cada uno. Una unidad escrita «A / B» cuenta para A y para B. Se lee en tandas (la base entrega 1.000 por vez).
+ */
+export async function resumenValores(): Promise<{ tipos: ValorEnUso[]; usos: ValorEnUso[]; unidades: ValorEnUso[] }> {
+  type Fila = { nombre: string; uso: string | null; unidad_usuaria: string | null; superficie_m2: number | null };
+  const filas: Fila[] = [];
+  for (let desde = 0; ; desde += 1000) {
+    const { data, error } = await supabase.from('recintos').select('nombre, uso, unidad_usuaria, superficie_m2')
+      .neq('estado', 'Eliminado').order('id').range(desde, desde + 999);
+    if (error) throw errorDe(error, 'No se pudieron leer los recintos');
+    filas.push(...(data as Fila[]));
+    if (data.length < 1000) break;
+  }
+  const contar = (valores: (r: Fila) => string[]) => {
+    const mapa = new Map<string, ValorEnUso>();
+    for (const r of filas) for (const v of valores(r)) {
+      const x = mapa.get(v) || { valor: v, recintos: 0, m2: 0 };
+      x.recintos++; x.m2 += Number(r.superficie_m2) || 0;
+      mapa.set(v, x);
+    }
+    return [...mapa.values()].sort((a, b) => b.recintos - a.recintos || a.valor.localeCompare(b.valor, 'es'));
+  };
+  return {
+    tipos: contar(r => (r.nombre?.trim() ? [r.nombre.trim()] : [])),
+    usos: contar(r => (r.uso?.trim() ? [r.uso.trim()] : [])),
+    unidades: contar(r => separarUnidades(r.unidad_usuaria)),
+  };
+}
+
+/** Unidades de un recinto: la columna puede traer varias separadas por « / ». */
+export const separarUnidades = (texto?: string | null) => (texto || '').split(' / ').map(u => u.trim()).filter(Boolean);
+
+/**
+ * Cambia un tipo (nombre) o un uso en todos los recintos que lo tienen: para renombrarlo o para unificar variantes
+ * escritas distinto. Devuelve cuántos recintos cambió.
+ */
+export async function renombrarEnRecintos(campo: 'nombre' | 'uso', de: string, a: string): Promise<number> {
+  const { data, error } = await supabase.from('recintos').update({ [campo]: a }).eq(campo, de).select('id');
+  if (error) throw errorDe(error, 'No se pudo cambiar el valor en los recintos');
+  return data.length;
+}
+
+/** Cambia una unidad usuaria en todos los recintos que la tienen (sola o junto a otras). Devuelve cuántos cambió. */
+export async function renombrarUnidad(de: string, a: string): Promise<number> {
+  const { data, error } = await supabase.from('recintos').select('id, unidad_usuaria').ilike('unidad_usuaria', `%${de.replace(/[%_]/g, '\$&')}%`);
+  if (error) throw errorDe(error, 'No se pudieron leer los recintos de la unidad');
+  const cambios = (data as { id: string; unidad_usuaria: string }[])
+    .filter(r => separarUnidades(r.unidad_usuaria).includes(de))
+    .map(r => ({ id: r.id, unidad: [...new Set(separarUnidades(r.unidad_usuaria).map(u => (u === de ? a : u)))].join(' / ') }));
+  for (let i = 0; i < cambios.length; i += 20) {
+    const tanda = await Promise.all(cambios.slice(i, i + 20).map(c => supabase.from('recintos').update({ unidad_usuaria: c.unidad }).eq('id', c.id)));
+    const fallo = tanda.find(t => t.error);
+    if (fallo?.error) throw errorDe(fallo.error, 'No se pudo cambiar la unidad');
+  }
+  return cambios.length;
+}
+
+/** Fichas de los edificios de un campus (código, nombre y categoría) para la configuración. */
+export async function listarFichasDeCampus(siglaCampus: string): Promise<Pick<FichaEdificio, 'codigo' | 'nombre' | 'categoria'>[]> {
+  const { data, error } = await supabase.from('edificios').select('codigo, nombre, categoria').like('codigo', `${siglaCampus}%`).order('codigo');
+  if (error) throw errorDe(error, 'No se pudieron leer los edificios');
+  return data as Pick<FichaEdificio, 'codigo' | 'nombre' | 'categoria'>[];
+}
+
+/** Crea o actualiza el nombre y la categoría de un edificio (el resto de su ficha no cambia). */
+export async function guardarDatosEdificio(codigo: string, datos: { nombre: string; categoria: string | null; campus_nombre?: string }): Promise<void> {
+  const { error } = await supabase.from('edificios').upsert({ codigo, ...datos }, { onConflict: 'codigo' });
+  if (error) throw errorDe(error, `No se pudo guardar el edificio ${codigo}`);
+}

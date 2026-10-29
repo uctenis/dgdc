@@ -24,7 +24,7 @@ describe('descarga de recintos a Excel', () => {
     await libro.xlsx.load(await guardado.blob!.arrayBuffer());
     expect(libro.worksheets.map(h => h.name)).toEqual(['Resumen', 'Recintos', 'Por tipo']);
     const resumen = libro.getWorksheet('Resumen')!;
-    expect(resumen.getRow(2).values).toEqual([, 'CSF01', 'Edificio A', 2, 62.04, 38.95, 2, 1]);
+    expect(resumen.getRow(2).values).toEqual([undefined, 'CSF01', 'Edificio A', 2, 62.04, 38.95, 2, 1]);
     const recintos = libro.getWorksheet('Recintos')!;
     expect(recintos.rowCount).toBe(4);
     expect(recintos.getRow(2).getCell(13).value).toBe('Pérez, Ana – SECRETARIA; Soto, Luis');

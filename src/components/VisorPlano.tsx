@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import {
-  Loader2, ZoomIn, ZoomOut, Maximize2, Minimize2, Scan, Pencil, Trash2, MapPin, CheckCircle2, Circle, X, Undo2, Check, AlertTriangle, Wand2, Tag,
+  Loader2, ZoomIn, ZoomOut, Maximize2, Minimize2, Scan, Pencil, Trash2, MapPin, CheckCircle2, Circle, X, Undo2, Check, AlertTriangle, Wand2, Tag, BoxSelect,
 } from 'lucide-react';
 import type { DocumentoEdificio, Recinto, ZonaRecinto } from '../types/recintos';
 import { descargarLamina, eliminarZona, guardarEscalaDocumento, guardarZona, listarZonas } from '../services/recintos';
 import { areaRealM2, centroide, colorDeCategoria, limites, puntoEnPoligono, type Punto } from '../utils/geometriaPlano';
 import { predibujarRecintos } from '../utils/predibujoPlano';
 import { comoTitulo } from '../utils/texto';
+import { getConfigEspacios, tipoConfigurado } from '../data/espaciosConfig';
 
 // Worker local, igual que en el resto del sistema (no depende de descargas externas).
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.js', import.meta.url).toString();
 
-type ModoColor = 'uso' | 'estado' | 'unidad';
+type ModoColor = 'tipo' | 'uso' | 'estado' | 'unidad';
 const COLOR_ESTADO: Record<string, string> = {
   Operativo: 'hsl(152 60% 40%)', 'En obra': 'hsl(38 92% 50%)', 'Fuera de servicio': 'hsl(0 72% 51%)', Eliminado: 'hsl(215 16% 62%)',
 };
@@ -47,12 +48,16 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
   const [encima, setEncima] = useState<{ id: string; x: number; y: number } | null>(null);
   const [dibujando, setDibujando] = useState<{ recintoId: string; puntos: Punto[] } | null>(null);
   const [cursor, setCursor] = useState<Punto | null>(null);
-  const [modoColor, setModoColor] = useState<ModoColor>('uso');
+  const [modoColor, setModoColor] = useState<ModoColor>('tipo');
   const [pantallaCompleta, setPantallaCompleta] = useState(false);
   const [escala, setEscala] = useState(documento.escala || '');
   const [guardando, setGuardando] = useState(false);
   const [mostrarRotulos, setMostrarRotulos] = useState(false);
   const [editandoContorno, setEditandoContorno] = useState(false);   // muestra los vértices del recinto elegido
+  // «Seleccionar varios»: se arrastra un rectángulo (o se hace clic en cada recinto) para sumar sus superficies.
+  const [modoVarios, setModoVarios] = useState(false);
+  const [varios, setVarios] = useState<Set<string>>(new Set());
+  const [rectangulo, setRectangulo] = useState<{ a: Punto; b: Punto } | null>(null);
   const [predibujando, setPredibujando] = useState(false);
   const [aviso, setAviso] = useState('');
   const arrastre = useRef<{ x: number; y: number; vx: number; vy: number; movio: boolean } | null>(null);
@@ -221,6 +226,7 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
     }
     arrastre.current = { x: e.clientX, y: e.clientY, vx: vista.x, vy: vista.y, movio: false };
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    if (modoVarios && !e.altKey) { const p = aPagina(e.clientX, e.clientY); if (p) setRectangulo({ a: p, b: p }); }
   };
   const alMover = (e: React.PointerEvent) => {
     const av = arrastreVertice.current;
@@ -238,6 +244,7 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
     if (a) {
       const dx = e.clientX - a.x, dy = e.clientY - a.y;
       if (Math.abs(dx) + Math.abs(dy) > 4) a.movio = true;
+      if (a.movio && rectangulo) { const p = aPagina(e.clientX, e.clientY); if (p) setRectangulo(r => r && { ...r, b: p }); return; }
       if (a.movio) { setVista(v => ({ ...v, x: a.vx + dx, y: a.vy + dy })); return; }
     }
     const p = aPagina(e.clientX, e.clientY);
@@ -268,9 +275,24 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
     }
     const a = arrastre.current;
     arrastre.current = null;
+    const rect = rectangulo;
+    setRectangulo(null);
+    if (a?.movio && rect && modoVarios) {
+      // Suma al grupo los recintos cuyo centro queda dentro del rectángulo.
+      const [x0, x1] = [Math.min(rect.a[0], rect.b[0]), Math.max(rect.a[0], rect.b[0])];
+      const [y0, y1] = [Math.min(rect.a[1], rect.b[1]), Math.max(rect.a[1], rect.b[1])];
+      const dentro = zonasPagina.filter(z => { const [cx, cy] = centroide(z.poligono); return cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1; });
+      setVarios(prev => new Set([...prev, ...dentro.map(z => z.recinto_id)]));
+      return;
+    }
     if (!a || a.movio) return;
     const p = aPagina(e.clientX, e.clientY);
     if (!p) return;
+    if (modoVarios) {
+      const z = zonaEn(p);
+      if (z) setVarios(prev => { const n = new Set(prev); if (n.has(z.recinto_id)) n.delete(z.recinto_id); else n.add(z.recinto_id); return n; });
+      return;
+    }
     if (dibujando) { setDibujando(d => d && { ...d, puntos: [...d.puntos, p] }); return; }
     if (editandoContorno) { setVerticeMarcado(null); return; }   // mientras se edita, un clic no cambia de recinto
     setSeleccion(zonaEn(p)?.recinto_id || null);
@@ -346,9 +368,10 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
   const colorDe = (r?: Recinto) => {
     if (!r) return colorDeCategoria(null);
     if (modoColor === 'estado') return COLOR_ESTADO[r.estado] || colorDeCategoria(r.estado);
+    if (modoColor === 'tipo') return tipoConfigurado(r.nombre)?.color || colorDeCategoria(r.nombre);
     return colorDeCategoria(modoColor === 'uso' ? r.uso || r.nombre : r.unidad_usuaria);
   };
-  const categoria = (r: Recinto) => (modoColor === 'estado' ? r.estado : modoColor === 'uso' ? r.uso || r.nombre : r.unidad_usuaria || 'Sin unidad');
+  const categoria = (r: Recinto) => (modoColor === 'estado' ? r.estado : modoColor === 'tipo' ? r.nombre : modoColor === 'uso' ? r.uso || r.nombre : r.unidad_usuaria || 'Sin unidad');
   const leyenda = useMemo(() => {
     const vistas = new Map<string, { color: string; n: number }>();
     zonasPagina.forEach(z => { const r = recintoPorId.get(z.recinto_id); if (!r) return; const c = categoria(r); vistas.set(c, { color: colorDe(r), n: (vistas.get(c)?.n || 0) + 1 }); });
@@ -357,7 +380,7 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
 
   const medida = (recintoId: string) => {
     const z = zonaDe.get(recintoId);
-    return z && tam ? areaRealM2(z.poligono, tam.w, tam.h, escala) : null;
+    return z && tam ? areaRealM2(z.poligono, tam.w, tam.h, escala || getConfigEspacios().parametros.escalaPorDefecto) : null;
   };
   const sel = seleccion ? recintoPorId.get(seleccion) : undefined;
   const ubicados = recintos.filter(r => zonaDe.has(r.id)).length;
@@ -376,13 +399,13 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
           </select>
         )}
         <label className="flex items-center gap-1 text-slate-600">Escala
-          <input value={escala} onChange={e => setEscala(e.target.value)} placeholder="1:100"
+          <input value={escala} onChange={e => setEscala(e.target.value)} placeholder={getConfigEspacios().parametros.escalaPorDefecto}
             onBlur={() => { if (escala !== (documento.escala || '')) guardarEscalaDocumento(documento.id, escala).then(onEscalaGuardada).catch(err => setError(String(err?.message || err))); }}
             className="w-20 px-2 py-1 border border-slate-300 rounded-lg" />
         </label>
         <label className="flex items-center gap-1 text-slate-600">Color por
           <select value={modoColor} onChange={e => setModoColor(e.target.value as ModoColor)} className="px-2 py-1 border border-slate-300 rounded-lg">
-            <option value="uso">Uso</option><option value="estado">Estado</option><option value="unidad">Unidad usuaria</option>
+            <option value="tipo">Tipo</option><option value="uso">Uso</option><option value="estado">Estado</option><option value="unidad">Unidad usuaria</option>
           </select>
         </label>
         <button type="button" disabled={predibujando || !pdf || !recintos.length}
@@ -393,6 +416,11 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
           title="Ubica los recintos buscando su código escrito en la lámina (si ya están todos, los vuelve a dibujar)"
           className="flex items-center gap-1 px-2 py-1 rounded-lg border border-teal-300 font-bold text-teal-800 hover:bg-teal-50 disabled:opacity-40">
           {predibujando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />} Predibujar recintos
+        </button>
+        <button type="button" onClick={() => { setModoVarios(m => !m); setVarios(new Set()); setSeleccion(null); }}
+          title="Arrastre un rectángulo sobre el plano (por ejemplo, un ala) o haga clic en cada recinto para sumar sus superficies. Alt + arrastrar mueve el plano."
+          className={`flex items-center gap-1 px-2 py-1 rounded-lg border font-bold ${modoVarios ? 'bg-slate-900 border-slate-900 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+          <BoxSelect className="w-3.5 h-3.5" /> Seleccionar varios
         </button>
         <button type="button" onClick={() => setMostrarRotulos(m => !m)} title="Mostrar u ocultar los códigos y la leyenda de colores sobre el plano"
           className={`flex items-center gap-1 px-2 py-1 rounded-lg border font-bold ${mostrarRotulos ? 'bg-slate-700 border-slate-700 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
@@ -426,7 +454,7 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
       <div className={`flex gap-2 ${pantallaCompleta ? 'flex-1 min-h-0' : 'h-[70vh] min-h-[480px]'}`}>
         {/* Plano */}
         <div ref={marco}
-          className={`relative flex-1 min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-[radial-gradient(circle,#e2e8f0_1px,transparent_1px)] [background-size:18px_18px] bg-slate-50 select-none touch-none ${dibujando ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'}`}
+          className={`relative flex-1 min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-[radial-gradient(circle,#e2e8f0_1px,transparent_1px)] [background-size:18px_18px] bg-slate-50 select-none touch-none ${dibujando || modoVarios ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'}`}
           onPointerDown={alPresionar} onPointerMove={alMover} onPointerUp={alSoltar} onPointerLeave={() => setEncima(null)}
           onDoubleClick={e => (dibujando ? void terminarDibujo() : editarVertice(e))}>
           <div className="absolute left-0 top-0 origin-top-left" style={{ transform: `translate(${vista.x}px, ${vista.y}px) scale(${vista.k})`, width: tam?.w, height: tam?.h }}>
@@ -435,14 +463,15 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
               <svg className="absolute inset-0 overflow-visible" width={tam.w} height={tam.h} viewBox={`0 0 ${tam.w} ${tam.h}`}>
                 {zonasPagina.map(z => {
                   const r = recintoPorId.get(z.recinto_id);
-                  const activo = z.recinto_id === seleccion, sobre = encima?.id === z.recinto_id;
+                  const enGrupo = modoVarios && varios.has(z.recinto_id);
+                  const activo = (!modoVarios && z.recinto_id === seleccion) || enGrupo, sobre = encima?.id === z.recinto_id;
                   const color = colorDe(r);
                   const pts = z.poligono.map(([x, y]) => `${x * tam.w},${y * tam.h}`).join(' ');
                   const [cx, cy] = centroide(z.poligono);
                   return (
                     <g key={z.id}>
                       <polygon points={pts} fill={color} fillOpacity={activo ? 0.5 : sobre ? 0.42 : 0.26}
-                        stroke={activo ? '#f59e0b' : color} strokeWidth={activo ? grosor * 2.2 : grosor} strokeLinejoin="round" />
+                        stroke={enGrupo ? '#0f172a' : activo ? '#f59e0b' : color} strokeWidth={activo ? grosor * 2.2 : grosor} strokeLinejoin="round" />
                       {mostrarRotulos && <text x={cx * tam.w} y={cy * tam.h} textAnchor="middle" dominantBaseline="middle" fontSize={letra} fontWeight={700}
                         fill="#0f172a" stroke="white" strokeWidth={letra * 0.25} paintOrder="stroke" style={{ pointerEvents: 'none' }}>
                         {r?.codigo.replace(`${r.edificio_codigo}_`, '') || ''}
@@ -498,6 +527,30 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
                 <p className="text-slate-300">{[r.uso, r.estado !== 'Operativo' ? r.estado : ''].filter(Boolean).join(' · ')}</p>
                 {!!r.ocupantes?.length && <p className="text-slate-300">{r.ocupantes.slice(0, 3).map(o => comoTitulo(o.nombre)).join(', ')}{r.ocupantes.length > 3 ? ` y ${r.ocupantes.length - 3} más` : ''}</p>}
                 <p className="text-slate-300">Registrado {m2(r.superficie_m2)}{med != null ? ` · medido ${m2(Math.round(med * 100) / 100)}` : ''}</p>
+              </div>
+            );
+          })()}
+
+          {rectangulo && tam && (() => {
+            const x = Math.min(rectangulo.a[0], rectangulo.b[0]) * tam.w * vista.k + vista.x, y = Math.min(rectangulo.a[1], rectangulo.b[1]) * tam.h * vista.k + vista.y;
+            const w = Math.abs(rectangulo.b[0] - rectangulo.a[0]) * tam.w * vista.k, h = Math.abs(rectangulo.b[1] - rectangulo.a[1]) * tam.h * vista.k;
+            return <div className="absolute pointer-events-none border-2 border-dashed border-slate-900 bg-slate-900/10 rounded" style={{ left: x, top: y, width: w, height: h }} />;
+          })()}
+
+          {modoVarios && (() => {
+            const elegidos = recintos.filter(r => varios.has(r.id));
+            const suma = (k: 'superficie_m2' | 'superficie_oguc_m2') => elegidos.reduce((s, r) => s + (Number(r[k]) || 0), 0);
+            const medidos = elegidos.map(r => medida(r.id)).filter((v): v is number => v != null);
+            return (
+              <div className="absolute left-1/2 -translate-x-1/2 bottom-3 flex flex-wrap items-center gap-x-4 gap-y-1 bg-slate-900 text-white rounded-xl px-4 py-2.5 shadow-xl text-xs" onPointerDown={e => e.stopPropagation()}>
+                {elegidos.length ? (<>
+                  <span className="font-bold">{elegidos.length} recinto(s)</span>
+                  <span>Útil <strong className="text-sm tabular-nums">{m2(Math.round(suma('superficie_m2') * 100) / 100)}</strong></span>
+                  <span>OGUC <strong className="text-sm tabular-nums">{m2(Math.round(suma('superficie_oguc_m2') * 100) / 100)}</strong></span>
+                  {medidos.length > 0 && <span title="Suma de las áreas dibujadas en el plano, según la escala">Medido en plano <strong className="tabular-nums">{m2(Math.round(medidos.reduce((s, v) => s + v, 0) * 100) / 100)}</strong></span>}
+                  <button type="button" onClick={() => setVarios(new Set())} className="px-2 py-0.5 rounded bg-white/15 hover:bg-white/25 font-bold">Limpiar</button>
+                </>) : <span>Arrastre un rectángulo sobre el área (p. ej. un ala) o haga clic en los recintos. Alt + arrastrar mueve el plano.</span>}
+                <button type="button" onClick={() => { setModoVarios(false); setVarios(new Set()); }} className="p-0.5 rounded hover:bg-white/15" title="Salir"><X className="w-4 h-4" /></button>
               </div>
             );
           })()}

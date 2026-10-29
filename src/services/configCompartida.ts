@@ -31,6 +31,7 @@ const CLAVES_CONFIG_COMPARTIDA = [
   'infra_app_plantilla_bases_v4_diseno',
   'infra_app_plantilla_bases_v4_suministro',
   'infra_app_plantilla_bases_v4_otros',
+  'infra_app_espacios_config_v1',
 ] as const;
 
 const CLAVES = new Set<string>(CLAVES_CONFIG_COMPARTIDA);
