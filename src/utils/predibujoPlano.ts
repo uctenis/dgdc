@@ -32,7 +32,7 @@ async function rotulosEnPagina(page: pdfjsLib.PDFPageProxy, viewport: pdfjsLib.P
     if (!('str' in item) || !item.str.trim()) continue;
     const s = normalizar(item.str);
     const exacto = porCodigo.get(s);
-    const recinto = exacto || porSufijo.get(s);
+    const recinto = exacto || porSufijo.get(s.replace(/^[_-]+/, ''));
     if (!recinto || (hallados.get(recinto.id)?.exacto && !exacto)) continue;
     // Esquinas del texto en el espacio del PDF (puede venir rotado) llevadas a la imagen.
     const [a, b, c, d, e, f] = item.transform;
