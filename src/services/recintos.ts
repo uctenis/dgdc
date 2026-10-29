@@ -1,7 +1,7 @@
 // Acceso a datos del módulo de recintos y planos (Postgres en Supabase). Las pantallas no hablan con la base
 // directamente: todo pasa por aquí.
 import { supabase } from '../lib/supabase';
-import type { CambioRecinto, DocumentoEdificio, FichaEdificio, Piso, Recinto, ZonaRecinto } from '../types/recintos';
+import type { CambioRecinto, DocumentoEdificio, FichaEdificio, Ocupante, Piso, Recinto, ZonaRecinto } from '../types/recintos';
 import { datosDePiso } from '../utils/importacionRecintos';
 
 /** Convierte el error de la base en un mensaje entendible. */
@@ -329,7 +329,7 @@ export async function renombrarEnRecintos(campo: 'nombre' | 'uso', de: string, a
 
 /** Cambia una unidad usuaria en todos los recintos que la tienen (sola o junto a otras). Devuelve cuántos cambió. */
 export async function renombrarUnidad(de: string, a: string): Promise<number> {
-  const { data, error } = await supabase.from('recintos').select('id, unidad_usuaria').ilike('unidad_usuaria', `%${de.replace(/[%_]/g, '\$&')}%`);
+  const { data, error } = await supabase.from('recintos').select('id, unidad_usuaria').ilike('unidad_usuaria', `%${de.replace(/[%_]/g, '\\$&')}%`);
   if (error) throw errorDe(error, 'No se pudieron leer los recintos de la unidad');
   const cambios = (data as { id: string; unidad_usuaria: string }[])
     .filter(r => separarUnidades(r.unidad_usuaria).includes(de))
@@ -353,4 +353,47 @@ export async function listarFichasDeCampus(siglaCampus: string): Promise<Pick<Fi
 export async function guardarDatosEdificio(codigo: string, datos: { nombre: string; categoria: string | null; campus_nombre?: string }): Promise<void> {
   const { error } = await supabase.from('edificios').upsert({ codigo, ...datos }, { onConflict: 'codigo' });
   if (error) throw errorDe(error, `No se pudo guardar el edificio ${codigo}`);
+}
+
+/**
+ * Aplica de una vez varios cambios de nombre (formato, tildes, unificar duplicados) en todos los recintos. `mapa`
+ * va de valor actual a valor nuevo; en unidades, un valor nuevo vacío quita esa unidad (no era una unidad). En las
+ * unidades también se corrige la unidad de cada ocupante. Devuelve cuántos recintos cambiaron.
+ */
+export async function aplicarRenombres(campo: 'nombre' | 'uso' | 'unidad', mapa: Record<string, string>, alAvanzar?: (hechos: number, total: number) => void): Promise<number> {
+  const pares = Object.entries(mapa).filter(([de, a]) => de !== a);
+  if (campo !== 'unidad') {
+    let cambiados = 0;
+    for (let i = 0; i < pares.length; i += 5) {
+      const tanda = await Promise.all(pares.slice(i, i + 5).map(([de, a]) => supabase.from('recintos').update({ [campo]: a }).eq(campo, de).select('id')));
+      const fallo = tanda.find(t => t.error);
+      if (fallo?.error) throw errorDe(fallo.error, 'No se pudieron aplicar los cambios');
+      cambiados += tanda.reduce((s, t) => s + (t.data?.length || 0), 0);
+      alAvanzar?.(Math.min(i + 5, pares.length), pares.length);
+    }
+    return cambiados;
+  }
+  // Unidades: se leen todos los recintos con unidad u ocupantes y se reescriben los que cambian.
+  type Fila = { id: string; unidad_usuaria: string | null; ocupantes: Ocupante[] | null };
+  const filas: Fila[] = [];
+  for (let desde = 0; ; desde += 1000) {
+    const { data, error } = await supabase.from('recintos').select('id, unidad_usuaria, ocupantes').order('id').range(desde, desde + 999);
+    if (error) throw errorDe(error, 'No se pudieron leer los recintos');
+    filas.push(...(data as Fila[]));
+    if (data.length < 1000) break;
+  }
+  const nuevo = (u: string) => (u in mapa ? mapa[u] : u);
+  const cambios = filas.flatMap(r => {
+    const unidades = [...new Set(separarUnidades(r.unidad_usuaria).map(nuevo).filter(Boolean))].join(' / ') || null;
+    const ocupantes = (r.ocupantes || []).map(o => (o.unidad && o.unidad in mapa ? { ...o, unidad: mapa[o.unidad] || null } : o));
+    const cambio = unidades !== (r.unidad_usuaria || null) || JSON.stringify(ocupantes) !== JSON.stringify(r.ocupantes || []);
+    return cambio ? [{ id: r.id, unidad_usuaria: unidades, ocupantes }] : [];
+  });
+  for (let i = 0; i < cambios.length; i += 20) {
+    const tanda = await Promise.all(cambios.slice(i, i + 20).map(({ id, ...datos }) => supabase.from('recintos').update(datos).eq('id', id)));
+    const fallo = tanda.find(t => t.error);
+    if (fallo?.error) throw errorDe(fallo.error, 'No se pudieron aplicar los cambios');
+    alAvanzar?.(Math.min(i + 20, cambios.length), cambios.length);
+  }
+  return cambios.length;
 }

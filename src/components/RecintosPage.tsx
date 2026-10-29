@@ -7,7 +7,7 @@ import { getCampusList, obtenerEdificiosDeCampus, etiquetaEdificio, obtenerInfoE
 import { SUPABASE_CONFIGURADO } from '../lib/supabase';
 import {
   listarPisos, listarEdificiosConDatos, obtenerFichaEdificio, listarUsos, guardarPiso, eliminarPiso, listarRecintos, guardarRecinto, eliminarRecinto, historialRecinto,
-  listarDocumentos, registrarDocumento, listarRecintosDeCampus,
+  listarDocumentos, registrarDocumento, listarRecintosDeCampus, separarUnidades,
 } from '../services/recintos';
 import {
   ESTADOS_RECINTO, TIPOS_DOCUMENTO, ESPECIALIDADES, FORMATOS_DOCUMENTO,
@@ -22,6 +22,7 @@ import { alertasRecinto, observacionesSinNotas } from '../utils/alertasRecinto';
 import { formatoFecha } from '../utils/fechas';
 import { comoTitulo } from '../utils/texto';
 import { getConfigEspacios } from '../data/espaciosConfig';
+import { formatoTipo, formatoUnidad } from '../utils/formatoNombres';
 
 const m2 = (n?: number | null) => (n ? `${n.toLocaleString('es-CL', { maximumFractionDigits: 2 })} m²` : '—');
 /** Superficie para las tablas: siempre con dos decimales, para que las cifras queden alineadas. */
@@ -539,7 +540,15 @@ export function RecintosPage() {
         <Ventana titulo={recintoEditando.id ? `Editar recinto ${recintoEditando.codigo}` : 'Agregar recinto'} onClose={() => { setRecintoEditando(null); setError(''); }} guardando={guardando} error={error}
           onGuardar={() => {
             if (!recintoEditando.codigo.trim() || !recintoEditando.nombre.trim()) return setError('El recinto necesita código y nombre.');
-            accion(() => guardarRecinto({ ...recintoEditando, codigo: recintoEditando.codigo.trim().toUpperCase() }), () => setRecintoEditando(null));
+            // Lo escrito todo en mayúsculas (como en el catastro) se guarda con el formato acordado; lo demás, tal cual.
+            const enMayusculas = (t?: string | null) => !!t && /\p{Lu}/u.test(t) && t === t.toUpperCase();
+            accion(() => guardarRecinto({
+              ...recintoEditando,
+              codigo: recintoEditando.codigo.trim().toUpperCase(),
+              nombre: enMayusculas(recintoEditando.nombre) ? formatoTipo(recintoEditando.nombre) : recintoEditando.nombre.trim(),
+              uso: enMayusculas(recintoEditando.uso) ? formatoTipo(recintoEditando.uso) : recintoEditando.uso,
+              unidad_usuaria: enMayusculas(recintoEditando.unidad_usuaria) ? separarUnidades(recintoEditando.unidad_usuaria).map(formatoUnidad).join(' / ') : recintoEditando.unidad_usuaria,
+            }), () => setRecintoEditando(null));
           }}>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             <label className="font-bold">Código *<input value={recintoEditando.codigo} onChange={e => setRecintoEditando({ ...recintoEditando, codigo: e.target.value })} placeholder="A102" className={`mt-1 ${campo} font-normal`} /></label>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Settings, Shapes, Tag, Users, SlidersHorizontal, Building2, Loader2, AlertTriangle, CheckCircle2, Search, Plus, Lock, X, Save } from 'lucide-react';
+import { Settings, Shapes, Tag, Users, SlidersHorizontal, Building2, Loader2, AlertTriangle, CheckCircle2, Search, Plus, Lock, X, Save, Wand2 } from 'lucide-react';
+import { RevisionFormato } from './RevisionFormato';
 import { useAuth } from '../context/AuthContext';
 import {
   getConfigEspacios, saveConfigEspacios, PARAMETROS_POR_DEFECTO, type ConfigEspacios, type TipoRecintoConfig, type ClaseSuperficie,
@@ -30,6 +31,7 @@ export function ConfigEspacios({ onCerrar }: { onCerrar: () => void }) {
   const [resumen, setResumen] = useState<Awaited<ReturnType<typeof resumenValores>> | null>(null);
   const [error, setError] = useState('');
   const [aviso, setAviso] = useState('');
+  const [revisandoFormato, setRevisandoFormato] = useState(false);
 
   const cargarResumen = useCallback(() => {
     resumenValores().then(setResumen).catch(e => setError(e instanceof Error ? e.message : String(e)));
@@ -70,7 +72,7 @@ export function ConfigEspacios({ onCerrar }: { onCerrar: () => void }) {
 
       <div className="flex flex-wrap gap-2">
         {PESTANAS.map(p => (
-          <button key={p.id} type="button" onClick={() => { setPestana(p.id); setAviso(''); setError(''); }}
+          <button key={p.id} type="button" onClick={() => { setPestana(p.id); setAviso(''); setError(''); setRevisandoFormato(false); }}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold border ${pestana === p.id ? 'bg-teal-700 text-white border-teal-700' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
             <p.icono className="w-3.5 h-3.5" /> {p.nombre}
           </button>
@@ -81,9 +83,32 @@ export function ConfigEspacios({ onCerrar }: { onCerrar: () => void }) {
       {error && <Mensaje tipo="error" texto={error} onCerrar={() => setError('')} />}
       {aviso && <Mensaje tipo="ok" texto={aviso} onCerrar={() => setAviso('')} />}
 
-      {(pestana === 'tipos' || pestana === 'usos' || pestana === 'unidades') && (
+      {(pestana === 'tipos' || pestana === 'usos' || pestana === 'unidades') && resumen && revisandoFormato && (
+        <RevisionFormato
+          key={pestana}
+          campo={pestana === 'tipos' ? 'nombre' : pestana === 'usos' ? 'uso' : 'unidad'}
+          enUso={pestana === 'tipos' ? resumen.tipos : pestana === 'usos' ? resumen.usos : resumen.unidades}
+          tipos={resumen.tipos.map(v => v.valor)}
+          onCerrar={() => setRevisandoFormato(false)}
+          onAplicado={(mapa, n) => {
+            // Las listas oficiales siguen a los nombres nuevos.
+            const renombrar = (lista: string[]) => [...new Set(lista.map(v => (v in mapa ? mapa[v] : v)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+            if (pestana === 'tipos') {
+              const tipos = config.tipos.map(t => ({ ...t, nombre: t.nombre in mapa ? mapa[t.nombre] : t.nombre })).filter(t => t.nombre);
+              guardar({ ...config, tipos: tipos.filter((t, i) => tipos.findIndex(x => x.nombre === t.nombre) === i) });
+            } else if (pestana === 'usos') guardar({ ...config, usos: renombrar(config.usos) });
+            else guardar({ ...config, unidades: renombrar(config.unidades) });
+            setAviso(`Formato aplicado: ${Object.keys(mapa).length} nombre(s) corregidos en ${n} recinto(s).`);
+            setRevisandoFormato(false);
+            cargarResumen();
+          }}
+        />
+      )}
+
+      {(pestana === 'tipos' || pestana === 'usos' || pestana === 'unidades') && !revisandoFormato && (
         !resumen ? <Cargando /> : (
           <ListaOficial
+            onRevisarFormato={isAdmin ? () => setRevisandoFormato(true) : undefined}
             key={pestana}
             enUso={pestana === 'tipos' ? resumen.tipos : pestana === 'usos' ? resumen.usos : resumen.unidades}
             oficiales={pestana === 'tipos' ? config.tipos.map(t => t.nombre) : pestana === 'usos' ? config.usos : config.unidades}
@@ -121,7 +146,8 @@ export function ConfigEspacios({ onCerrar }: { onCerrar: () => void }) {
 
 // ── Listas oficiales (tipos, usos, unidades) ──
 
-function ListaOficial({ enUso, oficiales, editable, onOficiales, onUnificar, columnasExtra }: {
+function ListaOficial({ enUso, oficiales, editable, onOficiales, onUnificar, columnasExtra, onRevisarFormato }: {
+  onRevisarFormato?: () => void;
   enUso: ValorEnUso[];
   oficiales: string[];
   editable: boolean;
@@ -171,6 +197,12 @@ function ListaOficial({ enUso, oficiales, editable, onOficiales, onUnificar, col
         <label className="ml-auto flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg">
           <Search className="w-3.5 h-3.5 text-slate-400" /><input value={filtro} onChange={e => setFiltro(e.target.value)} placeholder="Filtrar" className="outline-none w-40" />
         </label>
+        {onRevisarFormato && (
+          <button type="button" onClick={onRevisarFormato} title="Propone el formato correcto (tildes, mayúsculas, abreviaturas, duplicados) para todos los valores; usted revisa y aplica"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-teal-700 hover:bg-teal-800 font-bold text-white">
+            <Wand2 className="w-3.5 h-3.5" /> Revisar formato
+          </button>
+        )}
         {editable && noOficiales > 0 && (
           <button type="button" onClick={() => onOficiales([...new Set([...oficiales, ...enUso.map(v => v.valor)])].sort((a, b) => a.localeCompare(b, 'es')))}
             className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-teal-300 bg-white font-bold text-teal-800 hover:bg-teal-50">
