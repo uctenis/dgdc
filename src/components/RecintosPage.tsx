@@ -477,7 +477,7 @@ export function RecintosPage() {
           )}
 
           {vista === 'plano' && (
-            <PlanoInteractivo documentos={documentos} recintos={activos} destacado={resaltado}
+            <PlanoInteractivo edificioCodigo={edificio} pisos={pisos} documentos={documentos} recintos={activos} destacado={resaltado}
               onEditarRecinto={r => setRecintoEditando(r)} onRecargar={cargar} />
           )}
 

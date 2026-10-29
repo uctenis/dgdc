@@ -228,11 +228,83 @@ export async function listarDocumentos(edificioCodigo: string): Promise<Document
   return data as DocumentoEdificio[];
 }
 
-/** Registra un documento. Con `reemplaza_a`, es una nueva versión y la anterior deja de estar vigente. */
+/** Registra un documento. Con `reemplaza_a`, es una nueva versión, la anterior deja de estar vigente y conserva sus zonas demarcadas. */
 export async function registrarDocumento(documento: Omit<DocumentoEdificio, 'id' | 'vigente' | 'creado_en' | 'creado_por'>): Promise<DocumentoEdificio> {
-  const { data, error } = await supabase.from('documentos').insert({ ...documento, vigente: true }).select().single();
+  let escala = documento.escala ?? null;
+  if (documento.reemplaza_a && !escala) {
+    const ant = await supabase.from('documentos').select('escala').eq('id', documento.reemplaza_a).maybeSingle();
+    escala = (ant.data as { escala?: string | null } | null)?.escala || null;
+  }
+  const { data, error } = await supabase.from('documentos').insert({ ...documento, escala, vigente: true }).select().single();
   if (error) throw errorDe(error, 'No se pudo registrar el documento');
-  return data as DocumentoEdificio;
+  const creado = data as DocumentoEdificio;
+  if (documento.reemplaza_a) {
+    await copiarZonasEntreLaminas(documento.reemplaza_a, creado.id).catch(() => {});
+  }
+  return creado;
+}
+
+/** Crea el registro del plano y sube su PDF al visor en un solo paso. */
+export async function crearYSubirLamina(params: {
+  edificio_codigo: string;
+  archivo: File;
+  piso_id?: string | null;
+  codigo_lamina?: string | null;
+  titulo?: string;
+  especialidad?: DocumentoEdificio['especialidad'];
+  drive_url?: string;
+}): Promise<DocumentoEdificio> {
+  const sinExt = params.archivo.name.replace(/\.pdf$/i, '').trim();
+  const mLamina = /\b(L\d+|A-\d+|P\d+)\b/i.exec(sinExt);
+  const codigoAuto = params.codigo_lamina?.trim() || (mLamina ? mLamina[1].toUpperCase() : null);
+  const tituloAuto = params.titulo?.trim() || sinExt || 'Plano de planta';
+
+  const doc = await registrarDocumento({
+    edificio_codigo: params.edificio_codigo,
+    piso_id: params.piso_id || null,
+    titulo: tituloAuto,
+    tipo: 'Plano',
+    especialidad: params.especialidad || 'Arquitectura',
+    formato: 'PDF',
+    codigo_lamina: codigoAuto,
+    version: '1',
+    fecha_documento: new Date().toISOString().slice(0, 10),
+    reemplaza_a: null,
+    drive_url: params.drive_url?.trim() || '',
+    proyecto_codigo: null,
+    observaciones: `Archivo en Drive: ${params.archivo.name}`,
+    archivo_visor: null,
+    escala: null,
+  });
+
+  const ruta = await subirLaminaVisor(doc, params.archivo);
+  return { ...doc, archivo_visor: ruta };
+}
+
+/** Asocia una lámina a un piso del edificio (o la desasocia si pisoId es null). */
+export async function asignarPisoALamina(documentoId: string, pisoId: string | null): Promise<void> {
+  const { error } = await supabase.from('documentos').update({ piso_id: pisoId }).eq('id', documentoId);
+  if (error) throw errorDe(error, 'No se pudo asociar el piso a la lámina');
+}
+
+/** Deja una lámina como no vigente para quitarla del visor sin perder su historial. */
+export async function archivarLamina(documentoId: string): Promise<void> {
+  const { error } = await supabase.from('documentos').update({ vigente: false }).eq('id', documentoId);
+  if (error) throw errorDe(error, 'No se pudo quitar la lámina');
+}
+
+/** Copia las zonas dibujadas de una lámina anterior a su nueva versión. */
+export async function copiarZonasEntreLaminas(origenId: string, destinoId: string): Promise<void> {
+  const zonas = await listarZonas(origenId);
+  if (!zonas.length) return;
+  const nuevas = zonas.map(z => ({
+    documento_id: destinoId,
+    recinto_id: z.recinto_id,
+    pagina: z.pagina,
+    poligono: z.poligono,
+  }));
+  const { error } = await supabase.from('zonas_recinto').upsert(nuevas, { onConflict: 'documento_id,recinto_id' });
+  if (error) throw errorDe(error, 'No se pudieron transferir las zonas a la nueva versión');
 }
 
 // ── Visor de planos ──

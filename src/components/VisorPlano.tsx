@@ -3,7 +3,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import {
   Loader2, ZoomIn, ZoomOut, Maximize2, Minimize2, Scan, Pencil, Trash2, MapPin, CheckCircle2, Circle, X, Undo2, Check, AlertTriangle, Wand2, Tag, BoxSelect,
 } from 'lucide-react';
-import type { DocumentoEdificio, Recinto, ZonaRecinto } from '../types/recintos';
+import type { DocumentoEdificio, Piso, Recinto, ZonaRecinto } from '../types/recintos';
 import { descargarLamina, eliminarZona, guardarEscalaDocumento, guardarZona, listarZonas } from '../services/recintos';
 import { areaRealM2, centroide, colorDeCategoria, limites, puntoEnPoligono, type Punto } from '../utils/geometriaPlano';
 import { predibujarRecintos } from '../utils/predibujoPlano';
@@ -21,6 +21,7 @@ const m2 = (n?: number | null) => (n || n === 0 ? `${n.toLocaleString('es-CL', {
 
 interface Props {
   documento: DocumentoEdificio;
+  pisos?: Piso[];
   recintos: Recinto[];
   /** Recinto a destacar al abrir (por ejemplo, el que se encontró con el buscador). */
   destacado?: string | null;
@@ -34,7 +35,11 @@ interface Props {
  * escritos en el plano. Cada contorno se corrige arrastrando sus vértices o se redibuja (clic en cada esquina), y el
  * área medida en el plano se compara con la superficie registrada.
  */
-export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, onEscalaGuardada }: Props) {
+export function VisorPlano({ documento, pisos = [], recintos, destacado, onEditarRecinto, onEscalaGuardada }: Props) {
+  const [pisoLista, setPisoLista] = useState<string>(documento.piso_id || '');
+  const [estadoLista, setEstadoLista] = useState<'todos' | 'pendientes' | 'ubicados'>('todos');
+  const [filtroRecinto, setFiltroRecinto] = useState('');
+  useEffect(() => { setPisoLista(documento.piso_id || ''); }, [documento.piso_id]);
   const lienzo = useRef<HTMLCanvasElement>(null);
   const marco = useRef<HTMLDivElement>(null);
   const [pdf, setPdf] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
@@ -652,21 +657,46 @@ export function VisorPlano({ documento, recintos, destacado, onEditarRecinto, on
             </p>
           )}
           <div className="flex-1 min-h-0 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col">
-            <p className="px-3 py-2 border-b border-slate-100 font-bold text-slate-700">Recintos <span className="font-normal text-slate-400">· {ubicados} de {recintos.length} en el plano</span></p>
+            <div className="p-2.5 border-b border-slate-100 space-y-1.5">
+              <p className="font-bold text-slate-700">Recintos <span className="font-normal text-slate-400">· {ubicados} de {recintos.length} en el plano</span></p>
+              <div className="flex gap-1">
+                {pisos.length > 1 && (
+                  <select value={pisoLista} onChange={e => setPisoLista(e.target.value)} className="flex-1 min-w-0 px-2 py-1 border border-slate-300 rounded-lg text-[11px]">
+                    <option value="">Todos los pisos ({recintos.length})</option>
+                    {pisos.map(p => <option key={p.id} value={p.id}>{p.codigo} · {p.nombre}</option>)}
+                  </select>
+                )}
+                <select value={estadoLista} onChange={e => setEstadoLista(e.target.value as 'todos' | 'pendientes' | 'ubicados')} className="px-2 py-1 border border-slate-300 rounded-lg text-[11px]">
+                  <option value="todos">Todos</option>
+                  <option value="pendientes">Pendientes ({recintos.length - ubicados})</option>
+                  <option value="ubicados">Ubicados ({ubicados})</option>
+                </select>
+              </div>
+              <input value={filtroRecinto} onChange={e => setFiltroRecinto(e.target.value)} placeholder="Buscar código o nombre…"
+                className="w-full px-2 py-1 border border-slate-300 rounded-lg text-[11px]" />
+            </div>
             <ul className="flex-1 overflow-y-auto divide-y divide-slate-50">
-              {recintos.map(r => {
-                const ubicado = zonaDe.has(r.id);
-                return (
-                  <li key={r.id}>
-                    <button type="button" onClick={() => { setSeleccion(r.id); if (ubicado) enfocar(r.id); }}
-                      className={`w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-slate-50 ${r.id === seleccion ? 'bg-amber-50' : ''}`}>
-                      {ubicado ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> : <Circle className="w-3.5 h-3.5 text-slate-300 shrink-0" />}
-                      <span className="font-mono font-bold text-[11px]">{r.codigo}</span>
-                      <span className="truncate text-slate-600">{r.nombre}</span>
-                    </button>
-                  </li>
-                );
-              })}
+              {recintos
+                .filter(r => !pisoLista || r.piso_id === pisoLista)
+                .filter(r => estadoLista === 'todos' ? true : estadoLista === 'ubicados' ? zonaDe.has(r.id) : !zonaDe.has(r.id))
+                .filter(r => {
+                  const q = filtroRecinto.trim().toLowerCase();
+                  if (!q) return true;
+                  return r.codigo.toLowerCase().includes(q) || r.nombre.toLowerCase().includes(q) || (r.uso || '').toLowerCase().includes(q);
+                })
+                .map(r => {
+                  const ubicado = zonaDe.has(r.id);
+                  return (
+                    <li key={r.id}>
+                      <button type="button" onClick={() => { setSeleccion(r.id); if (ubicado) enfocar(r.id); }}
+                        className={`w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-slate-50 ${r.id === seleccion ? 'bg-amber-50' : ''}`}>
+                        {ubicado ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> : <Circle className="w-3.5 h-3.5 text-slate-300 shrink-0" />}
+                        <span className="font-mono font-bold text-[11px]">{r.codigo}</span>
+                        <span className="truncate text-slate-600">{r.nombre}</span>
+                      </button>
+                    </li>
+                  );
+                })}
             </ul>
           </div>
         </aside>

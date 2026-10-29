@@ -24,3 +24,21 @@ export function laminaDeArchivo(nombreArchivo: string, documentos: DocumentoEdif
   return documentos.find(d => d.vigente && d.tipo === 'Plano' && d.edificio_codigo.toUpperCase() === edificio
     && (d.codigo_lamina || '').toUpperCase().replace(/^.*-(L\d+)$/, '$1') === lamina);
 }
+
+/**
+ * Si un PDF aún no está registrado en la base, extrae su edificio y código de lámina a partir del nombre del archivo
+ * (por ejemplo «CSN11-L01 260113.pdf» → edificio CSN11, lámina L01) para poder crearlo y subirlo en un solo paso.
+ */
+export function inferirDatosLamina(nombreArchivo: string, siglaCampus: string): { edificio_codigo: string; codigo_lamina: string | null; titulo: string } | null {
+  const sinExt = nombreArchivo.replace(/\.pdf$/i, '').trim();
+  const m = /^([A-Z]{2,4}[A-Z0-9_]*?)(?:[-_\s]+(L\d+|A-\d+))?\b/i.exec(sinExt);
+  if (!m) return null;
+  const edificio = m[1].toUpperCase();
+  if (siglaCampus && !edificio.startsWith(siglaCampus.toUpperCase())) return null;
+  const codigoLamina = m[2] ? m[2].toUpperCase() : null;
+  return {
+    edificio_codigo: edificio,
+    codigo_lamina: codigoLamina,
+    titulo: codigoLamina ? `Lámina ${codigoLamina} (${edificio})` : sinExt,
+  };
+}

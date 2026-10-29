@@ -1,13 +1,13 @@
 import { useRef, useState } from 'react';
 import { Loader2, Upload, CheckCircle2, AlertTriangle, X } from 'lucide-react';
-import { listarLaminasDeCampus, subirLaminaVisor } from '../services/recintos';
-import { laminaDeArchivo } from '../utils/emparejarLaminas';
+import { crearYSubirLamina, listarLaminasDeCampus, subirLaminaVisor } from '../services/recintos';
+import { inferirDatosLamina, laminaDeArchivo } from '../utils/emparejarLaminas';
 
 interface Resultado { archivo: string; destino?: string; error?: string }
 
 /**
  * Sube de una vez los PDF de las láminas de un campus (descargados de su carpeta en Drive). Cada archivo se asocia a
- * la lámina registrada que le corresponde y queda como su copia para el visor.
+ * la lámina registrada que le corresponde (o la crea automáticamente si el nombre indica el edificio) y queda en el visor.
  */
 export function SubirLaminasCampus({ siglaCampus, onListo }: { siglaCampus: string; onListo?: () => void }) {
   const entrada = useRef<HTMLInputElement>(null);
@@ -22,11 +22,26 @@ export function SubirLaminasCampus({ siglaCampus, onListo }: { siglaCampus: stri
       const documentos = await listarLaminasDeCampus(siglaCampus);
       for (const archivo of archivos) {
         const documento = laminaDeArchivo(archivo.name, documentos);
-        if (!documento) { lista.push({ archivo: archivo.name, error: 'No hay una lámina registrada para este archivo' }); continue; }
         setSubiendo(`Subiendo ${archivo.name}…`);
         try {
-          await subirLaminaVisor(documento, archivo);
-          lista.push({ archivo: archivo.name, destino: `${documento.edificio_codigo} · ${documento.codigo_lamina || documento.titulo}` });
+          if (documento) {
+            await subirLaminaVisor(documento, archivo);
+            lista.push({ archivo: archivo.name, destino: `${documento.edificio_codigo} · ${documento.codigo_lamina || documento.titulo}` });
+          } else {
+            const inferido = inferirDatosLamina(archivo.name, siglaCampus);
+            if (!inferido) {
+              lista.push({ archivo: archivo.name, error: 'No se pudo identificar el edificio (nombre esperado: EDIFICIO-L01.pdf)' });
+              continue;
+            }
+            const creada = await crearYSubirLamina({
+              edificio_codigo: inferido.edificio_codigo,
+              archivo,
+              codigo_lamina: inferido.codigo_lamina,
+              titulo: inferido.titulo,
+            });
+            documentos.push(creada);
+            lista.push({ archivo: archivo.name, destino: `${creada.edificio_codigo} · ${creada.codigo_lamina || creada.titulo} (nueva)` });
+          }
         } catch (e) {
           lista.push({ archivo: archivo.name, error: e instanceof Error ? e.message : String(e) });
         }
