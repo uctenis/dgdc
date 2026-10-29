@@ -8,6 +8,7 @@ import { descargarLamina, eliminarZona, guardarEscalaDocumento, guardarZona, lis
 import { ajustarPuntoOrtogonal, areaPoligono, areaRealM2, centroide, colorDeCategoria, denominadorEscala, estimarEscala, limites, puntoEnPoligono, type Punto } from '../utils/geometriaPlano';
 import { detectarRecintoEnPunto, predibujarRecintos } from '../utils/predibujoPlano';
 import { recortarContraVecinos } from '../utils/sinSuperposicion';
+import { CopiarContornos } from './CopiarContornos';
 import { comoTitulo } from '../utils/texto';
 import { getConfigEspacios, tipoConfigurado } from '../data/espaciosConfig';
 
@@ -598,6 +599,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
           className="flex items-center gap-1 px-2 py-1 rounded-lg border border-teal-300 font-bold text-teal-800 hover:bg-teal-50 disabled:opacity-40">
           {predibujando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />} Predibujar recintos
         </button>
+        <CopiarContornos documento={documento} pdf={pdf} pagina={pagina} zonas={zonasPagina} recintos={recintos} />
         <button type="button" onClick={() => { setModoVarios(m => !m); setVarios(new Set()); setSeleccion(null); }}
           title="Arrastre un rectángulo sobre el plano (por ejemplo, un ala) o haga clic en cada recinto para sumar sus superficies. Alt + arrastrar mueve el plano."
           className={`flex items-center gap-1 px-2 py-1 rounded-lg border font-bold ${modoVarios ? 'bg-slate-900 border-slate-900 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
