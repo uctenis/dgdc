@@ -6,7 +6,7 @@ import {
 import type { DocumentoEdificio, Piso, Recinto, ZonaRecinto } from '../types/recintos';
 import { descargarLamina, eliminarZona, guardarEscalaDocumento, guardarZona, listarZonas } from '../services/recintos';
 import { areaRealM2, centroide, colorDeCategoria, limites, puntoEnPoligono, type Punto } from '../utils/geometriaPlano';
-import { predibujarRecintos } from '../utils/predibujoPlano';
+import { detectarRecintoEnPunto, predibujarRecintos } from '../utils/predibujoPlano';
 import { comoTitulo } from '../utils/texto';
 import { getConfigEspacios, tipoConfigurado } from '../data/espaciosConfig';
 
@@ -32,8 +32,8 @@ interface Props {
 /**
  * Visor de una lámina: el plano en alta resolución con zoom y desplazamiento, y encima el contorno de cada recinto,
  * coloreado por uso, estado o unidad. Al abrir una lámina sin recintos ubicados, los predibuja a partir de los códigos
- * escritos en el plano. Cada contorno se corrige arrastrando sus vértices o se redibuja (clic en cada esquina), y el
- * área medida en el plano se compara con la superficie registrada.
+ * escritos en el plano. Cada contorno se puede detectar con un solo clic dentro de los muros (varita automática),
+ * corregir arrastrando sus vértices o redibujar.
  */
 export function VisorPlano({ documento, pisos = [], recintos, destacado, onEditarRecinto, onEscalaGuardada }: Props) {
   const [pisoLista, setPisoLista] = useState<string>(documento.piso_id || '');
@@ -52,7 +52,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
   const [seleccion, setSeleccion] = useState<string | null>(destacado || null);
   const [encima, setEncima] = useState<{ id: string; x: number; y: number } | null>(null);
   const [dibujando, setDibujando] = useState<{ recintoId: string; puntos: Punto[] } | null>(null);
-  const [formaDibujo, setFormaDibujo] = useState<'rectangulo' | 'poligono'>('rectangulo');
+  const [formaDibujo, setFormaDibujo] = useState<'detectar' | 'rectangulo' | 'poligono'>('detectar');
   const [continuarSiguiente, setContinuarSiguiente] = useState(true);
   const [cursor, setCursor] = useState<Punto | null>(null);
   const [modoColor, setModoColor] = useState<ModoColor>('tipo');
@@ -171,7 +171,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
       }
       setZonas(prev => [...prev.filter(z => !nuevas.some(n => n.recinto_id === z.recinto_id)), ...nuevas]);
       if (nuevas.length) setAviso(`Se predibujaron ${nuevas.length} recinto(s) a partir de los códigos del plano. Revíselos: arrastre los vértices para corregir un contorno.`);
-      else if (!automatico) setAviso('No se encontraron en la lámina los códigos de los recintos que faltan ubicar. Puede dibujarlos a mano con «Ubicar en plano».');
+      else if (!automatico) setAviso('No se encontraron en la lámina los códigos de los recintos que faltan ubicar. Pulse 📍 en un recinto y haga 1 clic dentro de él en el plano para detectarlo solo.');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -249,6 +249,27 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
       setGuardando(false);
     }
   }, [documento.id, pagina, recintosFiltrados, continuarSiguiente, zonaDe]);
+
+  /** Detecta automáticamente los muros y cubículos desde un punto dentro del recinto y guarda el contorno. */
+  const detectarYGuardarEnPunto = useCallback(async (recintoId: string, punto: Punto) => {
+    if (!pdf || guardando) return;
+    setGuardando(true); setError(''); setAviso('');
+    try {
+      const page = await pdf.getPage(pagina);
+      const recinto = recintoPorId.get(recintoId);
+      const vecinos = zonasPagina.filter(z => z.recinto_id !== recintoId).map(z => z.poligono);
+      const poligono = await detectarRecintoEnPunto(page, punto, recinto, vecinos, escala);
+      if (!poligono || poligono.length < 3) {
+        setAviso('No se encontró un recinto cerrado por muros en ese punto. Haga clic más al centro del recinto o cambie a «Rectángulo».');
+        return;
+      }
+      await guardarPoligonoDibujado(recintoId, poligono);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGuardando(false);
+    }
+  }, [pdf, guardando, pagina, recintoPorId, zonasPagina, escala, guardarPoligonoDibujado]);
 
   const rectanguloAPoligono = (a: Punto, b: Punto): Punto[] => {
     const x0 = Math.min(Math.max(Math.min(a[0], b[0]), 0), 1);
@@ -389,7 +410,14 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
       if (z) setVarios(prev => { const n = new Set(prev); if (n.has(z.recinto_id)) n.delete(z.recinto_id); else n.add(z.recinto_id); return n; });
       return;
     }
-    if (dibujando) { setDibujando(d => d && { ...d, puntos: [...d.puntos, p] }); return; }
+    if (dibujando) {
+      if (formaDibujo === 'detectar') {
+        void detectarYGuardarEnPunto(dibujando.recintoId, p);
+        return;
+      }
+      setDibujando(d => d && { ...d, puntos: [...d.puntos, p] });
+      return;
+    }
     if (editandoContorno) { setVerticeMarcado(null); return; }   // mientras se edita, un clic no cambia de recinto
     setSeleccion(zonaEn(p)?.recinto_id || null);
   };
@@ -653,23 +681,31 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
           })()}
 
           {dibujando && (
-            <div className="absolute left-1/2 -translate-x-1/2 top-3 flex flex-wrap items-center gap-2 bg-teal-900 text-white rounded-xl px-3 py-2 shadow-xl max-w-[94%]" onPointerDown={e => e.stopPropagation()}>
+            <div className="absolute left-1/2 -translate-x-1/2 top-3 flex flex-wrap items-center gap-2 bg-teal-900 text-white rounded-xl px-3 py-2 shadow-xl max-w-[95%]" onPointerDown={e => e.stopPropagation()}>
               <div className="flex rounded-lg bg-teal-950/60 p-0.5">
-                <button type="button" onClick={() => setFormaDibujo('rectangulo')}
+                <button type="button" onClick={() => { setFormaDibujo('detectar'); setDibujando(d => d && { ...d, puntos: [] }); }}
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-[11px] ${formaDibujo === 'detectar' ? 'bg-white text-teal-950' : 'text-teal-200 hover:text-white'}`}
+                  title="Detecta automáticamente los muros, cierra las puertas y suma los cubículos interiores con 1 solo clic">
+                  <Wand2 className="w-3 h-3" /> Automático (1 clic)
+                </button>
+                <button type="button" onClick={() => { setFormaDibujo('rectangulo'); setDibujando(d => d && { ...d, puntos: [] }); }}
                   className={`flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-[11px] ${formaDibujo === 'rectangulo' ? 'bg-white text-teal-950' : 'text-teal-200 hover:text-white'}`}>
                   <Square className="w-3 h-3" /> Rectángulo
                 </button>
-                <button type="button" onClick={() => setFormaDibujo('poligono')}
+                <button type="button" onClick={() => { setFormaDibujo('poligono'); setDibujando(d => d && { ...d, puntos: [] }); }}
                   className={`flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-[11px] ${formaDibujo === 'poligono' ? 'bg-white text-teal-950' : 'text-teal-200 hover:text-white'}`}>
                   <Pencil className="w-3 h-3" /> Polígono
                 </button>
               </div>
               <span>
                 <strong>{recintoPorId.get(dibujando.recintoId)?.codigo}</strong> ({recintoPorId.get(dibujando.recintoId)?.nombre}) ·{' '}
-                {formaDibujo === 'rectangulo'
-                  ? 'arrastre de esquina a esquina (o 2 clics)'
-                  : `clic en cada esquina (${dibujando.puntos.length})`}
+                {formaDibujo === 'detectar'
+                  ? (guardando ? 'detectando muros…' : 'haga 1 clic dentro del recinto en el plano (detecta muros y cubículos solo)')
+                  : formaDibujo === 'rectangulo'
+                    ? 'arrastre de esquina a esquina (o 2 clics)'
+                    : `clic en cada esquina (${dibujando.puntos.length})`}
               </span>
+              {formaDibujo === 'detectar' && guardando && <Loader2 className="w-4 h-4 animate-spin text-amber-300" />}
               {formaDibujo === 'poligono' && (
                 <>
                   <button type="button" onClick={() => setDibujando(d => d && { ...d, puntos: d.puntos.slice(0, -1) })} title="Deshacer último punto (Retroceso)" className="p-1 rounded hover:bg-white/15"><Undo2 className="w-4 h-4" /></button>
@@ -759,15 +795,15 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
                     {editandoContorno ? <><Check className="w-3.5 h-3.5" /> Listo</> : <><Pencil className="w-3.5 h-3.5" /> Editar contorno</>}
                   </button>
                 )}
-                <button type="button" onClick={() => setDibujando({ recintoId: sel.id, puntos: [] })} className="flex items-center gap-1 px-2 py-1 rounded-lg border border-teal-300 font-bold text-teal-800 hover:bg-teal-50">
-                  <MapPin className="w-3.5 h-3.5" /> {zonaDe.has(sel.id) ? 'Redibujar' : 'Ubicar en plano'}
+                <button type="button" onClick={() => { setFormaDibujo('detectar'); setDibujando({ recintoId: sel.id, puntos: [] }); }} className="flex items-center gap-1 px-2 py-1 rounded-lg border border-teal-300 font-bold text-teal-800 hover:bg-teal-50">
+                  <Wand2 className="w-3.5 h-3.5" /> {zonaDe.has(sel.id) ? 'Redetectar' : 'Ubicar (1 clic)'}
                 </button>
                 {zonaDe.has(sel.id) && <button type="button" title="Quitar del plano" onClick={() => void quitarDelPlano(sel.id)} className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50"><Trash2 className="w-4 h-4" /></button>}
               </div>
             </div>
           ) : (
             <p className="bg-white border border-dashed border-slate-300 rounded-xl p-3 text-slate-500">
-              Haga clic en un recinto del plano o de la lista. Para ubicar uno rápido, pulse el ícono 📍 al lado del recinto y arrastre un rectángulo en el plano.
+              Haga clic en un recinto del plano o de la lista. Para ubicar uno automáticamente (detectando muros y cubículos como el baño de Curacautín), pulse 🪄 al lado del recinto y haga <strong>1 clic dentro de él</strong> en el plano.
             </p>
           )}
           <div className="flex-1 min-h-0 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col">
@@ -802,10 +838,10 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
                       <span className="truncate text-slate-600">{r.nombre}</span>
                     </button>
                     <button type="button"
-                      title={ubicado ? 'Redibujar en el plano' : 'Ubicar en el plano'}
+                      title={ubicado ? 'Redetectar o redibujar en el plano' : 'Ubicar con 1 clic en el plano (detecta muros solo)'}
                       onClick={() => { setSeleccion(r.id); setDibujando({ recintoId: r.id, puntos: [] }); }}
                       className={`mr-2 p-1 rounded-md shrink-0 ${enDibujo ? 'bg-teal-700 text-white' : ubicado ? 'text-slate-400 hover:text-teal-700 hover:bg-teal-50' : 'text-teal-700 hover:bg-teal-50'}`}>
-                      <MapPin className="w-3.5 h-3.5" />
+                      {formaDibujo === 'detectar' ? <Wand2 className="w-3.5 h-3.5" /> : <MapPin className="w-3.5 h-3.5" />}
                     </button>
                   </li>
                 );
