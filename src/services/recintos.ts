@@ -135,8 +135,27 @@ export async function listarUsos(): Promise<string[]> {
   return [...new Set((data as { uso: string }[]).map(r => r.uso.trim().toUpperCase()).filter(Boolean))].sort((x, y) => x.localeCompare(y, 'es'));
 }
 
+/** Columnas del recinto que se pueden escribir. Las demás las pone la base (fechas, autor y la columna de búsqueda). */
+const COLUMNAS_EDITABLES = [
+  'edificio_codigo', 'piso_id', 'codigo', 'nombre', 'uso', 'superficie_m2', 'superficie_oguc_m2', 'capacidad', 'estado',
+  'unidad_usuaria', 'ocupantes', 'foto_url', 'observaciones', 'atributos', 'origen',
+] as const;
+
+/** Lo que se envía a la base al guardar un recinto: solo columnas editables y sin ocupantes vacíos. */
+export function datosParaGuardar(recinto: Partial<Recinto>): Partial<Recinto> {
+  const datos: Record<string, unknown> = {};
+  for (const c of COLUMNAS_EDITABLES) if (recinto[c] !== undefined) datos[c] = recinto[c];
+  if (Array.isArray(recinto.ocupantes)) {
+    datos.ocupantes = recinto.ocupantes
+      .map(o => ({ nombre: (o.nombre || '').trim(), cargo: o.cargo?.trim() || null, unidad: o.unidad?.trim() || null }))
+      .filter(o => o.nombre);
+  }
+  return datos as Partial<Recinto>;
+}
+
 export async function guardarRecinto(recinto: Omit<Recinto, 'id'> & { id?: string }): Promise<Recinto> {
-  const { id, modificado_en: _modificadoEn, modificado_por: _modificadoPor, ...datos } = recinto;
+  const id = recinto.id;
+  const datos = datosParaGuardar(recinto);
   const consulta = id
     ? supabase.from('recintos').update(datos).eq('id', id).select().single()
     : supabase.from('recintos').insert(datos).select().single();
