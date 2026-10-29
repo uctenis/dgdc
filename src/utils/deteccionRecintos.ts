@@ -476,3 +476,107 @@ export function lineasDeCierre(segmentos: [number, number, number, number][], mi
   });
   return lineas;
 }
+
+type Tramo = [number, number, number, number];
+
+/** Fracción de los `largo` píxeles del rayo (origen `o`, dirección `d`) que corre junto a alguna línea paralela. */
+function cubiertoPorLineas(o: Punto, d: Punto, largo: number, lineas: Tramo[], holgura: number): number {
+  const cubiertos = new Uint8Array(Math.max(1, Math.ceil(largo)));
+  for (const [x1, y1, x2, y2] of lineas) {
+    const lx = x2 - x1, ly = y2 - y1, ll = Math.hypot(lx, ly);
+    if (ll < 1 || Math.abs(d[0] * ly - d[1] * lx) / ll > 0.05) continue;   // no es paralela
+    if (Math.abs(d[0] * (y1 - o[1]) - d[1] * (x1 - o[0])) > holgura) continue;   // queda lejos del rayo
+    const a = d[0] * (x1 - o[0]) + d[1] * (y1 - o[1]), b = d[0] * (x2 - o[0]) + d[1] * (y2 - o[1]);
+    for (let t = Math.max(0, Math.floor(Math.min(a, b))); t < Math.min(cubiertos.length, Math.ceil(Math.max(a, b))); t++) cubiertos[t] = 1;
+  }
+  return cubiertos.reduce((s, v) => s + v, 0) / cubiertos.length;
+}
+
+/**
+ * Puentes que cierran los vanos de puertas y ventanas prolongando cada muro en su propia dirección hasta el muro
+ * siguiente. Sirve también para muros dibujados con contorno doble, cuyos extremos son esquinas y no puntas sueltas
+ * (ahí lineasDeCierre no encuentra qué unir). Un vano se cierra si mide hasta `maximo` píxeles, o hasta
+ * `maximoVentana` si a lo largo del vano corren líneas finas paralelas (el dibujo de una ventana, de las `lineas`) y
+ * lo que queda sin ellas (una puerta junto a la ventana) no pasa de `maximo`.
+ * Solo se prolongan tramos de al menos `largoMinimo` (no las tapas de los muros, que miden lo que su espesor).
+ */
+export function puentesDeVanos(muros: Tramo[], op: { minimo: number; maximo: number; largoMinimo: number; maximoVentana?: number; lineas?: Tramo[]; holgura?: number }): Tramo[] {
+  const alcance = Math.max(op.maximo, op.maximoVentana || 0);
+  const holgura = op.holgura ?? op.largoMinimo;
+  const junto = 1.5;   // distancia hasta la que dos extremos se consideran el mismo punto
+  const puentes: Tramo[] = [];
+  const hechos = new Set<string>();
+  muros.forEach(([ax, ay, bx, by], s) => {
+    const largoS = Math.hypot(bx - ax, by - ay);
+    if (largoS < op.largoMinimo) return;
+    for (const [o, otro] of [[[bx, by], [ax, ay]], [[ax, ay], [bx, by]]] as [Punto, Punto][]) {
+      const d: Punto = [(o[0] - otro[0]) / largoS, (o[1] - otro[1]) / largoS];
+      // Si otro tramo sigue en la misma dirección desde este extremo, aquí no termina el muro.
+      const tocan = muros.map((t, i) => i !== s && (Math.hypot(t[0] - o[0], t[1] - o[1]) < junto || Math.hypot(t[2] - o[0], t[3] - o[1]) < junto));
+      const sigue = muros.some((t, i) => {
+        if (!tocan[i]) return false;
+        const lejos: Punto = Math.hypot(t[0] - o[0], t[1] - o[1]) < junto ? [t[2], t[3]] : [t[0], t[1]];
+        const l = Math.hypot(lejos[0] - o[0], lejos[1] - o[1]);
+        return l > junto && ((lejos[0] - o[0]) * d[0] + (lejos[1] - o[1]) * d[1]) / l > 0.95;
+      });
+      if (sigue) continue;
+      // Primer muro que cruza el rayo (o que empieza más adelante sobre la misma línea).
+      let mejor = Infinity;
+      muros.forEach((t, i) => {
+        if (i === s || tocan[i]) return;
+        const ex = t[2] - t[0], ey = t[3] - t[1];
+        const den = d[0] * ey - d[1] * ex;
+        const wx = t[0] - o[0], wy = t[1] - o[1];
+        if (Math.abs(den) < 1e-9 * Math.hypot(ex, ey)) {
+          if (Math.abs(d[0] * wy - d[1] * wx) > junto) return;   // paralelo, en otra línea
+          const u = Math.min(...[wx * d[0] + wy * d[1], (t[2] - o[0]) * d[0] + (t[3] - o[1]) * d[1]].filter(v => v > 0));
+          if (u < mejor) mejor = u;
+          return;
+        }
+        const u = (wx * ey - wy * ex) / den;   // avance por el rayo
+        const v = (wx * d[1] - wy * d[0]) / den;   // posición en el tramo (0 a 1)
+        if (u > 0 && v >= -0.01 && v <= 1.01 && u < mejor) mejor = u;
+      });
+      if (mejor < op.minimo || mejor > alcance) continue;
+      if (mejor > op.maximo && (1 - cubiertoPorLineas(o, d, mejor, op.lineas || [], holgura)) * mejor > op.maximo) continue;
+      const fin: Punto = [o[0] + d[0] * mejor, o[1] + d[1] * mejor];
+      const clave = [o, fin].map(p => p.map(Math.round).join(',')).sort().join('|');
+      if (hechos.has(clave)) continue;
+      hechos.add(clave);
+      puentes.push([o[0], o[1], fin[0], fin[1]]);
+    }
+  });
+  return puentes;
+}
+
+/** Distancia de un punto a un tramo. */
+function distanciaATramo(p: Punto, [x1, y1, x2, y2]: Tramo): number {
+  const lx = x2 - x1, ly = y2 - y1, l2 = lx * lx + ly * ly;
+  const t = l2 ? Math.max(0, Math.min(1, ((p[0] - x1) * lx + (p[1] - y1) * ly) / l2)) : 0;
+  return Math.hypot(p[0] - x1 - t * lx, p[1] - y1 - t * ly);
+}
+
+/**
+ * Ventanas que van de un muro a otro: líneas finas de al menos `largoMinimo` con sus dos puntas sobre muros (a menos
+ * de `holgura`) y acompañadas de otra línea fina paralela a menos de `holgura` (el vidrio o el marco). Un mueble
+ * apoyado en un muro rara vez cumple las dos cosas. Se usan como cierre: el recinto termina en la ventana y no sigue
+ * hacia el alero o la terraza.
+ */
+export function ventanasEntreMuros(muros: Tramo[], finas: Tramo[], largoMinimo: number, holgura: number): Tramo[] {
+  const largas = finas.filter(([x1, y1, x2, y2]) => Math.hypot(x2 - x1, y2 - y1) >= largoMinimo);
+  const sobreMuro = (p: Punto) => muros.some(m => distanciaATramo(p, m) <= holgura);
+  return largas.filter((t, i) => {
+    const a: Punto = [t[0], t[1]], b: Punto = [t[2], t[3]];
+    if (!sobreMuro(a) || !sobreMuro(b)) return false;
+    const l = Math.hypot(b[0] - a[0], b[1] - a[1]), d: Punto = [(b[0] - a[0]) / l, (b[1] - a[1]) / l];
+    return largas.some((u, j) => {
+      if (j === i) return false;
+      const ux = u[2] - u[0], uy = u[3] - u[1], ul = Math.hypot(ux, uy);
+      if (Math.abs(d[0] * uy - d[1] * ux) / ul > 0.05) return false;
+      const separacion = Math.abs(d[0] * (u[1] - a[1]) - d[1] * (u[0] - a[0]));
+      if (separacion < 1 || separacion > holgura) return false;
+      const p = d[0] * (u[0] - a[0]) + d[1] * (u[1] - a[1]), q = d[0] * (u[2] - a[0]) + d[1] * (u[3] - a[1]);
+      return Math.min(l, Math.max(p, q)) - Math.max(0, Math.min(p, q)) >= 0.8 * l;
+    });
+  });
+}

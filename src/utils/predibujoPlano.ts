@@ -3,12 +3,14 @@
 // 0 a 1, como los de zonas_recinto.
 import type * as pdfjsLib from 'pdfjs-dist';
 import type { Recinto } from '../types/recintos';
-import { COLOR_CIERRE, detectarRecintos, lineasDeCierre, mapaDeTrazos, mejorSemilla, type MapaTrazos } from './deteccionRecintos';
-import { contextoSoloMuros, segmentosDeMuro } from './lienzoMuros';
+import { COLOR_CIERRE, detectarRecintos, lineasDeCierre, mapaDeTrazos, mejorSemilla, puentesDeVanos, ventanasEntreMuros, type MapaTrazos } from './deteccionRecintos';
+import { contextoSoloMuros, FRACCION_GROSOR_MURO, FRACCION_GROSOR_MURO_ESTRICTA, grosorDeMuro, proporcionTrazoIntermedio, type Segmento } from './lienzoMuros';
 import { getConfigEspacios } from '../data/espaciosConfig';
 import { centroide, denominadorEscala, type Punto } from './geometriaPlano';
 
 const LADO_MAYOR_PX = 2500;   // resolución de trabajo: suficiente para ver los muros sin hacer lenta la detección
+/** Ver proporcionTrazoIntermedio: en los baños CSN17 (solo la fachada) es 0,09; en la cabaña CSN15 (camas, sillón), 0,19. */
+const PROPORCION_MUEBLES_GRUESOS = 0.13;
 
 export interface ContornoDetectado {
   recinto_id: string;
@@ -73,8 +75,13 @@ interface CachePagina {
   factor: number;
   metrosPorPx: number;
   datosMuros: Uint8ClampedArray;
+  /** La lámina dibuja los muebles con trazo casi tan grueso como los muros: se intenta primero con murosConVanos. */
+  vanosPrimero: boolean;
+  /** Segundo intento (ver murosConVanos). */
+  datosMurosVanos?: Uint8ClampedArray;
   datosCompleto?: Uint8ClampedArray;
   murosSinCajas?: MapaTrazos;
+  murosVanosSinCajas?: MapaTrazos;
   completoSinCajas?: MapaTrazos;
 }
 
@@ -83,7 +90,7 @@ const cachePorPagina = new WeakMap<pdfjsLib.PDFPageProxy, CachePagina>();
 async function obtenerCachePagina(page: pdfjsLib.PDFPageProxy, escala?: string | null): Promise<CachePagina> {
   const parametros = getConfigEspacios().parametros;
   const den = denominadorEscala(escala) || denominadorEscala(parametros.escalaPorDefecto) || 100;
-  const claveEscala = `${den}|${parametros.largoMinimoMuroM}|${parametros.vanoMaximoM}`;
+  const claveEscala = `${den}|${parametros.vanoMaximoM}|${parametros.ventanaMaximaM}`;
   const existente = cachePorPagina.get(page);
   if (existente && existente.claveEscala === claveEscala) return existente;
 
@@ -94,24 +101,71 @@ async function obtenerCachePagina(page: pdfjsLib.PDFPageProxy, escala?: string |
   const metrosPorPx = ((0.0254 / 72) * den) / factor;
   const m = (metros: number) => metros / metrosPorPx;
 
-  let segmentos: ReturnType<typeof contextoSoloMuros>['segmentos'] = [], grosores: number[] = [];
+  // Muros: trazos rectos de al menos 1 m; los vanos entre los que tienen grosor de muro se cierran en línea recta.
+  let segmentos: Segmento[] = [], grosores: number[] = [];
+  let vanosPrimero = false;
   const datosMuros = await dibujar(page, viewport, ctx => {
-    const envuelto = contextoSoloMuros(ctx, m(parametros.largoMinimoMuroM));
+    const envuelto = contextoSoloMuros(ctx, m(1));
     segmentos = envuelto.segmentos; grosores = envuelto.grosores;
     return envuelto.ctx;
   }, ctx => {
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.strokeStyle = COLOR_CIERRE; ctx.lineWidth = 3; ctx.lineCap = 'round';
-    ctx.beginPath();
-    for (const [x1, y1, x2, y2] of lineasDeCierre(segmentosDeMuro(segmentos, grosores, ancho, alto), 3, m(parametros.vanoMaximoM), 6)) {
-      ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
-    }
-    ctx.stroke();
+    const minimo = grosorDeMuro(segmentos, grosores, ancho, alto) * FRACCION_GROSOR_MURO;
+    vanosPrimero = proporcionTrazoIntermedio(segmentos, grosores, ancho, alto) > PROPORCION_MUEBLES_GRUESOS;
+    trazarCierres(ctx, lineasDeCierre(segmentos.filter((s, i) => grosores[i] >= minimo && dentroDeLamina(s, ancho, alto)), 3, m(parametros.vanoMaximoM), 6));
   });
 
-  const nuevo: CachePagina = { claveEscala, ancho, alto, factor, metrosPorPx, datosMuros };
+  const nuevo: CachePagina = { claveEscala, ancho, alto, factor, metrosPorPx, datosMuros, vanosPrimero };
   cachePorPagina.set(page, nuevo);
   return nuevo;
+}
+
+/** Las líneas que cruzan media lámina son el marco o el rótulo, no muros. */
+const dentroDeLamina = (s: Segmento, ancho: number, alto: number) => Math.hypot(s[2] - s[0], s[3] - s[1]) < Math.max(ancho, alto) / 2;
+
+function trazarCierres(ctx: CanvasRenderingContext2D, lineas: Segmento[]) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.strokeStyle = COLOR_CIERRE; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath();
+  for (const [x1, y1, x2, y2] of lineas) { ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); }
+  ctx.stroke();
+}
+
+/**
+ * Segundo intento, para los recintos que no cierran con los muros de al menos 1 m: muros cortos (closets, jambas)
+ * reconocidos solo por su grosor, muros dibujados con contorno doble (sus extremos son esquinas, no puntas) y
+ * fachadas con ventanas, como en las cabañas a escala 1:50. Se dibuja solo cuando hace falta.
+ */
+async function murosConVanos(page: pdfjsLib.PDFPageProxy, cache: CachePagina): Promise<Uint8ClampedArray> {
+  if (cache.datosMurosVanos) return cache.datosMurosVanos;
+  const parametros = getConfigEspacios().parametros;
+  const { ancho, alto, factor, metrosPorPx } = cache;
+  const viewport = page.getViewport({ scale: factor });
+  const m = (metros: number) => metros / metrosPorPx;
+
+  // Todas las líneas rectas, para reconocer con qué grosor dibuja los muros esta lámina.
+  let todas: Segmento[] = [], grosores: number[] = [];
+  await dibujar(page, viewport, ctx => {
+    const envuelto = contextoSoloMuros(ctx, m(0.05));
+    todas = envuelto.segmentos; grosores = envuelto.grosores;
+    return envuelto.ctx;
+  });
+  const minimoMuro = grosorDeMuro(todas, grosores, ancho, alto) * FRACCION_GROSOR_MURO_ESTRICTA;
+  const finas = todas.filter((s, i) => grosores[i] < minimoMuro && dentroDeLamina(s, ancho, alto));
+
+  let segmentos: Segmento[] = [];
+  cache.datosMurosVanos = await dibujar(page, viewport, ctx => {
+    const envuelto = contextoSoloMuros(ctx, m(0.05), minimoMuro);
+    segmentos = envuelto.segmentos;
+    return envuelto.ctx;
+  }, ctx => {
+    const muros = segmentos.filter(s => dentroDeLamina(s, ancho, alto));
+    trazarCierres(ctx, [
+      ...lineasDeCierre(muros, 3, m(parametros.vanoMaximoM), 6),
+      ...puentesDeVanos(muros, { minimo: 3, maximo: m(parametros.vanoMaximoM), maximoVentana: m(parametros.ventanaMaximaM), largoMinimo: m(0.25), lineas: finas }),
+      ...ventanasEntreMuros(muros, finas, m(0.5), m(0.25)),
+    ]);
+  });
+  return cache.datosMurosVanos;
 }
 
 /**
@@ -140,11 +194,21 @@ export async function predibujarRecintos(page: pdfjsLib.PDFPageProxy, recintos: 
     maxPixeles: rotulos.map(r => (r.recinto.superficie_m2 ? (r.recinto.superficie_m2 * 3) / metrosPorPx ** 2 : undefined)),
   };
 
-  // 1. Solo los muros: trazos rectos de al menos 1 m, con los vanos de hasta 1,2 m cerrados.
-  const muros = mapaDeTrazos(datosMuros, ancho, alto, cajas);
-  const contornos = detectarRecintos(muros, cajas.map(c => mejorSemilla(muros, c)), { ...opciones, radios: [0.02, 0.05, 0.1, 0.2, 0.3].map(m) });
+  // 1 y 2. Solo los muros (trazos rectos de al menos 1 m, con los vanos de puertas cerrados) y, para los que así no
+  // cierran, además con las ventanas cerradas y los muros prolongados sobre los vanos (ver murosConVanos). Si la
+  // lámina dibuja los muebles con trazo grueso, en el orden inverso.
+  const radiosMuros = [0.02, 0.05, 0.1, 0.2, 0.3].map(m);
+  const contornos: (Punto[] | null)[] = rotulos.map(() => null);
+  const fuentes = [async () => datosMuros, () => murosConVanos(page, cache)];
+  if (cache.vanosPrimero) fuentes.reverse();
+  for (const fuente of fuentes) {
+    if (contornos.every(c => c)) break;
+    const mapa = mapaDeTrazos(await fuente(), ancho, alto, cajas);
+    const otros = detectarRecintos(mapa, cajas.map(c => mejorSemilla(mapa, c)), { ...opciones, radios: radiosMuros });
+    contornos.forEach((c, i) => { if (!c) contornos[i] = otros[i]; });
+  }
 
-  // 2. Los que no se cerraron, sobre la lámina completa (los arcos de puertas cierran los vanos).
+  // 3. Los que aún no se cerraron, sobre la lámina completa (los arcos de puertas cierran los vanos).
   if (contornos.some(c => !c)) {
     if (!cache.datosCompleto) cache.datosCompleto = await dibujar(page, viewport);
     const completo = mapaDeTrazos(cache.datosCompleto, ancho, alto, cajas);
@@ -194,20 +258,23 @@ export async function detectarRecintoEnPunto(
     maxPixeles: [maxPx, ...semillasVecinas.map(() => undefined)],
   };
 
-  if (!cache.murosSinCajas) {
-    cache.murosSinCajas = mapaDeTrazos(cache.datosMuros, ancho, alto, [cajaClic]);
-  }
-  const muros = cache.murosSinCajas;
-  const semillaPrincipal = mejorSemilla(muros, cajaClic);
-  const semillas = [semillaPrincipal, ...semillasVecinas];
-
-  let [contorno] = detectarRecintos(muros, semillas, { ...opciones, radios: [0.02, 0.05, 0.1, 0.2, 0.3].map(m) });
-
-  // Si con la restricción de superficie máxima no cerró (por ejemplo, si la superficie en la ficha era muy chica),
-  // se intenta sin tope de superficie antes de pasar a la lámina completa.
-  if (!contorno && maxPx) {
-    [contorno] = detectarRecintos(muros, semillas, { ...opciones, maxPixeles: undefined, radios: [0.02, 0.05, 0.1, 0.2, 0.3].map(m) });
-  }
+  const radiosMuros = [0.02, 0.05, 0.1, 0.2, 0.3].map(m);
+  const enMuros = () => {
+    if (!cache.murosSinCajas) cache.murosSinCajas = mapaDeTrazos(cache.datosMuros, ancho, alto, [cajaClic]);
+    const muros = cache.murosSinCajas;
+    const semillas = [mejorSemilla(muros, cajaClic), ...semillasVecinas];
+    const [c] = detectarRecintos(muros, semillas, { ...opciones, radios: radiosMuros });
+    // Si con la restricción de superficie máxima no cerró (por ejemplo, si la superficie en la ficha era muy chica),
+    // se intenta sin tope de superficie.
+    return c || (maxPx ? detectarRecintos(muros, semillas, { ...opciones, maxPixeles: undefined, radios: radiosMuros })[0] : null);
+  };
+  // Con las ventanas cerradas y los muros prolongados sobre los vanos (ver murosConVanos).
+  const enMurosConVanos = async () => {
+    if (!cache.murosVanosSinCajas) cache.murosVanosSinCajas = mapaDeTrazos(await murosConVanos(page, cache), ancho, alto, [cajaClic]);
+    const vanos = cache.murosVanosSinCajas;
+    return detectarRecintos(vanos, [mejorSemilla(vanos, cajaClic), ...semillasVecinas], { ...opciones, maxPixeles: undefined, radios: radiosMuros })[0];
+  };
+  let contorno = cache.vanosPrimero ? (await enMurosConVanos()) || enMuros() : enMuros() || (await enMurosConVanos());
 
   if (!contorno) {
     if (!cache.datosCompleto) {

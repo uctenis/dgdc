@@ -5,8 +5,9 @@ import {
 } from 'lucide-react';
 import type { DocumentoEdificio, Piso, Recinto, ZonaRecinto } from '../types/recintos';
 import { descargarLamina, eliminarZona, guardarEscalaDocumento, guardarZona, listarZonas } from '../services/recintos';
-import { ajustarPuntoOrtogonal, areaRealM2, centroide, colorDeCategoria, denominadorEscala, estimarEscala, limites, puntoEnPoligono, type Punto } from '../utils/geometriaPlano';
+import { ajustarPuntoOrtogonal, areaPoligono, areaRealM2, centroide, colorDeCategoria, denominadorEscala, estimarEscala, limites, puntoEnPoligono, type Punto } from '../utils/geometriaPlano';
 import { detectarRecintoEnPunto, predibujarRecintos } from '../utils/predibujoPlano';
+import { recortarContraVecinos } from '../utils/sinSuperposicion';
 import { comoTitulo } from '../utils/texto';
 import { getConfigEspacios, tipoConfigurado } from '../data/espaciosConfig';
 
@@ -79,6 +80,9 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
 
   const recintoPorId = useMemo(() => new Map(recintos.map(r => [r.id, r])), [recintos]);
   const zonasPagina = useMemo(() => zonas.filter(z => z.pagina === pagina && recintoPorId.has(z.recinto_id)), [zonas, pagina, recintoPorId]);
+  /** Contornos de los demás recintos en una página de la lámina: un contorno nuevo o editado no se superpone con ellos. */
+  const otrosContornos = useCallback((recintoId: string, enPagina: number) =>
+    zonas.filter(z => z.pagina === enPagina && z.recinto_id !== recintoId).map(z => z.poligono), [zonas]);
   const zonaDe = useMemo(() => new Map(zonas.map(z => [z.recinto_id, z])), [zonas]);
   const recintosFiltrados = useMemo(() => recintos
     .filter(r => !pisoLista || r.piso_id === pisoLista)
@@ -165,11 +169,20 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
     setPredibujando(true); setAviso('');
     try {
       const nuevas: ZonaRecinto[] = [];
+      const reemplazados = new Set(pendientes.map(r => r.id));
       for (let p = 1; p <= pdf.numPages; p++) {
         const faltan = pendientes.filter(r => !nuevas.some(z => z.recinto_id === r.id));
         if (!faltan.length) break;
         const detectados = await predibujarRecintos(await pdf.getPage(p), faltan, escala);
-        for (const d of detectados) nuevas.push(await guardarZona({ documento_id: documento.id, recinto_id: d.recinto_id, pagina: p, poligono: d.poligono }));
+        // Los contornos no se superponen: van primero los recintos chicos, y cada uno cede lo que ya ocupa otro.
+        const ocupados = zonas.filter(z => z.pagina === p && !reemplazados.has(z.recinto_id)).map(z => z.poligono);
+        detectados.sort((a, b) => Math.abs(areaPoligono(a.poligono)) - Math.abs(areaPoligono(b.poligono)));
+        for (const d of detectados) {
+          const poligono = recortarContraVecinos(d.poligono, ocupados);
+          if (!poligono) continue;
+          ocupados.push(poligono);
+          nuevas.push(await guardarZona({ documento_id: documento.id, recinto_id: d.recinto_id, pagina: p, poligono }));
+        }
       }
       setZonas(prev => [...prev.filter(z => !nuevas.some(n => n.recinto_id === z.recinto_id)), ...nuevas]);
       if (nuevas.length) setAviso(`Se predibujaron ${nuevas.length} recinto(s) a partir de los códigos del plano. Revíselos: arrastre los vértices para corregir un contorno.`);
@@ -179,7 +192,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
     } finally {
       setPredibujando(false);
     }
-  }, [pdf, recintos, zonaDe, escala, documento.id]);
+  }, [pdf, recintos, zonaDe, zonas, escala, documento.id]);
 
   // Al cambiar de recinto, sus vértices vuelven a quedar ocultos.
   useEffect(() => { setEditandoContorno(false); }, [seleccion]);
@@ -244,9 +257,11 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
 
   const guardarPoligonoDibujado = useCallback(async (recintoId: string, puntos: Punto[]) => {
     if (puntos.length < 3) return;
+    const poligono = recortarContraVecinos(puntos, otrosContornos(recintoId, pagina));
+    if (!poligono) { setAviso('Ese contorno queda completo dentro de otros recintos ya dibujados (los contornos no se superponen).'); return; }
     setGuardando(true);
     try {
-      const z = await guardarZona({ documento_id: documento.id, recinto_id: recintoId, pagina, poligono: puntos });
+      const z = await guardarZona({ documento_id: documento.id, recinto_id: recintoId, pagina, poligono });
       setZonas(prev => [...prev.filter(x => x.recinto_id !== z.recinto_id), z]);
       const idxActual = recintosFiltrados.findIndex(r => r.id === recintoId);
       const siguiente = continuarSiguiente
@@ -267,7 +282,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
     } finally {
       setGuardando(false);
     }
-  }, [documento.id, pagina, recintosFiltrados, continuarSiguiente, zonaDe]);
+  }, [documento.id, pagina, recintosFiltrados, continuarSiguiente, zonaDe, otrosContornos]);
 
   /** Detecta automáticamente los muros y cubículos desde un punto dentro del recinto y guarda el contorno. */
   const detectarYGuardarEnPunto = useCallback(async (recintoId: string, punto: Punto) => {
@@ -398,7 +413,13 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
     setEncima(z ? { id: z.recinto_id, x: e.clientX - r.left, y: e.clientY - r.top } : null);
   };
   /** Guarda el contorno corregido; si falla, lo devuelve a como estaba. */
-  const guardarContorno = async (zona: ZonaRecinto, poligono: Punto[]) => {
+  const guardarContorno = async (zona: ZonaRecinto, editado: Punto[]) => {
+    const poligono = recortarContraVecinos(editado, otrosContornos(zona.recinto_id, zona.pagina));
+    if (!poligono) {
+      setZonas(prev => prev.map(z => (z.id === zona.id ? zona : z)));
+      setAviso('Así el contorno quedaría completo dentro de otros recintos (los contornos no se superponen); se dejó como estaba.');
+      return;
+    }
     setZonas(prev => prev.map(z => (z.id === zona.id ? { ...z, poligono } : z)));
     try {
       await guardarZona({ documento_id: zona.documento_id, recinto_id: zona.recinto_id, pagina: zona.pagina, poligono });

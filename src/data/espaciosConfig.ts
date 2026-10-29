@@ -22,10 +22,10 @@ export interface ParametrosEspacios {
   diferenciaOgucM2: number;
   /** Escala que se supone para una lámina que no la indica («1:100»). */
   escalaPorDefecto: string;
-  /** Predibujo: largo mínimo (m) de un trazo para tomarlo como muro; los más cortos son muebles u hojas de puerta. */
-  largoMinimoMuroM: number;
   /** Predibujo: ancho máximo (m) de un vano que se cierra en línea recta (puertas). */
   vanoMaximoM: number;
+  /** Predibujo: largo máximo (m) de una ventana entre dos muros que se cierra en línea recta. */
+  ventanaMaximaM: number;
 }
 
 export interface ConfigEspacios {
@@ -39,8 +39,8 @@ export const PARAMETROS_POR_DEFECTO: ParametrosEspacios = {
   factorOguc: 1.6,
   diferenciaOgucM2: 3,
   escalaPorDefecto: '1:100',
-  largoMinimoMuroM: 1,
   vanoMaximoM: 1.2,
+  ventanaMaximaM: 4,
 };
 
 const VACIA: ConfigEspacios = { tipos: [], usos: [], unidades: [], parametros: PARAMETROS_POR_DEFECTO };

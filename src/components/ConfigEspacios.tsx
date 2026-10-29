@@ -292,8 +292,8 @@ function Parametros({ config, editable, onGuardar }: { config: ConfigEspacios; e
           <input disabled={!editable} value={p.escalaPorDefecto} onChange={e => setP({ ...p, escalaPorDefecto: e.target.value })} placeholder="1:100" className={`${campo} w-32`} />
           <span className="block text-slate-500">Se usa para medir y predibujar cuando la lámina no indica su escala.</span>
         </label>
-        {numero('largoMinimoMuroM', 'Largo mínimo de muro (m)', 'Al predibujar, los trazos más cortos se ignoran (muebles, hojas de puerta).')}
         {numero('vanoMaximoM', 'Ancho máximo de puerta (m)', 'Al predibujar, los vanos de hasta este ancho se cierran en línea recta.')}
+        {numero('ventanaMaximaM', 'Largo máximo de ventana (m)', 'Al predibujar, las ventanas de hasta este largo entre dos muros cierran el recinto (con una puerta al lado, si la hay).')}
       </section>
       {editable && (
         <div className="md:col-span-2 flex justify-end gap-2">
