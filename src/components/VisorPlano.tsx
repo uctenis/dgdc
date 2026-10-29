@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import {
-  Loader2, ZoomIn, ZoomOut, Maximize2, Minimize2, Scan, Pencil, Trash2, MapPin, CheckCircle2, Circle, X, Undo2, Check, AlertTriangle, Wand2, Tag, BoxSelect,
+  Loader2, ZoomIn, ZoomOut, Maximize2, Minimize2, Scan, Pencil, Trash2, MapPin, CheckCircle2, Circle, X, Undo2, Check, AlertTriangle, Wand2, Tag, BoxSelect, Square,
 } from 'lucide-react';
 import type { DocumentoEdificio, Piso, Recinto, ZonaRecinto } from '../types/recintos';
 import { descargarLamina, eliminarZona, guardarEscalaDocumento, guardarZona, listarZonas } from '../services/recintos';
@@ -52,6 +52,8 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
   const [seleccion, setSeleccion] = useState<string | null>(destacado || null);
   const [encima, setEncima] = useState<{ id: string; x: number; y: number } | null>(null);
   const [dibujando, setDibujando] = useState<{ recintoId: string; puntos: Punto[] } | null>(null);
+  const [formaDibujo, setFormaDibujo] = useState<'rectangulo' | 'poligono'>('rectangulo');
+  const [continuarSiguiente, setContinuarSiguiente] = useState(true);
   const [cursor, setCursor] = useState<Punto | null>(null);
   const [modoColor, setModoColor] = useState<ModoColor>('tipo');
   const [pantallaCompleta, setPantallaCompleta] = useState(false);
@@ -68,12 +70,22 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
   const arrastre = useRef<{ x: number; y: number; vx: number; vy: number; movio: boolean } | null>(null);
   // Vértice que se arrastra; `nuevo` si se acaba de agregar desde el punto medio de un borde.
   const arrastreVertice = useRef<{ zona: ZonaRecinto; indice: number; poligono: Punto[]; x: number; y: number; movio: boolean; nuevo: boolean } | null>(null);
+  // Polígono completo que se arrastra al editar contorno.
+  const arrastrePoligono = useRef<{ zona: ZonaRecinto; origen: Punto; inicial: Punto[]; poligono: Punto[]; x: number; y: number; movio: boolean } | null>(null);
   const [verticeMarcado, setVerticeMarcado] = useState<number | null>(null);   // esquina elegida para quitarla
   const predibujoAutomatico = useRef(false);
 
   const recintoPorId = useMemo(() => new Map(recintos.map(r => [r.id, r])), [recintos]);
   const zonasPagina = useMemo(() => zonas.filter(z => z.pagina === pagina && recintoPorId.has(z.recinto_id)), [zonas, pagina, recintoPorId]);
   const zonaDe = useMemo(() => new Map(zonas.map(z => [z.recinto_id, z])), [zonas]);
+  const recintosFiltrados = useMemo(() => recintos
+    .filter(r => !pisoLista || r.piso_id === pisoLista)
+    .filter(r => estadoLista === 'todos' ? true : estadoLista === 'ubicados' ? zonaDe.has(r.id) : !zonaDe.has(r.id))
+    .filter(r => {
+      const q = filtroRecinto.trim().toLowerCase();
+      if (!q) return true;
+      return r.codigo.toLowerCase().includes(q) || r.nombre.toLowerCase().includes(q) || (r.uso || '').toLowerCase().includes(q);
+    }), [recintos, pisoLista, estadoLista, filtroRecinto, zonaDe]);
 
   // Abre la lámina y sus contornos.
   useEffect(() => {
@@ -211,9 +223,45 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
   };
   const zonaEn = (p: Punto) => [...zonasPagina].reverse().find(z => puntoEnPoligono(p, z.poligono));
 
+  const guardarPoligonoDibujado = useCallback(async (recintoId: string, puntos: Punto[]) => {
+    if (puntos.length < 3) return;
+    setGuardando(true);
+    try {
+      const z = await guardarZona({ documento_id: documento.id, recinto_id: recintoId, pagina, poligono: puntos });
+      setZonas(prev => [...prev.filter(x => x.recinto_id !== z.recinto_id), z]);
+      const idxActual = recintosFiltrados.findIndex(r => r.id === recintoId);
+      const siguiente = continuarSiguiente
+        ? (recintosFiltrados.slice(idxActual + 1).find(r => r.id !== recintoId && !zonaDe.has(r.id))
+          || recintosFiltrados.find(r => r.id !== recintoId && !zonaDe.has(r.id)))
+        : undefined;
+      if (siguiente) {
+        setSeleccion(siguiente.id);
+        setDibujando({ recintoId: siguiente.id, puntos: [] });
+        setCursor(null);
+      } else {
+        setSeleccion(z.recinto_id);
+        setDibujando(null);
+        setCursor(null);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGuardando(false);
+    }
+  }, [documento.id, pagina, recintosFiltrados, continuarSiguiente, zonaDe]);
+
+  const rectanguloAPoligono = (a: Punto, b: Punto): Punto[] => {
+    const x0 = Math.min(Math.max(Math.min(a[0], b[0]), 0), 1);
+    const x1 = Math.min(Math.max(Math.max(a[0], b[0]), 0), 1);
+    const y0 = Math.min(Math.max(Math.min(a[1], b[1]), 0), 1);
+    const y1 = Math.min(Math.max(Math.max(a[1], b[1]), 0), 1);
+    return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  };
+
   const alPresionar = (e: React.PointerEvent) => {
     const vertice = (e.target as Element).getAttribute?.('data-vertice');
     const medio = (e.target as Element).getAttribute?.('data-medio');
+    const poliActivo = (e.target as Element).getAttribute?.('data-poligono-activo');
     const zona = seleccion ? zonaDe.get(seleccion) : undefined;
     if ((vertice != null || medio != null) && zona && editandoContorno && !dibujando) {
       const base = { zona, x: e.clientX, y: e.clientY, movio: false };
@@ -229,9 +277,21 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
       (e.target as Element).setPointerCapture?.(e.pointerId);
       return;
     }
+    if (poliActivo && zona && editandoContorno && !dibujando && !e.altKey) {
+      const p = aPagina(e.clientX, e.clientY);
+      if (p) {
+        arrastrePoligono.current = { zona, origen: p, inicial: zona.poligono, poligono: zona.poligono, x: e.clientX, y: e.clientY, movio: false };
+        (e.target as Element).setPointerCapture?.(e.pointerId);
+        return;
+      }
+    }
     arrastre.current = { x: e.clientX, y: e.clientY, vx: vista.x, vy: vista.y, movio: false };
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
     if (modoVarios && !e.altKey) { const p = aPagina(e.clientX, e.clientY); if (p) setRectangulo({ a: p, b: p }); }
+    if (dibujando && formaDibujo === 'rectangulo' && !e.altKey && dibujando.puntos.length === 0) {
+      const p = aPagina(e.clientX, e.clientY);
+      if (p) { setDibujando(d => d && { ...d, puntos: [p] }); setCursor(p); }
+    }
   };
   const alMover = (e: React.PointerEvent) => {
     const av = arrastreVertice.current;
@@ -245,11 +305,27 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
       setZonas(prev => prev.map(z => (z.id === av.zona.id ? { ...z, poligono: av.poligono } : z)));
       return;
     }
+    const ap = arrastrePoligono.current;
+    if (ap) {
+      if (!ap.movio && Math.abs(e.clientX - ap.x) + Math.abs(e.clientY - ap.y) <= 3) return;
+      ap.movio = true;
+      const p = aPagina(e.clientX, e.clientY);
+      if (!p) return;
+      const dx = p[0] - ap.origen[0], dy = p[1] - ap.origen[1];
+      ap.poligono = ap.inicial.map(([qx, qy]) => [Math.min(Math.max(qx + dx, 0), 1), Math.min(Math.max(qy + dy, 0), 1)] as Punto);
+      setZonas(prev => prev.map(z => (z.id === ap.zona.id ? { ...z, poligono: ap.poligono } : z)));
+      return;
+    }
     const a = arrastre.current;
     if (a) {
       const dx = e.clientX - a.x, dy = e.clientY - a.y;
       if (Math.abs(dx) + Math.abs(dy) > 4) a.movio = true;
       if (a.movio && rectangulo) { const p = aPagina(e.clientX, e.clientY); if (p) setRectangulo(r => r && { ...r, b: p }); return; }
+      if (a.movio && dibujando && formaDibujo === 'rectangulo' && !e.altKey) {
+        const p = aPagina(e.clientX, e.clientY);
+        if (p) setCursor(p);
+        return;
+      }
       if (a.movio) { setVista(v => ({ ...v, x: a.vx + dx, y: a.vy + dy })); return; }
     }
     const p = aPagina(e.clientX, e.clientY);
@@ -278,6 +354,13 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
       else setVerticeMarcado(m => (m === av.indice ? null : av.indice));   // clic en una esquina: la marca para quitarla
       return;
     }
+    const ap = arrastrePoligono.current;
+    if (ap) {
+      arrastrePoligono.current = null;
+      if (ap.movio) void guardarContorno(ap.zona, ap.poligono);
+      else setVerticeMarcado(null);
+      return;
+    }
     const a = arrastre.current;
     arrastre.current = null;
     const rect = rectangulo;
@@ -290,9 +373,17 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
       setVarios(prev => new Set([...prev, ...dentro.map(z => z.recinto_id)]));
       return;
     }
-    if (!a || a.movio) return;
     const p = aPagina(e.clientX, e.clientY);
-    if (!p) return;
+    if (dibujando && formaDibujo === 'rectangulo' && !e.altKey && p && dibujando.puntos.length >= 1) {
+      const esquinaA = dibujando.puntos[0];
+      if (Math.abs(p[0] - esquinaA[0]) > 0.002 && Math.abs(p[1] - esquinaA[1]) > 0.002) {
+        void guardarPoligonoDibujado(dibujando.recintoId, rectanguloAPoligono(esquinaA, p));
+        return;
+      }
+      // Si fue solo el primer clic sin arrastrar, espera el segundo clic en la esquina opuesta.
+      return;
+    }
+    if (!a || a.movio || !p) return;
     if (modoVarios) {
       const z = zonaEn(p);
       if (z) setVarios(prev => { const n = new Set(prev); if (n.has(z.recinto_id)) n.delete(z.recinto_id); else n.add(z.recinto_id); return n; });
@@ -307,18 +398,8 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
     // El doble clic para terminar también marca puntos: se descartan los que caen sobre el anterior.
     const puntos = dibujando?.puntos.filter((p, i, a) => i === 0 || Math.hypot(p[0] - a[i - 1][0], p[1] - a[i - 1][1]) > 1e-4) || [];
     if (!dibujando || puntos.length < 3) return;
-    setGuardando(true);
-    try {
-      const z = await guardarZona({ documento_id: documento.id, recinto_id: dibujando.recintoId, pagina, poligono: puntos });
-      setZonas(prev => [...prev.filter(x => x.recinto_id !== z.recinto_id), z]);
-      setSeleccion(z.recinto_id);
-      setDibujando(null); setCursor(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setGuardando(false);
-    }
-  }, [dibujando, documento.id, pagina]);
+    await guardarPoligonoDibujado(dibujando.recintoId, puntos);
+  }, [dibujando, guardarPoligonoDibujado]);
 
   useEffect(() => {
     const tecla = (e: KeyboardEvent) => {
@@ -476,6 +557,8 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
                   return (
                     <g key={z.id}>
                       <polygon points={pts} fill={color} fillOpacity={activo ? 0.5 : sobre ? 0.42 : 0.26}
+                        data-poligono-activo={activo && editandoContorno && !dibujando ? '1' : undefined}
+                        className={activo && editandoContorno && !dibujando ? 'cursor-move' : undefined}
                         stroke={enGrupo ? '#0f172a' : activo ? '#f59e0b' : color} strokeWidth={activo ? grosor * 2.2 : grosor} strokeLinejoin="round" />
                       {mostrarRotulos && <text x={cx * tam.w} y={cy * tam.h} textAnchor="middle" dominantBaseline="middle" fontSize={letra} fontWeight={700}
                         fill="#0f172a" stroke="white" strokeWidth={letra * 0.25} paintOrder="stroke" style={{ pointerEvents: 'none' }}>
@@ -502,11 +585,20 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
                 })}
                 {dibujando && dibujando.puntos.length > 0 && (
                   <g style={{ pointerEvents: 'none' }}>
-                    <polyline points={[...dibujando.puntos, ...(cursor ? [cursor] : [])].map(([x, y]) => `${x * tam.w},${y * tam.h}`).join(' ')}
-                      fill="rgba(13,148,136,0.18)" stroke="#0d9488" strokeWidth={grosor * 1.5} strokeDasharray={`${4 / vista.k} ${3 / vista.k}`} />
-                    {dibujando.puntos.map(([x, y], i) => (
-                      <circle key={i} cx={x * tam.w} cy={y * tam.h} r={(i === 0 ? 5 : 3.5) / vista.k} fill={i === 0 ? '#0d9488' : 'white'} stroke="#0d9488" strokeWidth={grosor} />
-                    ))}
+                    {formaDibujo === 'rectangulo' && cursor ? (
+                      <polygon
+                        points={rectanguloAPoligono(dibujando.puntos[0], cursor).map(([x, y]) => `${x * tam.w},${y * tam.h}`).join(' ')}
+                        fill="rgba(13,148,136,0.22)" stroke="#0d9488" strokeWidth={grosor * 1.8} strokeDasharray={`${4 / vista.k} ${3 / vista.k}`}
+                      />
+                    ) : (
+                      <>
+                        <polyline points={[...dibujando.puntos, ...(cursor ? [cursor] : [])].map(([x, y]) => `${x * tam.w},${y * tam.h}`).join(' ')}
+                          fill="rgba(13,148,136,0.18)" stroke="#0d9488" strokeWidth={grosor * 1.5} strokeDasharray={`${4 / vista.k} ${3 / vista.k}`} />
+                        {dibujando.puntos.map(([x, y], i) => (
+                          <circle key={i} cx={x * tam.w} cy={y * tam.h} r={(i === 0 ? 5 : 3.5) / vista.k} fill={i === 0 ? '#0d9488' : 'white'} stroke="#0d9488" strokeWidth={grosor} />
+                        ))}
+                      </>
+                    )}
                   </g>
                 )}
               </svg>
@@ -561,14 +653,36 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
           })()}
 
           {dibujando && (
-            <div className="absolute left-1/2 -translate-x-1/2 top-3 flex items-center gap-2 bg-teal-900 text-white rounded-xl px-3 py-2 shadow-xl">
-              <Pencil className="w-4 h-4" />
-              <span>Dibujando <strong>{recintoPorId.get(dibujando.recintoId)?.codigo}</strong>: clic en cada esquina · {dibujando.puntos.length} punto(s)</span>
-              <button type="button" onPointerDown={e => e.stopPropagation()} onClick={() => setDibujando(d => d && { ...d, puntos: d.puntos.slice(0, -1) })} title="Deshacer último punto (Retroceso)" className="p-1 rounded hover:bg-white/15"><Undo2 className="w-4 h-4" /></button>
-              <button type="button" onPointerDown={e => e.stopPropagation()} disabled={dibujando.puntos.length < 3 || guardando} onClick={() => void terminarDibujo()} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white text-teal-900 font-bold disabled:opacity-40">
-                {guardando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Terminar (Enter)
-              </button>
-              <button type="button" onPointerDown={e => e.stopPropagation()} onClick={() => { setDibujando(null); setCursor(null); }} title="Cancelar (Esc)" className="p-1 rounded hover:bg-white/15"><X className="w-4 h-4" /></button>
+            <div className="absolute left-1/2 -translate-x-1/2 top-3 flex flex-wrap items-center gap-2 bg-teal-900 text-white rounded-xl px-3 py-2 shadow-xl max-w-[94%]" onPointerDown={e => e.stopPropagation()}>
+              <div className="flex rounded-lg bg-teal-950/60 p-0.5">
+                <button type="button" onClick={() => setFormaDibujo('rectangulo')}
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-[11px] ${formaDibujo === 'rectangulo' ? 'bg-white text-teal-950' : 'text-teal-200 hover:text-white'}`}>
+                  <Square className="w-3 h-3" /> Rectángulo
+                </button>
+                <button type="button" onClick={() => setFormaDibujo('poligono')}
+                  className={`flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-[11px] ${formaDibujo === 'poligono' ? 'bg-white text-teal-950' : 'text-teal-200 hover:text-white'}`}>
+                  <Pencil className="w-3 h-3" /> Polígono
+                </button>
+              </div>
+              <span>
+                <strong>{recintoPorId.get(dibujando.recintoId)?.codigo}</strong> ({recintoPorId.get(dibujando.recintoId)?.nombre}) ·{' '}
+                {formaDibujo === 'rectangulo'
+                  ? 'arrastre de esquina a esquina (o 2 clics)'
+                  : `clic en cada esquina (${dibujando.puntos.length})`}
+              </span>
+              {formaDibujo === 'poligono' && (
+                <>
+                  <button type="button" onClick={() => setDibujando(d => d && { ...d, puntos: d.puntos.slice(0, -1) })} title="Deshacer último punto (Retroceso)" className="p-1 rounded hover:bg-white/15"><Undo2 className="w-4 h-4" /></button>
+                  <button type="button" disabled={dibujando.puntos.length < 3 || guardando} onClick={() => void terminarDibujo()} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-white text-teal-900 font-bold disabled:opacity-40">
+                    {guardando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Terminar (Enter)
+                  </button>
+                </>
+              )}
+              <label className="flex items-center gap-1 text-[11px] text-teal-100 cursor-pointer">
+                <input type="checkbox" checked={continuarSiguiente} onChange={e => setContinuarSiguiente(e.target.checked)} className="accent-amber-400" />
+                Seguir con el próximo
+              </label>
+              <button type="button" onClick={() => { setDibujando(null); setCursor(null); }} title="Cancelar (Esc)" className="p-1 rounded hover:bg-white/15"><X className="w-4 h-4" /></button>
             </div>
           )}
 
@@ -625,7 +739,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
               {zonaDe.has(sel.id) && editandoContorno && (
                 <div className="space-y-1.5">
                   <p className="text-[11px] text-slate-500">
-                    Arrastre las esquinas (puntos blancos) para moverlas. Para <strong>agregar</strong> una, arrastre el punto naranjo del medio de un borde.
+                    Arrastre el recinto completo o sus esquinas (puntos blancos) para moverlas. Para <strong>agregar</strong> una esquina, arrastre el punto naranjo del medio de un borde.
                     Para <strong>quitar</strong> una, haga clic en ella y pulse Supr o «Quitar esquina».
                   </p>
                   {verticeMarcado != null && (
@@ -653,7 +767,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
             </div>
           ) : (
             <p className="bg-white border border-dashed border-slate-300 rounded-xl p-3 text-slate-500">
-              Haga clic en un recinto del plano o de la lista. Para ubicar uno, elíjalo en la lista y marque sus esquinas en el plano.
+              Haga clic en un recinto del plano o de la lista. Para ubicar uno rápido, pulse el ícono 📍 al lado del recinto y arrastre un rectángulo en el plano.
             </p>
           )}
           <div className="flex-1 min-h-0 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col">
@@ -676,27 +790,26 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
                 className="w-full px-2 py-1 border border-slate-300 rounded-lg text-[11px]" />
             </div>
             <ul className="flex-1 overflow-y-auto divide-y divide-slate-50">
-              {recintos
-                .filter(r => !pisoLista || r.piso_id === pisoLista)
-                .filter(r => estadoLista === 'todos' ? true : estadoLista === 'ubicados' ? zonaDe.has(r.id) : !zonaDe.has(r.id))
-                .filter(r => {
-                  const q = filtroRecinto.trim().toLowerCase();
-                  if (!q) return true;
-                  return r.codigo.toLowerCase().includes(q) || r.nombre.toLowerCase().includes(q) || (r.uso || '').toLowerCase().includes(q);
-                })
-                .map(r => {
-                  const ubicado = zonaDe.has(r.id);
-                  return (
-                    <li key={r.id}>
-                      <button type="button" onClick={() => { setSeleccion(r.id); if (ubicado) enfocar(r.id); }}
-                        className={`w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-slate-50 ${r.id === seleccion ? 'bg-amber-50' : ''}`}>
-                        {ubicado ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> : <Circle className="w-3.5 h-3.5 text-slate-300 shrink-0" />}
-                        <span className="font-mono font-bold text-[11px]">{r.codigo}</span>
-                        <span className="truncate text-slate-600">{r.nombre}</span>
-                      </button>
-                    </li>
-                  );
-                })}
+              {recintosFiltrados.map(r => {
+                const ubicado = zonaDe.has(r.id);
+                const enDibujo = dibujando?.recintoId === r.id;
+                return (
+                  <li key={r.id} className={`flex items-center hover:bg-slate-50 ${r.id === seleccion ? 'bg-amber-50' : ''}`}>
+                    <button type="button" onClick={() => { setSeleccion(r.id); if (ubicado) enfocar(r.id); }}
+                      className="flex-1 min-w-0 flex items-center gap-2 px-3 py-1.5 text-left">
+                      {ubicado ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> : <Circle className="w-3.5 h-3.5 text-slate-300 shrink-0" />}
+                      <span className="font-mono font-bold text-[11px]">{r.codigo}</span>
+                      <span className="truncate text-slate-600">{r.nombre}</span>
+                    </button>
+                    <button type="button"
+                      title={ubicado ? 'Redibujar en el plano' : 'Ubicar en el plano'}
+                      onClick={() => { setSeleccion(r.id); setDibujando({ recintoId: r.id, puntos: [] }); }}
+                      className={`mr-2 p-1 rounded-md shrink-0 ${enDibujo ? 'bg-teal-700 text-white' : ubicado ? 'text-slate-400 hover:text-teal-700 hover:bg-teal-50' : 'text-teal-700 hover:bg-teal-50'}`}>
+                      <MapPin className="w-3.5 h-3.5" />
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         </aside>
