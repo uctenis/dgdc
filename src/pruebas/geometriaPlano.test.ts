@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { areaPoligono, areaRealM2, centroide, colorDeCategoria, denominadorEscala, puntoEnPoligono, type Punto } from '../utils/geometriaPlano';
+import { ajustarPuntoOrtogonal, areaPoligono, areaRealM2, centroide, colorDeCategoria, denominadorEscala, puntoEnPoligono, type Punto } from '../utils/geometriaPlano';
 
 const cuadrado: Punto[] = [[0, 0], [1, 0], [1, 1], [0, 1]];
 
@@ -32,5 +32,21 @@ describe('geometría del visor de planos', () => {
   it('da siempre el mismo color a la misma categoría', () => {
     expect(colorDeCategoria('OFICINA')).toBe(colorDeCategoria('oficina'));
     expect(colorDeCategoria('OFICINA')).not.toBe(colorDeCategoria('BAÑO'));
+  });
+
+  it('alinea magnéticamente en horizontal y vertical al mover una esquina, pero permite diagonal libre', () => {
+    const origen: Punto = [0.5, 0.2];
+    const vecinos: Punto[] = [[0.2, 0.2], [0.5, 0.6]];
+    // Desplazamiento horizontal con leve desvío vertical (5 px en 1000 px): mantiene Y = 0.2
+    const horiz = ajustarPuntoOrtogonal([0.65, 0.205], origen, vecinos, 1000, 1000);
+    expect(horiz.punto).toEqual([0.65, 0.2]);
+    expect(horiz.guiaY).toBe(0.2);
+    // Desplazamiento vertical con leve desvío horizontal (4 px en 1000 px): mantiene X = 0.5
+    const vert = ajustarPuntoOrtogonal([0.504, 0.35], origen, vecinos, 1000, 1000);
+    expect(vert.punto).toEqual([0.5, 0.35]);
+    expect(vert.guiaX).toBe(0.5);
+    // Desplazamiento claramente diagonal (50 px en X y 50 px en Y, lejos de vecinos): queda libre
+    const diag = ajustarPuntoOrtogonal([0.55, 0.25], origen, vecinos, 1000, 1000);
+    expect(diag.punto).toEqual([0.55, 0.25]);
   });
 });

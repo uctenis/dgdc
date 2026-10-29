@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import type { DocumentoEdificio, Piso, Recinto, ZonaRecinto } from '../types/recintos';
 import { descargarLamina, eliminarZona, guardarEscalaDocumento, guardarZona, listarZonas } from '../services/recintos';
-import { areaRealM2, centroide, colorDeCategoria, limites, puntoEnPoligono, type Punto } from '../utils/geometriaPlano';
+import { ajustarPuntoOrtogonal, areaRealM2, centroide, colorDeCategoria, limites, puntoEnPoligono, type Punto } from '../utils/geometriaPlano';
 import { detectarRecintoEnPunto, predibujarRecintos } from '../utils/predibujoPlano';
 import { comoTitulo } from '../utils/texto';
 import { getConfigEspacios, tipoConfigurado } from '../data/espaciosConfig';
@@ -69,10 +69,11 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
   const [aviso, setAviso] = useState('');
   const arrastre = useRef<{ x: number; y: number; vx: number; vy: number; movio: boolean } | null>(null);
   // Vértice que se arrastra; `nuevo` si se acaba de agregar desde el punto medio de un borde.
-  const arrastreVertice = useRef<{ zona: ZonaRecinto; indice: number; poligono: Punto[]; x: number; y: number; movio: boolean; nuevo: boolean } | null>(null);
+  const arrastreVertice = useRef<{ zona: ZonaRecinto; indice: number; origen: Punto; inicial: Punto[]; poligono: Punto[]; x: number; y: number; movio: boolean; nuevo: boolean } | null>(null);
   // Polígono completo que se arrastra al editar contorno.
   const arrastrePoligono = useRef<{ zona: ZonaRecinto; origen: Punto; inicial: Punto[]; poligono: Punto[]; x: number; y: number; movio: boolean } | null>(null);
   const [verticeMarcado, setVerticeMarcado] = useState<number | null>(null);   // esquina elegida para quitarla
+  const [guias, setGuias] = useState<{ x?: number; y?: number } | null>(null);  // guías ortogonales al arrastrar o dibujar
   const predibujoAutomatico = useRef(false);
 
   const recintoPorId = useMemo(() => new Map(recintos.map(r => [r.id, r])), [recintos]);
@@ -287,12 +288,14 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
     if ((vertice != null || medio != null) && zona && editandoContorno && !dibujando) {
       const base = { zona, x: e.clientX, y: e.clientY, movio: false };
       if (vertice != null) {
-        arrastreVertice.current = { ...base, indice: Number(vertice), poligono: zona.poligono, nuevo: false };
+        const idx = Number(vertice);
+        arrastreVertice.current = { ...base, indice: idx, origen: zona.poligono[idx], inicial: zona.poligono, poligono: zona.poligono, nuevo: false };
       } else {
         // Punto medio de un borde: se agrega ahí una esquina nueva, que se puede arrastrar de inmediato.
         const i = Number(medio), a = zona.poligono[i], b = zona.poligono[(i + 1) % zona.poligono.length];
-        const poligono = [...zona.poligono.slice(0, i + 1), [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] as Punto, ...zona.poligono.slice(i + 1)];
-        arrastreVertice.current = { ...base, indice: i + 1, poligono, nuevo: true };
+        const medioPt: Punto = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+        const poligono = [...zona.poligono.slice(0, i + 1), medioPt, ...zona.poligono.slice(i + 1)];
+        arrastreVertice.current = { ...base, indice: i + 1, origen: medioPt, inicial: poligono, poligono, nuevo: true };
         setZonas(prev => prev.map(z => (z.id === zona.id ? { ...z, poligono } : z)));
       }
       (e.target as Element).setPointerCapture?.(e.pointerId);
@@ -320,9 +323,18 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
       if (!av.movio && Math.abs(e.clientX - av.x) + Math.abs(e.clientY - av.y) <= 3) return;   // aún es un clic
       av.movio = true;
       const p = aPagina(e.clientX, e.clientY);
-      if (!p) return;
-      const punto: Punto = [Math.min(Math.max(p[0], 0), 1), Math.min(Math.max(p[1], 0), 1)];
-      av.poligono = av.poligono.map((q, i) => (i === av.indice ? punto : q));
+      if (!p || !tam) return;
+      const n = av.inicial.length;
+      const vecinos = [
+        av.inicial[(av.indice - 1 + n) % n],
+        av.inicial[(av.indice + 1) % n],
+        ...av.inicial.filter((_, i) => i !== av.indice && i !== (av.indice - 1 + n) % n && i !== (av.indice + 1) % n),
+      ];
+      const ajuste = e.shiftKey
+        ? { punto: [Math.min(Math.max(p[0], 0), 1), Math.min(Math.max(p[1], 0), 1)] as Punto }
+        : ajustarPuntoOrtogonal(p, av.origen, vecinos, tam.w * vista.k, tam.h * vista.k);
+      setGuias(ajuste.guiaX != null || ajuste.guiaY != null ? { x: ajuste.guiaX, y: ajuste.guiaY } : null);
+      av.poligono = av.poligono.map((q, i) => (i === av.indice ? ajuste.punto : q));
       setZonas(prev => prev.map(z => (z.id === av.zona.id ? { ...z, poligono: av.poligono } : z)));
       return;
     }
@@ -351,7 +363,18 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
     }
     const p = aPagina(e.clientX, e.clientY);
     if (!p) return;
-    if (dibujando) { setCursor(p); return; }
+    if (dibujando) {
+      if (formaDibujo === 'poligono' && dibujando.puntos.length > 0 && tam && !e.shiftKey) {
+        const ultimo = dibujando.puntos[dibujando.puntos.length - 1];
+        const ajuste = ajustarPuntoOrtogonal(p, ultimo, dibujando.puntos, tam.w * vista.k, tam.h * vista.k);
+        setGuias(ajuste.guiaX != null || ajuste.guiaY != null ? { x: ajuste.guiaX, y: ajuste.guiaY } : null);
+        setCursor(ajuste.punto);
+      } else {
+        setGuias(null);
+        setCursor(p);
+      }
+      return;
+    }
     const z = zonaEn(p);
     const r = marco.current!.getBoundingClientRect();
     setEncima(z ? { id: z.recinto_id, x: e.clientX - r.left, y: e.clientY - r.top } : null);
@@ -371,6 +394,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
     const av = arrastreVertice.current;
     if (av) {
       arrastreVertice.current = null;
+      setGuias(null);
       if (av.movio || av.nuevo) { void guardarContorno(av.zona, av.poligono); setVerticeMarcado(null); }
       else setVerticeMarcado(m => (m === av.indice ? null : av.indice));   // clic en una esquina: la marca para quitarla
       return;
@@ -378,6 +402,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
     const ap = arrastrePoligono.current;
     if (ap) {
       arrastrePoligono.current = null;
+      setGuias(null);
       if (ap.movio) void guardarContorno(ap.zona, ap.poligono);
       else setVerticeMarcado(null);
       return;
@@ -415,7 +440,10 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
         void detectarYGuardarEnPunto(dibujando.recintoId, p);
         return;
       }
-      setDibujando(d => d && { ...d, puntos: [...d.puntos, p] });
+      const puntoFinal = (formaDibujo === 'poligono' && dibujando.puntos.length > 0 && tam && !e.shiftKey)
+        ? ajustarPuntoOrtogonal(p, dibujando.puntos[dibujando.puntos.length - 1], dibujando.puntos, tam.w * vista.k, tam.h * vista.k).punto
+        : p;
+      setDibujando(d => d && { ...d, puntos: [...d.puntos, puntoFinal] });
       return;
     }
     if (editandoContorno) { setVerticeMarcado(null); return; }   // mientras se edita, un clic no cambia de recinto
@@ -611,6 +639,18 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
                     </g>
                   );
                 })}
+                {guias && (
+                  <g style={{ pointerEvents: 'none' }}>
+                    {guias.x != null && (
+                      <line x1={guias.x * tam.w} y1={0} x2={guias.x * tam.w} y2={tam.h}
+                        stroke="#0284c7" strokeWidth={grosor * 1.1} strokeDasharray={`${3 / vista.k} ${3 / vista.k}`} />
+                    )}
+                    {guias.y != null && (
+                      <line x1={0} y1={guias.y * tam.h} x2={tam.w} y2={guias.y * tam.h}
+                        stroke="#0284c7" strokeWidth={grosor * 1.1} strokeDasharray={`${3 / vista.k} ${3 / vista.k}`} />
+                    )}
+                  </g>
+                )}
                 {dibujando && dibujando.puntos.length > 0 && (
                   <g style={{ pointerEvents: 'none' }}>
                     {formaDibujo === 'rectangulo' && cursor ? (
@@ -775,8 +815,8 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
               {zonaDe.has(sel.id) && editandoContorno && (
                 <div className="space-y-1.5">
                   <p className="text-[11px] text-slate-500">
-                    Arrastre el recinto completo o sus esquinas (puntos blancos) para moverlas. Para <strong>agregar</strong> una esquina, arrastre el punto naranjo del medio de un borde.
-                    Para <strong>quitar</strong> una, haga clic en ella y pulse Supr o «Quitar esquina».
+                    Arrastre el recinto completo o sus esquinas (se alinean solas en horizontal y vertical; mantenga <strong>Shift</strong> para mover libre).
+                    Para <strong>agregar</strong> una esquina, arrastre el punto naranjo del medio de un borde; para <strong>quitarla</strong>, haga clic en ella y pulse Supr.
                   </p>
                   {verticeMarcado != null && (
                     <button type="button" onClick={quitarVerticeMarcado} disabled={(zonaDe.get(sel.id)?.poligono.length || 0) <= 3}

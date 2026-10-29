@@ -75,3 +75,73 @@ export function colorDeCategoria(texto?: string | null): string {
   // Ángulo áureo: categorías parecidas quedan con colores bien distintos.
   return `hsl(${Math.round((h * 137.508) % 360)} 70% 48%)`;
 }
+
+export interface AjusteOrtogonal {
+  punto: Punto;
+  guiaX?: number;
+  guiaY?: number;
+}
+
+/**
+ * Ajusta magnéticamente un punto (al arrastrar una esquina o dibujar un polígono) para facilitar desplazamientos
+ * horizontales y verticales, permitiendo movimiento libre cuando el puntero se aparta de los ejes ortogonales.
+ */
+export function ajustarPuntoOrtogonal(
+  crudo: Punto,
+  origen: Punto | null,
+  vecinos: Punto[],
+  anchoPx: number,
+  altoPx: number,
+  umbralPx = 14,
+): AjusteOrtogonal {
+  const cx = Math.min(Math.max(crudo[0], 0), 1);
+  const cy = Math.min(Math.max(crudo[1], 0), 1);
+  const w = Math.max(anchoPx, 1);
+  const h = Math.max(altoPx, 1);
+  let x = cx, y = cy;
+  let guiaX: number | undefined;
+  let guiaY: number | undefined;
+
+  const dxPx = origen ? Math.abs(cx - origen[0]) * w : 0;
+  const dyPx = origen ? Math.abs(cy - origen[1]) * h : 0;
+
+  // 1. Riel horizontal o vertical respecto del punto de partida (si el desplazamiento va casi recto en X o en Y).
+  if (origen) {
+    if (dxPx >= dyPx) {
+      if (dyPx <= umbralPx || (dyPx <= dxPx * 0.28 && dyPx <= umbralPx * 2.2)) {
+        y = origen[1];
+        guiaY = origen[1];
+      }
+    } else if (dxPx <= umbralPx || (dxPx <= dyPx * 0.28 && dxPx <= umbralPx * 2.2)) {
+      x = origen[0];
+      guiaX = origen[0];
+    }
+  }
+
+  // 2. Imán a las coordenadas X e Y de las esquinas vecinas (para dejar muros a 90° sin esfuerzo).
+  let mejorDx = umbralPx;
+  let mejorDy = umbralPx;
+  for (const [vx, vy] of vecinos) {
+    const mismoOrigenX = origen && Math.abs(vx - origen[0]) * w < 2;
+    const mismoOrigenY = origen && Math.abs(vy - origen[1]) * h < 2;
+    // Si el usuario se está desplazando en X para alejarse de esa misma línea vertical, no lo frena.
+    if (!(mismoOrigenX && dxPx > dyPx && dxPx > 3)) {
+      const distPx = Math.abs(cx - vx) * w;
+      if (distPx <= mejorDx) {
+        mejorDx = distPx;
+        x = vx;
+        guiaX = vx;
+      }
+    }
+    if (!(mismoOrigenY && dyPx > dxPx && dyPx > 3)) {
+      const distPy = Math.abs(cy - vy) * h;
+      if (distPy <= mejorDy) {
+        mejorDy = distPy;
+        y = vy;
+        guiaY = vy;
+      }
+    }
+  }
+
+  return { punto: [x, y], guiaX, guiaY };
+}
