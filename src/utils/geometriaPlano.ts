@@ -145,3 +145,30 @@ export function ajustarPuntoOrtogonal(
 
   return { punto: [x, y], guiaX, guiaY };
 }
+
+const ESCALAS_HABITUALES = [20, 25, 50, 65, 75, 100, 125, 150, 200, 250, 500, 1000];
+
+/**
+ * Calcula la escala real («1:50», «1:65», etc.) a partir de los contornos ubicados y las superficies registradas de sus
+ * recintos. Usa la mediana para que un recinto puntual no distorsione la escala de la lámina.
+ */
+export function estimarEscala(
+  pares: { poligono: Punto[]; superficieM2?: number | null }[],
+  anchoPaginaPt: number,
+  altoPaginaPt: number,
+): string | null {
+  const ns: number[] = [];
+  for (const { poligono, superficieM2 } of pares) {
+    const reg = Number(superficieM2) || 0;
+    if (reg <= 0 || poligono.length < 3) continue;
+    const area1 = areaRealM2(poligono, anchoPaginaPt, altoPaginaPt, '1:1');
+    if (area1 && area1 > 0) ns.push(Math.sqrt(reg / area1));
+  }
+  if (!ns.length) return null;
+  ns.sort((a, b) => a - b);
+  const mitad = Math.floor(ns.length / 2);
+  const mediana = ns.length % 2 ? ns[mitad] : (ns[mitad - 1] + ns[mitad]) / 2;
+  const habitual = ESCALAS_HABITUALES.find(e => Math.abs(e - mediana) / e <= 0.04);
+  const final = habitual || Math.max(1, Math.round(mediana));
+  return `1:${final}`;
+}

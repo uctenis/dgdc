@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ajustarPuntoOrtogonal, areaPoligono, areaRealM2, centroide, colorDeCategoria, denominadorEscala, puntoEnPoligono, type Punto } from '../utils/geometriaPlano';
+import { ajustarPuntoOrtogonal, areaPoligono, areaRealM2, centroide, colorDeCategoria, denominadorEscala, estimarEscala, puntoEnPoligono, type Punto } from '../utils/geometriaPlano';
 
 const cuadrado: Punto[] = [[0, 0], [1, 0], [1, 1], [0, 1]];
 
@@ -48,5 +48,11 @@ describe('geometría del visor de planos', () => {
     // Desplazamiento claramente diagonal (50 px en X y 50 px en Y, lejos de vecinos): queda libre
     const diag = ajustarPuntoOrtogonal([0.55, 0.25], origen, vecinos, 1000, 1000);
     expect(diag.punto).toEqual([0.55, 0.25]);
+  });
+
+  it('estima automáticamente la escala de la lámina a partir de los recintos ubicados', () => {
+    const lado = 72 / 1000; // 1 pulgada en página de 1000 pt -> a escala 1:50 mide 1,27 m de lado = 1,6129 m²
+    const poligono: Punto[] = [[0, 0], [lado, 0], [lado, lado], [0, lado]];
+    expect(estimarEscala([{ poligono, superficieM2: 1.27 * 1.27 }], 1000, 1000)).toBe('1:50');
   });
 });

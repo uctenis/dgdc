@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import type { DocumentoEdificio, Piso, Recinto, ZonaRecinto } from '../types/recintos';
 import { descargarLamina, eliminarZona, guardarEscalaDocumento, guardarZona, listarZonas } from '../services/recintos';
-import { ajustarPuntoOrtogonal, areaRealM2, centroide, colorDeCategoria, limites, puntoEnPoligono, type Punto } from '../utils/geometriaPlano';
+import { ajustarPuntoOrtogonal, areaRealM2, centroide, colorDeCategoria, denominadorEscala, estimarEscala, limites, puntoEnPoligono, type Punto } from '../utils/geometriaPlano';
 import { detectarRecintoEnPunto, predibujarRecintos } from '../utils/predibujoPlano';
 import { comoTitulo } from '../utils/texto';
 import { getConfigEspacios, tipoConfigurado } from '../data/espaciosConfig';
@@ -58,6 +58,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
   const [modoColor, setModoColor] = useState<ModoColor>('tipo');
   const [pantallaCompleta, setPantallaCompleta] = useState(false);
   const [escala, setEscala] = useState(documento.escala || '');
+  useEffect(() => { setEscala(documento.escala || ''); }, [documento.id, documento.escala]);
   const [guardando, setGuardando] = useState(false);
   const [mostrarRotulos, setMostrarRotulos] = useState(false);
   const [editandoContorno, setEditandoContorno] = useState(false);   // muestra los vértices del recinto elegido
@@ -183,6 +184,23 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
   // Al cambiar de recinto, sus vértices vuelven a quedar ocultos.
   useEffect(() => { setEditandoContorno(false); }, [seleccion]);
   useEffect(() => { setVerticeMarcado(null); }, [seleccion, editandoContorno]);
+
+  // Si la lámina no tiene escala o su escala produce diferencias grandes frente a los m² registrados, la calibra sola.
+  useEffect(() => {
+    if (!tam || !zonasPagina.length) return;
+    const sugerida = estimarEscala(
+      zonasPagina.map(z => ({ poligono: z.poligono, superficieM2: recintoPorId.get(z.recinto_id)?.superficie_m2 })),
+      tam.w,
+      tam.h,
+    );
+    if (!sugerida) return;
+    const denActual = denominadorEscala(escala);
+    const denSugerida = denominadorEscala(sugerida);
+    if (denSugerida && (!denActual || Math.abs(denActual - denSugerida) / denSugerida > 0.15)) {
+      setEscala(sugerida);
+      guardarEscalaDocumento(documento.id, sugerida).then(onEscalaGuardada).catch(() => {});
+    }
+  }, [tam, zonasPagina, recintoPorId, documento.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // La primera vez que se abre una lámina sin recintos ubicados, se predibujan solos.
   useEffect(() => {
