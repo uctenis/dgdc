@@ -29,6 +29,13 @@ interface Props {
   destacado?: string | null;
   onEditarRecinto: (r: Recinto) => void;
   onEscalaGuardada?: () => void;
+  /**
+   * «consulta»: solo mirar (plano con códigos y m² rotulados, leyenda y selección; sin herramientas de dibujo ni lista
+   * lateral, que pone la vista que lo contiene). «edicion» (por defecto): todas las herramientas.
+   */
+  modo?: 'consulta' | 'edicion';
+  /** Avisa el recinto elegido en el plano (o null al soltarlo). */
+  onSeleccionar?: (recintoId: string | null) => void;
 }
 
 /**
@@ -37,7 +44,8 @@ interface Props {
  * escritos en el plano. Cada contorno se puede detectar con un solo clic dentro de los muros (varita automática),
  * corregir arrastrando sus vértices o redibujar.
  */
-export function VisorPlano({ documento, pisos = [], recintos, destacado, onEditarRecinto, onEscalaGuardada }: Props) {
+export function VisorPlano({ documento, pisos = [], recintos, destacado, onEditarRecinto, onEscalaGuardada, modo = 'edicion', onSeleccionar }: Props) {
+  const consulta = modo === 'consulta';
   const [pisoLista, setPisoLista] = useState<string>(documento.piso_id || '');
   const [estadoLista, setEstadoLista] = useState<'todos' | 'pendientes' | 'ubicados'>('todos');
   const [filtroRecinto, setFiltroRecinto] = useState('');
@@ -62,7 +70,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
   const [escala, setEscala] = useState(documento.escala || '');
   useEffect(() => { setEscala(documento.escala || ''); }, [documento.id, documento.escala]);
   const [guardando, setGuardando] = useState(false);
-  const [mostrarRotulos, setMostrarRotulos] = useState(false);
+  const [mostrarRotulos, setMostrarRotulos] = useState(consulta);
   const [editandoContorno, setEditandoContorno] = useState(false);   // muestra los vértices del recinto elegido
   // «Seleccionar varios»: se arrastra un rectángulo (o se hace clic en cada recinto) para sumar sus superficies.
   const [modoVarios, setModoVarios] = useState(false);
@@ -157,7 +165,18 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
     setVista({ k: kk, x: m.clientWidth / 2 - cx * kk, y: m.clientHeight / 2 - cy * kk });
   }, [zonaDe, tam, pagina, vista.k]);
 
-  useEffect(() => { if (destacado && tam) { setSeleccion(destacado); enfocar(destacado); } }, [destacado, tam]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Último recinto elegido en el propio plano: cuando la vista que lo contiene lo devuelve como «destacado», no se
+  // vuelve a centrar el plano (solo se centra lo que se elige desde afuera, por ejemplo en el árbol de recintos).
+  const elegidoEnPlano = useRef<string | null>(null);
+  useEffect(() => {
+    if (destacado && tam && destacado !== elegidoEnPlano.current) { setSeleccion(destacado); enfocar(destacado); }
+    else if (!destacado && consulta) { elegidoEnPlano.current = null; setSeleccion(null); }
+  }, [destacado, tam]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (seleccion === (destacado || null)) return;
+    elegidoEnPlano.current = seleccion;
+    onSeleccionar?.(seleccion);
+  }, [seleccion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Detecta y guarda el contorno de los recintos cuyo código aparece escrito en la lámina: los aún no ubicados o, con
@@ -580,17 +599,17 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
             {Array.from({ length: pdf.numPages }, (_, i) => <option key={i} value={i + 1}>Página {i + 1}</option>)}
           </select>
         )}
-        <label className="flex items-center gap-1 text-slate-600">Escala
+        {!consulta && <label className="flex items-center gap-1 text-slate-600">Escala
           <input value={escala} onChange={e => setEscala(e.target.value)} placeholder={getConfigEspacios().parametros.escalaPorDefecto}
             onBlur={() => { if (escala !== (documento.escala || '')) guardarEscalaDocumento(documento.id, escala).then(onEscalaGuardada).catch(err => setError(String(err?.message || err))); }}
             className="w-20 px-2 py-1 border border-slate-300 rounded-lg" />
-        </label>
+        </label>}
         <label className="flex items-center gap-1 text-slate-600">Color por
           <select value={modoColor} onChange={e => setModoColor(e.target.value as ModoColor)} className="px-2 py-1 border border-slate-300 rounded-lg">
             <option value="tipo">Tipo</option><option value="uso">Uso</option><option value="estado">Estado</option><option value="unidad">Unidad usuaria</option>
           </select>
         </label>
-        <button type="button" disabled={predibujando || !pdf || !recintos.length}
+        {!consulta && <><button type="button" disabled={predibujando || !pdf || !recintos.length}
           onClick={() => {
             if (ubicados < recintos.length) void predibujar(false);
             else if (confirm('Todos los recintos ya están ubicados. ¿Volver a predibujarlos? Se reemplazarán los contornos de los que se encuentren en la lámina.')) void predibujar(false, true);
@@ -599,7 +618,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
           className="flex items-center gap-1 px-2 py-1 rounded-lg border border-teal-300 font-bold text-teal-800 hover:bg-teal-50 disabled:opacity-40">
           {predibujando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />} Predibujar recintos
         </button>
-        <CopiarContornos documento={documento} pdf={pdf} pagina={pagina} zonas={zonasPagina} recintos={recintos} />
+        <CopiarContornos documento={documento} pdf={pdf} pagina={pagina} zonas={zonasPagina} recintos={recintos} /></>}
         <button type="button" onClick={() => { setModoVarios(m => !m); setVarios(new Set()); setSeleccion(null); }}
           title="Arrastre un rectángulo sobre el plano (por ejemplo, un ala) o haga clic en cada recinto para sumar sus superficies. Alt + arrastrar mueve el plano."
           className={`flex items-center gap-1 px-2 py-1 rounded-lg border font-bold ${modoVarios ? 'bg-slate-900 border-slate-900 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
@@ -660,6 +679,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
                       {mostrarRotulos && <text x={cx * tam.w} y={cy * tam.h} textAnchor="middle" dominantBaseline="middle" fontSize={letra} fontWeight={700}
                         fill="#0f172a" stroke="white" strokeWidth={letra * 0.25} paintOrder="stroke" style={{ pointerEvents: 'none' }}>
                         {r?.codigo.replace(`${r.edificio_codigo}_`, '') || ''}
+                        {consulta && r?.superficie_m2 ? <tspan x={cx * tam.w} dy={letra * 1.15} fontWeight={500} fontSize={letra * 0.85}>{m2(r.superficie_m2)}</tspan> : null}
                       </text>}
                       {activo && editandoContorno && !dibujando && z.poligono.map(([x, y], i) => {
                         const [sx, sy] = z.poligono[(i + 1) % z.poligono.length];
@@ -815,7 +835,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
         </div>
 
         {/* Panel lateral: recinto elegido y lista de recintos */}
-        <aside className="w-72 shrink-0 flex flex-col gap-2 min-h-0">
+        {!consulta && <aside className="w-72 shrink-0 flex flex-col gap-2 min-h-0">
           {sel ? (
             <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm space-y-2">
               <div className="flex items-start gap-2">
@@ -929,7 +949,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
               })}
             </ul>
           </div>
-        </aside>
+        </aside>}
       </div>
     </div>
   );

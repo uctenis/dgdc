@@ -139,6 +139,7 @@ export async function listarUsos(): Promise<string[]> {
 const COLUMNAS_EDITABLES = [
   'edificio_codigo', 'piso_id', 'codigo', 'nombre', 'uso', 'superficie_m2', 'superficie_oguc_m2', 'capacidad', 'estado',
   'unidad_usuaria', 'ocupantes', 'foto_url', 'observaciones', 'atributos', 'origen',
+  'fecha_alta', 'motivo_alta', 'fecha_baja', 'motivo_baja', 'tenencia',
 ] as const;
 
 /** Lo que se envía a la base al guardar un recinto: solo columnas editables y sin ocupantes vacíos. */

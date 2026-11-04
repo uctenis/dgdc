@@ -4,6 +4,7 @@
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import type { Piso, Recinto } from '../types/recintos';
+import { hoyISO, vigenteEn } from './vigenciaRecinto';
 import { alertasRecinto, observacionesSinNotas } from './alertasRecinto';
 import { comoTitulo } from './texto';
 
@@ -26,7 +27,9 @@ const m2 = (n?: number | null) => (n || n === 0 ? Number(n) : null);
 export async function exportarRecintosExcel(recintos: FilaExportable[], nombres: Record<string, string>, titulo: string): Promise<void> {
   const libro = new ExcelJS.Workbook();
   libro.creator = 'Gestor de Espacios UCT';
-  const vigentes = recintos.filter(r => r.estado !== 'Eliminado');
+  // Los resúmenes suman lo vigente hoy: sin lo dado de baja ni las obras con fecha de entrega futura.
+  const hoy = hoyISO();
+  const vigentes = recintos.filter(r => vigenteEn(r, hoy));
   const ordenar = (a: FilaExportable, b: FilaExportable) =>
     a.edificio_codigo.localeCompare(b.edificio_codigo, 'es', { numeric: true }) || (a.piso?.codigo || '').localeCompare(b.piso?.codigo || '', 'es', { numeric: true })
     || a.codigo.localeCompare(b.codigo, 'es', { numeric: true });
@@ -67,7 +70,9 @@ export async function exportarRecintosExcel(recintos: FilaExportable[], nombres:
     { header: 'Piso', key: 'piso', width: 12 }, { header: 'Código', key: 'codigo', width: 14 }, { header: 'Nombre', key: 'nombre', width: 30 },
     { header: 'Uso', key: 'uso', width: 24 }, { header: 'm² útil', key: 'util', width: 10, style: { numFmt: '#,##0.00' } },
     { header: 'm² OGUC', key: 'oguc', width: 10, style: { numFmt: '#,##0.00' } }, { header: 'Capacidad', key: 'capacidad', width: 10 },
-    { header: 'Estado', key: 'estado', width: 14 }, { header: 'Unidad usuaria', key: 'unidad', width: 34 },
+    { header: 'Estado', key: 'estado', width: 14 }, { header: 'Tenencia', key: 'tenencia', width: 11 },
+    { header: 'Opera desde', key: 'alta', width: 12 }, { header: 'De baja desde', key: 'baja', width: 12 },
+    { header: 'Motivo alta / baja', key: 'motivos', width: 26 }, { header: 'Unidad usuaria', key: 'unidad', width: 34 },
     { header: 'N° ocupantes', key: 'nOcupantes', width: 11 }, { header: 'Ocupantes', key: 'ocupantes', width: 60 },
     { header: 'Por revisar', key: 'revisar', width: 40 }, { header: 'Observaciones', key: 'observaciones', width: 40 },
   ];
@@ -75,7 +80,8 @@ export async function exportarRecintosExcel(recintos: FilaExportable[], nombres:
     hoja.addRow({
       edificio: r.edificio_codigo, nombreEdificio: nombres[r.edificio_codigo] || '', piso: r.piso?.nombre || '', codigo: r.codigo,
       nombre: r.nombre, uso: r.uso || '', util: m2(r.superficie_m2), oguc: m2(r.superficie_oguc_m2), capacidad: r.capacidad ?? null,
-      estado: r.estado, unidad: r.unidad_usuaria || '', nOcupantes: r.ocupantes?.length || 0,
+      estado: r.estado, tenencia: r.tenencia || 'Propia', alta: r.fecha_alta || '', baja: r.fecha_baja || '',
+      motivos: [r.motivo_alta, r.motivo_baja].filter(Boolean).join(' / '), unidad: r.unidad_usuaria || '', nOcupantes: r.ocupantes?.length || 0,
       ocupantes: (r.ocupantes || []).map(o => [comoTitulo(o.nombre), o.cargo].filter(Boolean).join(' – ')).join('; '),
       revisar: alertasRecinto(r).join('; '), observaciones: observacionesSinNotas(r.observaciones).join(' '),
     });

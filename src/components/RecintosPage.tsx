@@ -10,12 +10,13 @@ import {
   listarDocumentos, registrarDocumento, listarRecintosDeCampus, separarUnidades,
 } from '../services/recintos';
 import {
-  ESTADOS_RECINTO, TIPOS_DOCUMENTO, ESPECIALIDADES, FORMATOS_DOCUMENTO,
-  type Piso, type Recinto, type DocumentoEdificio, type CambioRecinto, type FichaEdificio, type Ocupante,
+  ESTADOS_RECINTO, TENENCIAS, MOTIVOS_ALTA, MOTIVOS_BAJA, TIPOS_DOCUMENTO, ESPECIALIDADES, FORMATOS_DOCUMENTO,
+  type Piso, type Recinto, type Tenencia, type DocumentoEdificio, type CambioRecinto, type FichaEdificio, type Ocupante,
 } from '../types/recintos';
 import { ImportarRecintosModal } from './ImportarRecintosModal';
 import { BuscadorEspacios } from './BuscadorEspacios';
 import { PlanoInteractivo } from './PlanoInteractivo';
+import { ExploradorEdificio } from './ExploradorEdificio';
 import { SubirLaminasCampus } from './SubirLaminasCampus';
 import { RevisionCampus } from './RevisionCampus';
 import { alertasRecinto, observacionesSinNotas } from '../utils/alertasRecinto';
@@ -23,6 +24,7 @@ import { formatoFecha } from '../utils/fechas';
 import { comoTitulo } from '../utils/texto';
 import { getConfigEspacios } from '../data/espaciosConfig';
 import { formatoTipo, formatoUnidad } from '../utils/formatoNombres';
+import { hoyISO, resumenSuperficie, textoVigencia, vigenteEn } from '../utils/vigenciaRecinto';
 
 const m2 = (n?: number | null) => (n ? `${n.toLocaleString('es-CL', { maximumFractionDigits: 2 })} m²` : '—');
 /** Superficie para las tablas: siempre con dos decimales, para que las cifras queden alineadas. */
@@ -36,6 +38,7 @@ const COLOR_ESTADO: Record<string, string> = {
 const campo = 'w-full px-2.5 py-1.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-400';
 
 type RecintoEditable = Omit<Recinto, 'id'> & { id?: string };
+type Vista = 'general' | 'recintos' | 'plano' | 'documentos';
 type DocumentoNuevo = Omit<DocumentoEdificio, 'id' | 'vigente' | 'creado_en' | 'creado_por'>;
 
 /** Módulo de control documental: pisos y recintos de cada edificio, y el índice de sus planos (los archivos siguen en Drive). */
@@ -69,17 +72,18 @@ export function RecintosPage() {
   // Espacio común del catastro (categoría 3: camping, accesos, áreas verdes) o zona exterior de la configuración.
   const esEspacioComun = (e: string) => categorias[e] === '3' || !!obtenerInfoEdificio(e)?.esExterior;
   const etiqueta = (e: string) => (nombreEdificio(e) ? `${e} · ${nombreEdificio(e)}` : etiquetaEdificio(e));
-  const vista = (['plano', 'documentos'].includes(parametros.get('vista') || '') ? parametros.get('vista') : 'recintos') as 'recintos' | 'plano' | 'documentos';
+  // Sin «vista» en la dirección se abre la vista general (árbol, plano y ficha); «recintos» es la tabla por piso.
+  const vista = (['recintos', 'plano', 'documentos'].includes(parametros.get('vista') || '') ? parametros.get('vista') : 'general') as Vista;
   /**
    * Cambia de campus, edificio o pestaña. Elegir un campus parte sin edificio, y elegir un edificio parte en sus recintos.
    * Cambiar de campus o edificio deja un paso en el historial; cambiar de pestaña, no.
    */
-  const ir = (destino: { campus?: string; edificio?: string; vista?: 'recintos' | 'plano' | 'documentos' }) => {
+  const ir = (destino: { campus?: string; edificio?: string; vista?: Vista }) => {
     const nuevo = new URLSearchParams(parametros);
     const poner = (clave: string, valor?: string) => (valor ? nuevo.set(clave, valor) : nuevo.delete(clave));
     if (destino.campus !== undefined) { poner('campus', destino.campus); if (destino.edificio === undefined) nuevo.delete('edificio'); }
     if (destino.edificio !== undefined) { poner('edificio', destino.edificio); if (destino.vista === undefined) nuevo.delete('vista'); }
-    if (destino.vista !== undefined) poner('vista', destino.vista === 'recintos' ? '' : destino.vista);
+    if (destino.vista !== undefined) poner('vista', destino.vista === 'general' ? '' : destino.vista);
     const soloPestana = destino.campus === undefined && destino.edificio === undefined;
     setParametros(nuevo, { replace: soloPestana });
   };
@@ -110,7 +114,7 @@ export function RecintosPage() {
 
   // Abre el edificio de un resultado del buscador y marca el recinto encontrado.
   const irA = (codigoEdificio: string, recintoId?: string) => {
-    ir({ campus: configurados.find(c => c.edificios.includes(codigoEdificio))?.sigla || codigoEdificio.slice(0, 3), edificio: codigoEdificio, vista: 'recintos' });
+    ir({ campus: configurados.find(c => c.edificios.includes(codigoEdificio))?.sigla || codigoEdificio.slice(0, 3), edificio: codigoEdificio, vista: 'general' });
     setResaltado(recintoId || null);
   };
   /** Nombre de cada edificio para los reportes: el del catastro o el de la configuración. */
@@ -209,8 +213,10 @@ export function RecintosPage() {
   }, [recintos]);
   const activos = recintos.filter(r => r.estado !== 'Eliminado');
   const porRevisar = activos.filter(r => alertasRecinto(r).length).length;
-  const superficieTotal = activos.reduce((s, r) => s + (Number(r.superficie_m2) || 0), 0);
-  const superficieOguc = activos.reduce((s, r) => s + (Number(r.superficie_oguc_m2) || 0), 0);
+  // Totales de hoy: solo lo que existe y está a cargo de la UCT (sin las obras por entregar ni lo dado de baja).
+  const resumenHoy = resumenSuperficie(recintos);
+  const superficieTotal = resumenHoy.util;
+  const superficieOguc = resumenHoy.oguc;
   const documentosVisibles = documentos.filter(d => verAnteriores || d.vigente);
   const porEspecialidad = ESPECIALIDADES.map(e => ({ especialidad: e, lista: documentosVisibles.filter(d => d.especialidad === e) })).filter(g => g.lista.length);
 
@@ -340,13 +346,17 @@ export function RecintosPage() {
       {campusSigla && edificio && (
         <>
           <div className="flex flex-wrap items-center gap-2">
-            {(['recintos', 'plano', 'documentos'] as const).map(v => (
+            {(['general', 'recintos', 'plano', 'documentos'] as const).map(v => (
               <button key={v} type="button" onClick={() => ir({ vista: v })}
                 className={`px-3 py-1.5 rounded-lg font-bold border ${vista === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
-                {v === 'recintos' ? `Recintos (${activos.length})` : v === 'plano' ? 'Plano interactivo' : `Planos y documentos (${documentos.filter(d => d.vigente).length} vigentes)`}
+                {v === 'general' ? 'Vista general' : v === 'recintos' ? `Tabla de recintos (${activos.length})` : v === 'plano' ? 'Editar plano' : `Planos y documentos (${documentos.filter(d => d.vigente).length} vigentes)`}
               </button>
             ))}
-            <span className="ml-auto text-slate-500">{pisos.length} piso(s) · útil <strong className="text-slate-800">{m2(superficieTotal)}</strong> · OGUC <strong className="text-slate-800">{m2(superficieOguc)}</strong></span>
+            <span className="ml-auto text-slate-500">
+              {pisos.length} piso(s) · útil <strong className="text-slate-800">{m2(superficieTotal)}</strong> · OGUC <strong className="text-slate-800">{m2(superficieOguc)}</strong>
+              {resumenHoy.porVenir.recintos > 0 && <> · <span className="text-amber-700" title="Obras registradas con fecha de entrega futura: no suman en el total de hoy">por venir <strong>{m2(resumenHoy.porVenir.util)}</strong></span></>}
+              {resumenHoy.noPropia.recintos > 0 && <> · <span className="text-sky-700" title="Parte del total que es arrendada, en comodato o en concesión">no propia <strong>{m2(resumenHoy.noPropia.util)}</strong></span></>}
+            </span>
             {porRevisar > 0 && (
               <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 font-bold" title="Recintos con superficies faltantes o dudosas, sin tipo o con una nota «Por revisar»">
                 <AlertTriangle className="w-3.5 h-3.5" /> {porRevisar} por revisar
@@ -363,7 +373,7 @@ export function RecintosPage() {
             {cargando && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
           </div>
 
-          {ficha && <TarjetaFicha ficha={ficha} sumaUtil={superficieTotal} sumaOguc={superficieOguc} />}
+          {ficha && vista !== 'general' && <TarjetaFicha ficha={ficha} sumaUtil={superficieTotal} sumaOguc={superficieOguc} />}
 
           {error && (
             <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 rounded-lg p-3 text-rose-800">
@@ -399,8 +409,9 @@ export function RecintosPage() {
               {pisos.map(piso => {
                 const lista = recintosPorPiso.get(piso.id) || [];
                 const vigentes = lista.filter(r => r.estado !== 'Eliminado');
-                const sup = vigentes.reduce((s, r) => s + (Number(r.superficie_m2) || 0), 0);
-                const supOguc = vigentes.reduce((s, r) => s + (Number(r.superficie_oguc_m2) || 0), 0);
+                const hoy = hoyISO();
+                const sup = vigentes.filter(r => vigenteEn(r, hoy)).reduce((s, r) => s + (Number(r.superficie_m2) || 0), 0);
+                const supOguc = vigentes.filter(r => vigenteEn(r, hoy)).reduce((s, r) => s + (Number(r.superficie_oguc_m2) || 0), 0);
                 const marcadosPiso = vigentes.filter(r => seleccion.has(r.id)).length;
                 const contraido = pisosContraidos.has(piso.id);
                 return (
@@ -449,7 +460,8 @@ export function RecintosPage() {
                                 <td className="px-3 py-2 font-mono font-bold truncate" title={[r.codigo, ...alertasRecinto(r).map(a => `• ${a}`)].join('\n')}>
                                   {alertasRecinto(r).length > 0 && <AlertTriangle className="inline w-3.5 h-3.5 mr-1 -mt-0.5 text-amber-500" />}{r.codigo}
                                 </td>
-                                <td className="px-3 py-2 truncate" title={r.nombre}>{r.nombre}{r.foto_url && <a href={r.foto_url} target="_blank" rel="noreferrer" className="ml-1.5 text-sky-700 no-underline" title="Ver foto">📷</a>}</td>
+                                <td className="px-3 py-2 truncate" title={r.nombre}>{r.nombre}{r.foto_url && <a href={r.foto_url} target="_blank" rel="noreferrer" className="ml-1.5 text-sky-700 no-underline" title="Ver foto">📷</a>}
+                                  <EtiquetasVigencia r={r} /></td>
                                 <td className="px-3 py-2 truncate text-slate-600" title={r.uso || ''}>{r.uso || '—'}</td>
                                 <td className="px-3 py-2 text-right tabular-nums">{m2Tabla(r.superficie_m2)}</td>
                                 <td className="px-3 py-2 text-right tabular-nums text-slate-600">{m2Tabla(r.superficie_oguc_m2)}</td>
@@ -474,6 +486,13 @@ export function RecintosPage() {
                 );
               })}
             </div>
+          )}
+
+          {vista === 'general' && (
+            <ExploradorEdificio edificioCodigo={edificio} nombreEdificio={nombreEdificio(edificio)} pisos={pisos} recintos={activos} documentos={documentos}
+              destacado={resaltado} edificiosCampus={edificios.filter(e => enBase.includes(e)).map(e => ({ codigo: e, etiqueta: etiqueta(e) }))}
+              onIrEdificio={e => { ir({ edificio: e }); setResaltado(null); }} onVerFicha={r => setFichaRecinto(r)} onEditarRecinto={r => setRecintoEditando(r)}
+              onVerDocumentos={() => ir({ vista: 'documentos' })} onRecargar={cargar} />
           )}
 
           {vista === 'plano' && (
@@ -545,6 +564,8 @@ export function RecintosPage() {
             accion(() => guardarRecinto({
               ...recintoEditando,
               codigo: recintoEditando.codigo.trim().toUpperCase(),
+              // Con la fecha de baja ya cumplida, el recinto deja de estar vigente.
+              estado: recintoEditando.fecha_baja && recintoEditando.fecha_baja <= hoyISO() ? 'Eliminado' : recintoEditando.estado,
               nombre: enMayusculas(recintoEditando.nombre) ? formatoTipo(recintoEditando.nombre) : recintoEditando.nombre.trim(),
               uso: enMayusculas(recintoEditando.uso) ? formatoTipo(recintoEditando.uso) : recintoEditando.uso,
               unidad_usuaria: enMayusculas(recintoEditando.unidad_usuaria) ? separarUnidades(recintoEditando.unidad_usuaria).map(formatoUnidad).join(' / ') : recintoEditando.unidad_usuaria,
@@ -568,6 +589,19 @@ export function RecintosPage() {
             <label className="font-bold">Superficie útil (m²)<input type="number" min={0} step="0.01" value={recintoEditando.superficie_m2 ?? ''} onChange={e => setRecintoEditando({ ...recintoEditando, superficie_m2: e.target.value === '' ? null : Number(e.target.value) })} className={`mt-1 ${campo} font-normal`} /></label>
             <label className="font-bold">Superficie OGUC (m²)<input type="number" min={0} step="0.01" value={recintoEditando.superficie_oguc_m2 ?? ''} onChange={e => setRecintoEditando({ ...recintoEditando, superficie_oguc_m2: e.target.value === '' ? null : Number(e.target.value) })} className={`mt-1 ${campo} font-normal`} /></label>
             <label className="font-bold">Capacidad (personas)<input type="number" min={0} value={recintoEditando.capacidad ?? ''} onChange={e => setRecintoEditando({ ...recintoEditando, capacidad: e.target.value === '' ? null : Number(e.target.value) })} className={`mt-1 ${campo} font-normal`} /></label>
+            <label className="font-bold">Tenencia
+              <select value={recintoEditando.tenencia || 'Propia'} onChange={e => setRecintoEditando({ ...recintoEditando, tenencia: e.target.value as Tenencia })} className={`mt-1 ${campo} font-normal`}>
+                {TENENCIAS.map(t => <option key={t}>{t}</option>)}
+              </select>
+            </label>
+            <label className="font-bold">Opera desde<input type="date" value={recintoEditando.fecha_alta || ''} onChange={e => setRecintoEditando({ ...recintoEditando, fecha_alta: e.target.value || null })} className={`mt-1 ${campo} font-normal`}
+              title="Vacía si existe desde antes del registro. Si es futura (una obra por entregar), no suma en los totales de hoy." /></label>
+            <label className="font-bold">Motivo del alta<input list="motivos-alta" value={recintoEditando.motivo_alta || ''} onChange={e => setRecintoEditando({ ...recintoEditando, motivo_alta: e.target.value || null })} placeholder="Construcción, arriendo…" className={`mt-1 ${campo} font-normal`} /></label>
+            <datalist id="motivos-alta">{MOTIVOS_ALTA.map(m => <option key={m} value={m} />)}</datalist>
+            <label className="font-bold">De baja desde<input type="date" value={recintoEditando.fecha_baja || ''} onChange={e => setRecintoEditando({ ...recintoEditando, fecha_baja: e.target.value || null })} className={`mt-1 ${campo} font-normal`}
+              title="Desde cuándo dejó de existir o de estar a cargo de la UCT. Si ya pasó, el recinto queda «Eliminado» y sale de los totales de hoy, pero sigue en su historia." /></label>
+            <label className="font-bold sm:col-span-2">Motivo de la baja<input list="motivos-baja" value={recintoEditando.motivo_baja || ''} onChange={e => setRecintoEditando({ ...recintoEditando, motivo_baja: e.target.value || null })} placeholder="Demolición, fin de arriendo…" className={`mt-1 ${campo} font-normal`} /></label>
+            <datalist id="motivos-baja">{MOTIVOS_BAJA.map(m => <option key={m} value={m} />)}</datalist>
             <label className="font-bold">Unidad usuaria<input list="unidades-oficiales" value={recintoEditando.unidad_usuaria || ''} onChange={e => setRecintoEditando({ ...recintoEditando, unidad_usuaria: e.target.value })} placeholder="Fac. de Ingeniería" className={`mt-1 ${campo} font-normal`} /></label>
             <datalist id="unidades-oficiales">{getConfigEspacios().unidades.map(u => <option key={u} value={u} />)}</datalist>
             <label className="font-bold sm:col-span-3">Foto de referencia (enlace de Drive)<input value={recintoEditando.foto_url || ''} onChange={e => setRecintoEditando({ ...recintoEditando, foto_url: e.target.value.trim() })} placeholder="https://drive.google.com/…" className={`mt-1 ${campo} font-normal`} /></label>
@@ -834,6 +868,9 @@ function FichaRecinto({ recinto: r, piso, onClose, onEditar, onHistorial, onVerE
           {dato('Capacidad', r.capacidad != null ? `${r.capacidad} personas` : '')}
           {dato('Uso', r.uso)}
           <div className="col-span-2 sm:col-span-4">{dato('Unidad usuaria', r.unidad_usuaria)}</div>
+          {(r.tenencia && r.tenencia !== 'Propia') && dato('Tenencia', r.tenencia)}
+          {r.fecha_alta && dato('Opera desde', `${formatoFecha(r.fecha_alta)}${r.motivo_alta ? ` · ${r.motivo_alta}` : ''}`)}
+          {r.fecha_baja && dato('De baja desde', `${formatoFecha(r.fecha_baja)}${r.motivo_baja ? ` · ${r.motivo_baja}` : ''}`)}
         </dl>
 
         <div>
@@ -877,4 +914,13 @@ function FichaRecinto({ recinto: r, piso, onClose, onEditar, onHistorial, onVerE
       </div>
     </Ventana>
   );
+}
+
+/** Avisos junto al nombre: obra por entregar, fecha de baja y tenencia no propia. */
+function EtiquetasVigencia({ r }: { r: Recinto }) {
+  const vigencia = textoVigencia(r);
+  return (<>
+    {vigencia && <span className="ml-1.5 px-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-bold no-underline">{vigencia}</span>}
+    {r.tenencia && r.tenencia !== 'Propia' && <span className="ml-1.5 px-1.5 rounded-full bg-sky-50 border border-sky-200 text-sky-800 text-[10px] font-bold no-underline">{r.tenencia}</span>}
+  </>);
 }

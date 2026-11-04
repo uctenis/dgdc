@@ -49,6 +49,18 @@ describe('importador de recintos', () => {
     expect(porCodigo('CDS01_001')[0].edificio).toBe('CDS01');
   });
 
+  it('oficina compartida: si la primera fila es un 0 y otra trae el 1, existe con la superficie de esa fila', () => {
+    const encabezados = FILAS[2];
+    const filas = [
+      ['CRC', 'CRC08', '1', 'CRC08_115', '0', 'OFICINA', 'PÉREZ, ANA', '', '26,62', '28', 'A'],
+      ['CRC', 'CRC08', '1', 'CRC08_115', '1', 'OFICINA', 'SOTO, LUIS', '', '17,05', '18,57', 'B'],
+      ['CRC', 'CRC08', '1', 'CRC08_115', '0', 'OFICINA', 'ROJAS, EVA', '', '17,05', '18,57', 'C'],
+    ];
+    const r = revisarFilas(encabezados, filas, 3, asignarAutomatico(encabezados), { edificioPorDefecto: 'X', guardarResto: false, incluirDatosPersonales: false });
+    expect(r[0].recinto).toMatchObject({ estado: 'Operativo', superficie_m2: 17.05, superficie_oguc_m2: 18.57 });
+    expect(r[0].recinto.ocupantes).toHaveLength(3);
+  });
+
   it('guarda el nombre del ocupante, pero no el RUT salvo que se pida', () => {
     const encabezados = FILAS[2];
     const opciones = { edificioPorDefecto: 'X', guardarResto: true };

@@ -133,6 +133,8 @@ export interface FilaRevisada {
   avisos: string[];
   /** Repite un código ya visto en el mismo edificio (p. ej. una fila por cada ocupante): se omite sin ser error. */
   repetida: boolean;
+  /** La columna «existe» de esta fila trae 1 (en el catastro, la fila cuya superficie cuenta). */
+  marcadaQueCuenta?: boolean;
   recinto: Omit<Recinto, 'id' | 'piso_id' | 'edificio_codigo' | 'origen'>;
 }
 
@@ -196,6 +198,7 @@ export function revisarFilas(
       problemasGraves: problemas,
       avisos,
       repetida,
+      marcadaQueCuenta: /^(1|si|sí|s|true)$/i.test(existe),
       recinto: {
         codigo, nombre,
         uso: col(fila, 'uso') || null,
@@ -210,12 +213,24 @@ export function revisarFilas(
       },
     };
   });
-  // Una fila por ocupante: los de las filas repetidas se suman a la primera fila de ese recinto.
+  // Una fila por ocupante: los de las filas repetidas se suman a la primera fila de ese recinto. En el catastro, la
+  // columna «existe» marca con 1 la fila cuya superficie cuenta y con 0 las repetidas de una oficina compartida: si
+  // la primera fila es un 0 pero otra trae el 1, el recinto existe y su superficie es la de esa fila.
   const primera = new Map<string, FilaRevisada>();
   for (const f of filas) {
     const clave = `${f.edificio}|${f.recinto.codigo}`;
     const base = primera.get(clave);
     if (!base) { primera.set(clave, f); continue; }
+    if (f.marcadaQueCuenta && !base.marcadaQueCuenta) {
+      base.marcadaQueCuenta = true;
+      base.recinto.estado = f.recinto.estado;
+      if (f.recinto.superficie_m2) base.recinto.superficie_m2 = f.recinto.superficie_m2;
+      if (f.recinto.superficie_oguc_m2) base.recinto.superficie_oguc_m2 = f.recinto.superficie_oguc_m2;
+    } else if (f.marcadaQueCuenta && !base.recinto.superficie_m2 && f.recinto.superficie_m2) {
+      // Dos filas con 1 y la primera sin superficie: vale la que la trae.
+      base.recinto.superficie_m2 = f.recinto.superficie_m2;
+      base.recinto.superficie_oguc_m2 ||= f.recinto.superficie_oguc_m2;
+    }
     for (const o of f.recinto.ocupantes || []) {
       if (!base.recinto.ocupantes!.some(x => x.nombre === o.nombre && x.cargo === o.cargo)) base.recinto.ocupantes!.push(o);
     }

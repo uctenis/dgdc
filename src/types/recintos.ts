@@ -3,6 +3,11 @@
 
 export const ESTADOS_RECINTO = ['Operativo', 'En obra', 'Fuera de servicio', 'Eliminado'] as const;
 export type EstadoRecinto = typeof ESTADOS_RECINTO[number];
+export const TENENCIAS = ['Propia', 'Arrendada', 'Comodato', 'Concesión'] as const;
+export type Tenencia = typeof TENENCIAS[number];
+/** Motivos sugeridos al dar de alta o de baja un recinto (se puede escribir otro). */
+export const MOTIVOS_ALTA = ['Construcción', 'Ampliación', 'Remodelación', 'Habilitación', 'Inicio de arriendo', 'Compra', 'División de un recinto'] as const;
+export const MOTIVOS_BAJA = ['Demolición', 'Remodelación', 'Fin de arriendo', 'Venta', 'Fusión con otro recinto', 'Cambio de destino'] as const;
 
 export const TIPOS_DOCUMENTO = ['Plano', 'Especificación técnica', 'Memoria de cálculo', 'Informe', 'Certificado', 'Otro'] as const;
 export const ESPECIALIDADES = [
@@ -63,6 +68,13 @@ export interface Recinto {
   superficie_oguc_m2?: number | null;
   capacidad?: number | null;
   estado: EstadoRecinto;
+  /** Desde cuándo existe u opera («AAAA-MM-DD»); vacía = desde antes del registro. Futura = obra por entregar. */
+  fecha_alta?: string | null;
+  motivo_alta?: string | null;
+  /** Desde cuándo dejó de existir o de estar a cargo de la UCT. */
+  fecha_baja?: string | null;
+  motivo_baja?: string | null;
+  tenencia?: Tenencia;
   unidad_usuaria?: string | null;
   /** Personas o unidades que lo ocupan (una por fila del catastro). */
   ocupantes?: Ocupante[];

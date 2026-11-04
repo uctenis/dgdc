@@ -27,7 +27,7 @@ describe('descarga de recintos a Excel', () => {
     expect(resumen.getRow(2).values).toEqual([undefined, 'CSF01', 'Edificio A', 2, 62.04, 38.95, 2, 1]);
     const recintos = libro.getWorksheet('Recintos')!;
     expect(recintos.rowCount).toBe(4);
-    expect(recintos.getRow(2).getCell(13).value).toBe('Pérez, Ana – SECRETARIA; Soto, Luis');
-    expect(String(recintos.getRow(3).getCell(14).value)).toMatch(/mayor que la OGUC/);
+    expect(recintos.getRow(2).getCell(17).value).toBe('Pérez, Ana – SECRETARIA; Soto, Luis');
+    expect(String(recintos.getRow(3).getCell(18).value)).toMatch(/mayor que la OGUC/);
   });
 });
