@@ -1,5 +1,6 @@
 // Acceso a datos del módulo de recintos y planos (Postgres en Supabase). Las pantallas no hablan con la base
 // directamente: todo pasa por aquí.
+import { fechaDeNombre } from '../utils/emparejarLaminas';
 import { supabase } from '../lib/supabase';
 import type { CambioRecinto, DocumentoEdificio, FichaEdificio, Ocupante, Piso, Recinto, ZonaRecinto } from '../types/recintos';
 import { datosDePiso } from '../utils/importacionRecintos';
@@ -230,13 +231,13 @@ export async function listarDocumentos(edificioCodigo: string): Promise<Document
 }
 
 /** Registra un documento. Con `reemplaza_a`, es una nueva versión, la anterior deja de estar vigente y conserva sus zonas demarcadas. */
-export async function registrarDocumento(documento: Omit<DocumentoEdificio, 'id' | 'vigente' | 'creado_en' | 'creado_por'>): Promise<DocumentoEdificio> {
+export async function registrarDocumento(documento: Omit<DocumentoEdificio, 'id' | 'vigente' | 'creado_en' | 'creado_por'>, vigente = true): Promise<DocumentoEdificio> {
   let escala = documento.escala ?? null;
   if (documento.reemplaza_a && !escala) {
     const ant = await supabase.from('documentos').select('escala').eq('id', documento.reemplaza_a).maybeSingle();
     escala = (ant.data as { escala?: string | null } | null)?.escala || null;
   }
-  const { data, error } = await supabase.from('documentos').insert({ ...documento, escala, vigente: true }).select().single();
+  const { data, error } = await supabase.from('documentos').insert({ ...documento, escala, vigente }).select().single();
   if (error) throw errorDe(error, 'No se pudo registrar el documento');
   const creado = data as DocumentoEdificio;
   if (documento.reemplaza_a) {
@@ -254,6 +255,10 @@ export async function crearYSubirLamina(params: {
   titulo?: string;
   especialidad?: DocumentoEdificio['especialidad'];
   drive_url?: string;
+  /** Fecha del plano; si no se indica, la que trae el nombre del archivo («… 260713.pdf») o la de hoy. */
+  fecha_documento?: string | null;
+  /** false para una versión anterior (histórica): queda en el registro y en el visor, pero no como lámina vigente. */
+  vigente?: boolean;
 }): Promise<DocumentoEdificio> {
   const sinExt = params.archivo.name.replace(/\.pdf$/i, '').trim();
   const mLamina = /\b(L\d+|A-\d+|P\d+)\b/i.exec(sinExt);
@@ -268,15 +273,15 @@ export async function crearYSubirLamina(params: {
     especialidad: params.especialidad || 'Arquitectura',
     formato: 'PDF',
     codigo_lamina: codigoAuto,
-    version: '1',
-    fecha_documento: new Date().toISOString().slice(0, 10),
+    version: params.vigente === false ? (params.fecha_documento || fechaDeNombre(sinExt) || 'anterior') : '1',
+    fecha_documento: params.fecha_documento || fechaDeNombre(sinExt) || new Date().toISOString().slice(0, 10),
     reemplaza_a: null,
     drive_url: params.drive_url?.trim() || '',
     proyecto_codigo: null,
     observaciones: `Archivo en Drive: ${params.archivo.name}`,
     archivo_visor: null,
     escala: null,
-  });
+  }, params.vigente !== false);
 
   const ruta = await subirLaminaVisor(doc, params.archivo);
   return { ...doc, archivo_visor: ruta };
@@ -337,8 +342,10 @@ export async function listarRecintosDeCampus(prefijo: string): Promise<(Recinto 
 }
 
 /** Láminas vigentes de todos los edificios de un campus (su código empieza con la sigla del campus). */
-export async function listarLaminasDeCampus(siglaCampus: string): Promise<DocumentoEdificio[]> {
-  const { data, error } = await supabase.from('documentos').select('*').like('edificio_codigo', `${siglaCampus}%`).eq('tipo', 'Plano').eq('vigente', true);
+export async function listarLaminasDeCampus(siglaCampus: string, incluirAnteriores = false): Promise<DocumentoEdificio[]> {
+  let consulta = supabase.from('documentos').select('*').like('edificio_codigo', `${siglaCampus}%`).eq('tipo', 'Plano');
+  if (!incluirAnteriores) consulta = consulta.eq('vigente', true);
+  const { data, error } = await consulta;
   if (error) throw errorDe(error, 'No se pudieron leer las láminas del campus');
   return data as DocumentoEdificio[];
 }

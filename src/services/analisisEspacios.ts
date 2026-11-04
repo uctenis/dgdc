@@ -3,6 +3,7 @@
 import { getCampusList } from '../data/campusData';
 import { getConfigEspacios } from '../data/espaciosConfig';
 import { comoTitulo } from '../utils/texto';
+import { hoyISO, vigenteEn } from '../utils/vigenciaRecinto';
 import type { FilaAnalisis } from '../utils/analisisEspacios';
 import { listarEdificiosConDatos, listarRecintosDeCampus, separarUnidades } from './recintos';
 
@@ -16,6 +17,7 @@ export async function cargarDatosAnalisis(forzar = false): Promise<NonNullable<t
   const nombresEdificio: Record<string, string> = {};
   const nombre = (e: string) => (nombresEdificio[e] ??= edificios.nombres[e] || campusDe(e)?.edificiosInfo?.[e]?.nombre || '');
   const tipos = new Map(getConfigEspacios().tipos.map(t => [t.nombre.trim().toUpperCase(), t]));
+  const hoy = hoyISO();
   const filas: FilaAnalisis[] = recintos.map(r => {
     const campus = campusDe(r.edificio_codigo);
     return {
@@ -32,6 +34,8 @@ export async function cargarDatosAnalisis(forzar = false): Promise<NonNullable<t
       unidades: separarUnidades(r.unidad_usuaria),
       clase: tipos.get((r.nombre || '').trim().toUpperCase())?.clase || '',
       estado: r.estado,
+      tenencia: r.tenencia || 'Propia',
+      vigente: vigenteEn(r, hoy),
       util: Number(r.superficie_m2) || 0,
       oguc: Number(r.superficie_oguc_m2) || 0,
       capacidad: Number(r.capacidad) || 0,

@@ -47,3 +47,14 @@ describe('cruces de información del Gestor de Espacios', () => {
     expect(fraseRespuesta({ tipo: ['GIMNASIO'] }, totales([]), { edificio: c => c, campus: c => c })).toBe('En todos los campus no hay recintos de tipo GIMNASIO.');
   });
 });
+
+describe('análisis con vigencia', () => {
+  it('filtra y nombra la tenencia', () => {
+
+    const filas = [fila('A_1', { tenencia: 'Arrendada', util: 10 }), fila('A_2', { util: 20 })];
+    const r = filtrar(filas, { tenencia: ['Arrendada'] });
+    expect(r.map(f => f.codigo)).toEqual(['A_1']);
+    expect(filtrar(filas, { tenencia: ['Propia'] }).map(f => f.codigo)).toEqual(['A_2']);
+    expect(fraseRespuesta({ tenencia: ['Arrendada'] }, totales(r), { edificio: c => c, campus: c => c })).toContain('con tenencia arrendada');
+  });
+});

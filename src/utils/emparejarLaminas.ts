@@ -1,6 +1,7 @@
 // Empareja los PDF de láminas que se suben de una vez con las láminas registradas en el índice de planos. Los
 // archivos vienen del repositorio de planos en Drive, con nombres como «CSN11-L01 260113.pdf» o «CSN_Campus 260113.pdf».
 import type { DocumentoEdificio, Piso } from '../types/recintos';
+import { PREFIJOS_ANTIGUOS } from '../data/codigosAntiguosEdificios';
 
 const normalizar = (s: string) => s.toUpperCase().replace(/\.PDF$/i, '').replace(/\s+/g, ' ').trim();
 
@@ -64,4 +65,75 @@ export function pisoDeLamina(codigoLamina: string | null, pisos: Pick<Piso, 'id'
   if (!m) return pisos.length === 1 ? pisos[0].id : null;
   const ordenados = [...pisos].sort((a, b) => a.orden - b.orden);
   return ordenados[Number(m[1]) - 1]?.id || null;
+}
+
+/**
+ * Fecha escrita en el nombre de una lámina, como «AAAA-MM-DD». Acepta las tres formas del repositorio: «260713»
+ * (AAMMDD), «11-01-2017» (DD-MM-AAAA) y «2022-01-05». Sin fecha reconocible, null.
+ */
+export function fechaDeNombre(nombreArchivo: string): string | null {
+  const s = nombreArchivo.replace(/\.pdf$/i, '');
+  const valida = (a: number, m: number, d: number) => (m >= 1 && m <= 12 && d >= 1 && d <= 31 && a >= 1990 && a <= 2100
+    ? `${a}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}` : null);
+  let m = /\b(\d{4})-(\d{2})-(\d{2})\b/.exec(s);
+  if (m) return valida(+m[1], +m[2], +m[3]);
+  m = /\b(\d{2})-(\d{2})-(\d{4})\b/.exec(s);
+  if (m) return valida(+m[3], +m[2], +m[1]);
+  m = /(?:^|[\s_-])(\d{2})(\d{2})(\d{2})(?=$|[\s_.-])/.exec(s);
+  if (m) return valida(2000 + +m[1], +m[2], +m[3]);
+  return null;
+}
+
+/** Datos de una lámina anterior (versión histórica) a partir del nombre de su archivo. */
+export interface LaminaAnterior { edificio_codigo: string; codigo_lamina: string; titulo: string; fecha: string | null }
+
+/**
+ * Interpreta el nombre de una lámina de las carpetas «anteriores». Hay tres formas:
+ *  • con el código actual: «CML03 L01 220902», «CSC01-L02 221118»;
+ *  • con el código antiguo del edificio: «CSF_A Lam01 24-10-2014», «CML_MLA Lam03 2022-01-05», «CJP_EB Lam-01 …»
+ *    (se traduce con la tabla de códigos antiguos);
+ *  • planos generales: «CSF Campus 230511 LR 40x60cm», «CML Master 04-08-2020», «CPL_MASTER Lam01 …».
+ * `traducir` da el código actual de un código antiguo dentro del campus. Devuelve null si no se reconoce el edificio
+ * o si es de otro campus.
+ */
+export function inferirLaminaAnterior(nombreArchivo: string, siglaCampus: string, traducir: (sigla: string, antiguo: string) => string | null): LaminaAnterior | null {
+  const sinExt = nombreArchivo.replace(/\.pdf$/i, '').replace(/\s+/g, ' ').trim();
+  const fecha = fechaDeNombre(sinExt);
+  const campus = siglaCampus.toUpperCase();
+  const fechaTexto = fecha ? ` · ${fecha.slice(0, 4)}` : '';
+
+  // Plano general del campus (actual «Campus» o antiguo «Master»).
+  const general = /^(?:MASTER(?:\s+[A-ZÑ]+)+\s+\d+|([A-Z]{2,4})[_\s-]+(CAMPUS|MASTER)\b)(.*)$/i.exec(sinExt);
+  if (general && (!general[1] || general[1].toUpperCase() === campus) && !/MASTER\S/i.test(sinExt)) {
+    const variante = (general[3] || '')
+      .replace(/\b\d{4}-\d{2}-\d{2}\b|\b\d{2}-\d{2}-\d{4}\b|\b\d{6}\b/g, '').replace(/\bLR\b|\b40x60(cm)?\b|-?\bL(am)?0*1\b/gi, '')
+      .replace(/[\s_-]+/g, ' ').trim();
+    return {
+      edificio_codigo: campus,
+      codigo_lamina: variante ? `L01-${variante.toUpperCase().replace(/\s+/g, '-')}` : 'L01',
+      titulo: `Plano general del campus${variante ? ` (${variante.toLowerCase()})` : ''}${fechaTexto}`,
+      fecha,
+    };
+  }
+
+  // Código antiguo: SIGLA_CODIGO [texto] Lam01.
+  const antiguo = /^([A-Z]{2,4}\d*)_([A-Z0-9+ÑÁÉÍÓÚ]+)(?:\s+[A-ZÑ]+)?[-_\s]+LAM-?\s?0*(\d+)/i.exec(sinExt);
+  if (antiguo) {
+    const edificio = traducir(antiguo[1], antiguo[2]);
+    if (!edificio || !edificio.startsWith(campus)) return null;
+    const lamina = `L${antiguo[3].padStart(2, '0')}`;
+    return { edificio_codigo: edificio, codigo_lamina: lamina, titulo: `Lámina ${lamina} (${edificio}, código antiguo ${antiguo[1]}_${antiguo[2]})${fechaTexto}`, fecha };
+  }
+
+  // Código actual con número de lámina.
+  const actual = /^([A-Z]{2,4}\d+[A-Z0-9_]*?)[-_\s]+L(?:AM)?-?0*(\d+)\b/i.exec(sinExt);
+  if (actual) {
+    const leido = actual[1].toUpperCase();
+    const prefijo = PREFIJOS_ANTIGUOS[leido.slice(0, 3)];
+    const edificio = prefijo ? prefijo + leido.slice(3) : leido;
+    if (!edificio.startsWith(campus)) return null;
+    const lamina = `L${actual[2].padStart(2, '0')}`;
+    return { edificio_codigo: edificio, codigo_lamina: lamina, titulo: `Lámina ${lamina} (${edificio}${prefijo ? `, antes ${leido}` : ''})${fechaTexto}`, fecha };
+  }
+  return null;
 }

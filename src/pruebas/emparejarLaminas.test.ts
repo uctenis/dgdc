@@ -82,3 +82,31 @@ describe('láminas de San Francisco', () => {
     expect(inferirDatosLamina('CSF162 L01 240813.pdf', 'CSF')).toMatchObject({ edificio_codigo: 'CSF162', codigo_lamina: 'L01' });
   });
 });
+
+describe('láminas anteriores', () => {
+  it('lee la fecha del nombre en sus tres formas', async () => {
+    const { fechaDeNombre } = await import('../utils/emparejarLaminas');
+    expect(fechaDeNombre('CML03 L01 220902.pdf')).toBe('2022-09-02');
+    expect(fechaDeNombre('CSF_A Lam01 24-10-2014.pdf')).toBe('2014-10-24');
+    expect(fechaDeNombre('CML_MLA Lam03 2022-01-05.pdf')).toBe('2022-01-05');
+    expect(fechaDeNombre('CSF Campus 230511 LR 40x60cm.pdf')).toBe('2023-05-11');
+    expect(fechaDeNombre('BQ541.pdf')).toBeNull();
+  });
+
+  it('traduce códigos antiguos y reconoce planos generales', async () => {
+    const { inferirLaminaAnterior } = await import('../utils/emparejarLaminas');
+    const { edificioActual } = await import('../data/codigosAntiguosEdificios');
+    const leer = (n: string, c: string) => inferirLaminaAnterior(n, c, edificioActual);
+    expect(leer('CSF_A Lam01 24-10-2014.pdf', 'CSF')).toMatchObject({ edificio_codigo: 'CSF16', codigo_lamina: 'L01', fecha: '2014-10-24' });
+    expect(leer('CJP_EB Lam-01 24-01-2018.pdf', 'CJP')).toMatchObject({ edificio_codigo: 'CJP07', codigo_lamina: 'L01' });
+    expect(leer('CJP_CT+ Lam03 14-10-2016.pdf', 'CJP')).toMatchObject({ edificio_codigo: 'CJP10', codigo_lamina: 'L03' });
+    expect(leer('CRC_8 VRAE Lam02 01-01-2017.pdf', 'CRC')).toMatchObject({ edificio_codigo: 'CRC08', codigo_lamina: 'L02' });
+    expect(leer('CCC_CA lam02 12-09-2019.pdf', 'CSC')).toMatchObject({ edificio_codigo: 'CSC01', codigo_lamina: 'L02' });
+    expect(leer('CML03 L01 220902.pdf', 'CML')).toMatchObject({ edificio_codigo: 'CML03', codigo_lamina: 'L01', fecha: '2022-09-02' });
+    expect(leer('CHS01-L6 241016.pdf', 'CSL')).toMatchObject({ edificio_codigo: 'CSL01', codigo_lamina: 'L06' });
+    expect(leer('CML Master 04-08-2020.pdf', 'CML')).toMatchObject({ edificio_codigo: 'CML', codigo_lamina: 'L01', fecha: '2020-08-04' });
+    expect(leer('CJP_Campus areas comunes 230831 LR.pdf', 'CJP')).toMatchObject({ edificio_codigo: 'CJP', codigo_lamina: 'L01-AREAS-COMUNES' });
+    expect(leer('CSF_N Lam01 03-10-2016.pdf', 'CSF')).toBeNull();
+    expect(leer('CJP_CEC Lam01 14-08-2019.pdf', 'CPL')).toBeNull();
+  });
+});

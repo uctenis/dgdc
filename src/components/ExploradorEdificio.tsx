@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Building2, ChevronDown, ChevronRight, DoorOpen, ExternalLink, FileText, Layers, Loader2, Map as IconoMapa, Pencil, Ruler, Search, Users, X,
-  AlertTriangle, Clock, FileImage,
+  AlertTriangle, Clock, FileImage, History,
 } from 'lucide-react';
 import type { DocumentoEdificio, Piso, Recinto } from '../types/recintos';
 import { colorDeCategoria } from '../utils/geometriaPlano';
@@ -9,7 +9,7 @@ import { tipoConfigurado } from '../data/espaciosConfig';
 import { alertasRecinto } from '../utils/alertasRecinto';
 import { formatoFecha } from '../utils/fechas';
 import { comoTitulo } from '../utils/texto';
-import { resumenSuperficie, textoVigencia } from '../utils/vigenciaRecinto';
+import { resumenSuperficie, textoVigencia, vigenteEn } from '../utils/vigenciaRecinto';
 import { PlanoInteractivo } from './PlanoInteractivo';
 
 // El visor (con el lector de PDF) se carga solo cuando hay una lámina que mostrar.
@@ -32,6 +32,8 @@ interface Props {
   /** Recintos vigentes del edificio (sin los eliminados). */
   recintos: Recinto[];
   documentos: DocumentoEdificio[];
+  /** Todos los recintos, también los dados de baja: para mostrar un plano anterior con los que existían entonces. */
+  todosLosRecintos?: Recinto[];
   /** Recinto a destacar al entrar (por ejemplo, el que se encontró con el buscador). */
   destacado?: string | null;
   /** Otros edificios del campus, para saltar a ellos desde el árbol. */
@@ -50,16 +52,18 @@ interface Props {
  * completas del plano interactivo.
  */
 export function ExploradorEdificio({
-  edificioCodigo, nombreEdificio, pisos, recintos, documentos, destacado, edificiosCampus, onIrEdificio, onVerFicha, onEditarRecinto, onVerDocumentos, onRecargar,
+  edificioCodigo, nombreEdificio, pisos, recintos, documentos, todosLosRecintos, destacado, edificiosCampus, onIrEdificio, onVerFicha, onEditarRecinto, onVerDocumentos, onRecargar,
 }: Props) {
   const pisosOrdenados = useMemo(() => [...pisos].sort((a, b) => a.orden - b.orden), [pisos]);
-  const laminas = useMemo(() => documentos.filter(d => d.vigente && d.tipo === 'Plano'), [documentos]);
-  /** Láminas con copia para el visor de un piso; si el edificio tiene un solo piso, también las que no tienen piso. */
-  const laminasDe = (pisoId: string) => laminas.filter(d => d.archivo_visor && (d.piso_id === pisoId || (!d.piso_id && pisos.length === 1)));
+  // Láminas con copia para el visor: la vigente de cada piso y sus versiones anteriores (la historia del piso).
+  const laminas = useMemo(() => documentos.filter(d => d.tipo === 'Plano' && d.archivo_visor)
+    .sort((a, b) => Number(b.vigente) - Number(a.vigente) || (b.fecha_documento || '').localeCompare(a.fecha_documento || '')), [documentos]);
+  /** Láminas de un piso (la vigente primero); si el edificio tiene un solo piso, también las que no tienen piso. */
+  const laminasDe = (pisoId: string, soloVigentes = false) => laminas.filter(d => (!soloVigentes || d.vigente) && (d.piso_id === pisoId || (!d.piso_id && pisos.length === 1)));
 
   const pisoInicial = () => {
     const delDestacado = recintos.find(r => r.id === destacado)?.piso_id;
-    return delDestacado || pisosOrdenados.find(p => laminasDe(p.id).length)?.id || pisosOrdenados[0]?.id || '';
+    return delDestacado || pisosOrdenados.find(p => laminasDe(p.id, true).length)?.id || pisosOrdenados[0]?.id || '';
   };
   const [pisoId, setPisoId] = useState(pisoInicial);
   const [seleccion, setSeleccion] = useState<string | null>(destacado || null);
@@ -82,7 +86,19 @@ export function ExploradorEdificio({
   const delPiso = useMemo(() => recintos.filter(r => r.piso_id === pisoId), [recintos, pisoId]);
   const laminasPiso = laminasDe(pisoId);
   const lamina = laminasPiso.find(d => d.id === laminaElegida) || laminasPiso[0];
-  const sel = seleccion ? recintos.find(r => r.id === seleccion) : undefined;
+  // Plano anterior: se muestran los recintos que existían en su fecha (según su alta y baja registradas).
+  const todos = todosLosRecintos || recintos;
+  const fechaPlano = lamina && !lamina.vigente ? lamina.fecha_documento || null : null;
+  const recintosPlano = useMemo(() => (fechaPlano ? todos.filter(r => vigenteEn(r, fechaPlano)) : recintos), [fechaPlano, todos, recintos]);
+  const cambiosDesde = useMemo(() => {
+    if (!fechaPlano) return null;
+    const delP = todos.filter(r => r.piso_id === pisoId);
+    return {
+      nuevos: delP.filter(r => r.fecha_alta && r.fecha_alta > fechaPlano && r.estado !== 'Eliminado'),
+      bajas: delP.filter(r => r.fecha_baja && r.fecha_baja > fechaPlano),
+    };
+  }, [fechaPlano, todos, pisoId]);
+  const sel = seleccion ? todos.find(r => r.id === seleccion) : undefined;
 
   const porPiso = useMemo(() => {
     const q = filtro.trim().toLowerCase();
@@ -103,7 +119,7 @@ export function ExploradorEdificio({
 
   // Indicadores del edificio.
   const hoy = resumenSuperficie(recintos);
-  const pisosConPlano = pisos.filter(p => laminasDe(p.id).length).length;
+  const pisosConPlano = pisos.filter(p => laminasDe(p.id, true).length).length;
   const porRevisar = recintos.filter(r => alertasRecinto(r).length).length;
 
   // Documentos: primero los del piso elegido, después los del edificio completo.
@@ -126,10 +142,18 @@ export function ExploradorEdificio({
           <button type="button" onClick={() => setEditando(false)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-900 text-white font-bold">
             <X className="w-3.5 h-3.5" /> Volver a la vista general
           </button>
-          <span className="text-slate-500">Herramientas de dibujo: predibujar, ubicar con 1 clic, editar contornos, escala y subida de láminas.</span>
+          <span className="text-slate-500">
+            {fechaPlano ? `Contornos del plano anterior del ${formatoFecha(fechaPlano)} (cada versión guarda los suyos).` : 'Herramientas de dibujo: predibujar, ubicar con 1 clic, editar contornos, escala y subida de láminas.'}
+          </span>
         </div>
-        <PlanoInteractivo edificioCodigo={edificioCodigo} pisos={pisos} documentos={documentos} recintos={recintos} destacado={seleccion}
-          onEditarRecinto={onEditarRecinto} onRecargar={onRecargar} />
+        {fechaPlano && lamina ? (
+          <Suspense fallback={<Loader2 className="w-6 h-6 animate-spin text-teal-700" />}>
+            <VisorPlano key={lamina.id} documento={lamina} pisos={pisos} recintos={recintosPlano} destacado={seleccion} onEditarRecinto={onEditarRecinto} />
+          </Suspense>
+        ) : (
+          <PlanoInteractivo edificioCodigo={edificioCodigo} pisos={pisos} documentos={documentos} recintos={recintos} destacado={seleccion}
+            onEditarRecinto={onEditarRecinto} onRecargar={onRecargar} />
+        )}
       </div>
     );
   }
@@ -221,9 +245,17 @@ export function ExploradorEdificio({
               </select>
             )}
             {laminasPiso.length > 1 && (
-              <select value={lamina?.id} onChange={e => setLaminaElegida(e.target.value)} className="px-2 py-1 border border-slate-300 rounded-lg">
-                {laminasPiso.map(d => <option key={d.id} value={d.id}>{d.codigo_lamina || d.titulo}</option>)}
-              </select>
+              <label className="flex items-center gap-1 text-slate-600" title="Versiones del plano de este piso: la vigente y las anteriores">
+                <History className="w-3.5 h-3.5" />
+                <select value={lamina?.id} onChange={e => { setLaminaElegida(e.target.value); setSeleccion(null); }}
+                  className={`px-2 py-1 border rounded-lg ${fechaPlano ? 'border-amber-400 bg-amber-50 text-amber-900 font-bold' : 'border-slate-300'}`}>
+                  {laminasPiso.map(d => (
+                    <option key={d.id} value={d.id}>
+                      {d.vigente ? 'Vigente' : 'Anterior'}{d.fecha_documento ? ` · ${formatoFecha(d.fecha_documento)}` : ''}{d.codigo_lamina ? ` · ${d.codigo_lamina}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
             )}
             <div className="ml-auto flex items-center gap-1.5">
               {lamina?.drive_url && (
@@ -237,9 +269,22 @@ export function ExploradorEdificio({
             </div>
           </div>
 
+          {fechaPlano && cambiosDesde && (
+            <div className="flex flex-wrap items-start gap-x-4 gap-y-1 bg-amber-50 border border-amber-200 rounded-2xl px-3 py-2 text-amber-900">
+              <p className="basis-full font-bold flex items-center gap-1.5"><History className="w-4 h-4" /> Plano anterior, del {formatoFecha(fechaPlano)}</p>
+              <p className="basis-full text-amber-800">
+                Se muestran los recintos que existían en esa fecha según su alta y baja registradas. Los contornos son propios de esta versión: si no
+                aparecen, use «Editar contornos» para predibujarlos.
+              </p>
+              {cambiosDesde.nuevos.length > 0 && <p><strong>Nuevos desde entonces:</strong> {cambiosDesde.nuevos.map(sinPrefijo).join(', ')}</p>}
+              {cambiosDesde.bajas.length > 0 && <p><strong>Dados de baja desde entonces:</strong> {cambiosDesde.bajas.map(sinPrefijo).join(', ')}</p>}
+              <button type="button" onClick={() => setLaminaElegida('')} className="ml-auto font-bold underline">Volver al plano vigente</button>
+            </div>
+          )}
+
           {lamina ? (
             <Suspense fallback={<div className="h-[60vh] grid place-items-center bg-white border border-slate-200 rounded-2xl"><Loader2 className="w-6 h-6 animate-spin text-teal-700" /></div>}>
-              <VisorPlano key={lamina.id} documento={lamina} pisos={pisos} recintos={recintos} destacado={seleccion} modo="consulta"
+              <VisorPlano key={lamina.id} documento={lamina} pisos={pisos} recintos={recintosPlano} destacado={seleccion} modo="consulta"
                 onSeleccionar={setSeleccion} onEditarRecinto={onEditarRecinto} />
             </Suspense>
           ) : (

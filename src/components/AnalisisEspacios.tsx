@@ -56,8 +56,9 @@ export function AnalisisEspacios({ onAbrirRecinto, onCerrar }: Props) {
   };
   useEffect(() => { cargar(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Los recintos eliminados no cuentan, salvo que se pidan con el filtro de estado.
-  const base = useMemo(() => (datos?.filas || []).filter(f => f.estado !== 'Eliminado' || consulta.f.estado?.includes('Eliminado')), [datos, consulta.f.estado]);
+  // Cuenta lo vigente hoy: los recintos dados de baja y las obras por entregar (p. ej. «En obra» con fecha futura)
+  // no suman, salvo que se pidan con el filtro de estado.
+  const base = useMemo(() => (datos?.filas || []).filter(f => (f.vigente ?? f.estado !== 'Eliminado') || consulta.f.estado?.includes(f.estado)), [datos, consulta.f.estado]);
   const resultado = useMemo(() => filtrar(base, consulta.f), [base, consulta.f]);
   const t = useMemo(() => totales(resultado), [resultado]);
   const nombreEdificio = (c: string) => (datos?.nombresEdificio[c] ? `${c} ${comoTitulo(datos.nombresEdificio[c])}` : c);

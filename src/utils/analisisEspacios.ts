@@ -18,13 +18,17 @@ export interface FilaAnalisis {
   unidades: string[];
   clase: string;
   estado: string;
+  /** Propia, arrendada, en comodato o en concesión. */
+  tenencia?: string;
+  /** Existe hoy (sin las obras por entregar ni lo dado de baja). Sin dato se entiende vigente. */
+  vigente?: boolean;
   util: number;
   oguc: number;
   capacidad: number;
   ocupantes: Ocupante[];
 }
 
-export type Dimension = 'campus' | 'edificio' | 'piso' | 'tipo' | 'uso' | 'unidad' | 'clase' | 'estado';
+export type Dimension = 'campus' | 'edificio' | 'piso' | 'tipo' | 'uso' | 'unidad' | 'clase' | 'estado' | 'tenencia';
 export type Medida = 'util' | 'oguc' | 'recintos' | 'capacidad' | 'ocupantes';
 
 export const DIMENSIONES: { id: Dimension; nombre: string; plural: string }[] = [
@@ -36,6 +40,7 @@ export const DIMENSIONES: { id: Dimension; nombre: string; plural: string }[] = 
   { id: 'unidad', nombre: 'Unidad usuaria', plural: 'unidades' },
   { id: 'clase', nombre: 'Superficie útil / común', plural: 'clases' },
   { id: 'estado', nombre: 'Estado', plural: 'estados' },
+  { id: 'tenencia', nombre: 'Tenencia', plural: 'tenencias' },
 ];
 export const MEDIDAS: { id: Medida; nombre: string; corto: string }[] = [
   { id: 'util', nombre: 'Superficie útil', corto: 'm² útil' },
@@ -60,6 +65,7 @@ export function valoresDe(f: FilaAnalisis, d: Dimension): string[] {
     case 'unidad': return f.unidades.length ? f.unidades : [SIN_DATO];
     case 'clase': return [f.clase || SIN_DATO];
     case 'estado': return [f.estado];
+    case 'tenencia': return [f.tenencia || 'Propia'];
   }
 }
 
@@ -162,6 +168,7 @@ export function fraseRespuesta(filtros: Filtros, t: Totales, nombres: { edificio
     filtros.unidad?.length ? `de ${lista(filtros.unidad)}` : '',
     filtros.clase?.length ? `de superficie ${lista(filtros.clase).toLowerCase()}` : '',
     filtros.estado?.length ? `en estado ${lista(filtros.estado).toLowerCase()}` : '',
+    filtros.tenencia?.length ? `con tenencia ${lista(filtros.tenencia).toLowerCase()}` : '',
     filtros.texto?.trim() ? `que coinciden con «${filtros.texto.trim()}»` : '',
   ].filter(Boolean).join(', ');
   if (!t.recintos) return `En ${donde} no hay recintos${que ? ` ${que}` : ''}.`;
