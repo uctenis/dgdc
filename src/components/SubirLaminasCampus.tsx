@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import { Loader2, Upload, CheckCircle2, AlertTriangle, X } from 'lucide-react';
-import { crearYSubirLamina, listarLaminasDeCampus, subirLaminaVisor } from '../services/recintos';
-import { inferirDatosLamina, laminaDeArchivo } from '../utils/emparejarLaminas';
+import { crearYSubirLamina, listarLaminasDeCampus, listarPisos, subirLaminaVisor } from '../services/recintos';
+import type { Piso } from '../types/recintos';
+import { inferirDatosLamina, laminaDeArchivo, pisoDeLamina } from '../utils/emparejarLaminas';
 
 interface Resultado { archivo: string; destino?: string; error?: string }
 
@@ -20,6 +21,7 @@ export function SubirLaminasCampus({ siglaCampus, onListo }: { siglaCampus: stri
     try {
       setSubiendo('Leyendo las láminas registradas…');
       const documentos = await listarLaminasDeCampus(siglaCampus);
+      const pisosPorEdificio = new Map<string, Piso[]>();
       for (const archivo of archivos) {
         const documento = laminaDeArchivo(archivo.name, documentos);
         setSubiendo(`Subiendo ${archivo.name}…`);
@@ -33,14 +35,23 @@ export function SubirLaminasCampus({ siglaCampus, onListo }: { siglaCampus: stri
               lista.push({ archivo: archivo.name, error: 'No se pudo identificar el edificio (nombre esperado: EDIFICIO-L01.pdf)' });
               continue;
             }
+            // Cada lámina queda en el piso de su número (L02 → piso 2), si el edificio lo tiene.
+            const esCampus = inferido.edificio_codigo === siglaCampus.toUpperCase();
+            if (!esCampus && !pisosPorEdificio.has(inferido.edificio_codigo)) {
+              pisosPorEdificio.set(inferido.edificio_codigo, await listarPisos(inferido.edificio_codigo).catch(() => []));
+            }
+            const pisos = pisosPorEdificio.get(inferido.edificio_codigo) || [];
+            const pisoId = esCampus ? null : pisoDeLamina(inferido.codigo_lamina, pisos);
             const creada = await crearYSubirLamina({
               edificio_codigo: inferido.edificio_codigo,
               archivo,
+              piso_id: pisoId,
               codigo_lamina: inferido.codigo_lamina,
               titulo: inferido.titulo,
             });
             documentos.push(creada);
-            lista.push({ archivo: archivo.name, destino: `${creada.edificio_codigo} · ${creada.codigo_lamina || creada.titulo} (nueva)` });
+            const piso = pisos.find(p => p.id === pisoId);
+            lista.push({ archivo: archivo.name, destino: `${creada.edificio_codigo} · ${creada.codigo_lamina || creada.titulo}${piso ? ` · ${piso.nombre}` : ''} (nueva)` });
           }
         } catch (e) {
           lista.push({ archivo: archivo.name, error: e instanceof Error ? e.message : String(e) });
