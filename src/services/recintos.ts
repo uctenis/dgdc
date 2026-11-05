@@ -318,11 +318,17 @@ export async function copiarZonasEntreLaminas(origenId: string, destinoId: strin
 /** Guarda (o reemplaza) la copia en PDF de una lámina para mostrarla en el visor. */
 export async function subirLaminaVisor(documento: DocumentoEdificio, archivo: File): Promise<string> {
   if (archivo.type && archivo.type !== 'application/pdf') throw new Error('La lámina debe ser un archivo PDF.');
-  const ruta = `${documento.edificio_codigo}/${documento.id}.pdf`;
+  // Cada subida va a un archivo con nombre nuevo: el almacenamiento guarda en caché las descargas (hasta una hora), así
+  // que reemplazar el PDF con el mismo nombre seguía mostrando la lámina anterior en el visor.
+  const ruta = `${documento.edificio_codigo}/${documento.id}-${Date.now()}.pdf`;
   const subida = await supabase.storage.from('laminas').upload(ruta, archivo, { upsert: true, contentType: 'application/pdf' });
   if (subida.error) throw errorDe({ message: subida.error.message }, 'No se pudo subir la lámina');
   const { error } = await supabase.from('documentos').update({ archivo_visor: ruta }).eq('id', documento.id);
   if (error) throw errorDe(error, 'La lámina se subió, pero no se pudo asociar al documento');
+  // La copia anterior ya no se usa: se borra (si falla, solo queda un archivo de más).
+  if (documento.archivo_visor && documento.archivo_visor !== ruta) {
+    await supabase.storage.from('laminas').remove([documento.archivo_visor]).catch(() => {});
+  }
   return ruta;
 }
 
