@@ -36,7 +36,13 @@ export function SubirLaminasCampus({ siglaCampus, onListo }: { siglaCampus: stri
       return { archivo: archivo.name, destino: `${documento.edificio_codigo} · ${documento.codigo_lamina || documento.titulo}` };
     }
     const inferido = inferirDatosLamina(archivo.name, siglaCampus);
-    if (!inferido) return { archivo: archivo.name, error: 'No se pudo identificar el edificio (nombre esperado: EDIFICIO-L01.pdf)' };
+    if (!inferido) {
+      // Si el nombre sí indica un edificio, pero de otro campus, se dice eso (es el error más común).
+      const deOtro = inferirDatosLamina(archivo.name, '');
+      return { archivo: archivo.name, error: deOtro && deOtro.edificio_codigo !== siglaCampus
+        ? `${deOtro.edificio_codigo} no pertenece al campus ${siglaCampus}: súbala desde el campus de ese edificio`
+        : 'No se pudo identificar el edificio (nombre esperado: EDIFICIO L01.pdf)' };
+    }
     // Cada lámina queda en el piso que le toca por su número (L01 es el nivel más bajo), si el edificio lo tiene.
     const esCampus = inferido.edificio_codigo === siglaCampus.toUpperCase();
     const pisos = esCampus ? [] : await pisosDe(inferido.edificio_codigo);

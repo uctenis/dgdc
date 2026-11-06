@@ -148,6 +148,59 @@ export function cruzar(filas: FilaAnalisis[], df: Dimension, dc: Dimension, m: M
   return { filas: agrupar(filas, df, m).map(g => g.clave), columnas, celdas, totalFila, totalColumna };
 }
 
+// ── Duplicados ──
+
+export type CriterioRepetido = 'persona' | 'codigo';
+export const CRITERIOS_REPETIDO: { id: CriterioRepetido; nombre: string }[] = [
+  { id: 'persona', nombre: 'Personas en más de un recinto' },
+  { id: 'codigo', nombre: 'Códigos de recinto repetidos' },
+];
+
+export interface Repetido {
+  /** Nombre a mostrar (la persona o el código). */
+  clave: string;
+  recintos: FilaAnalisis[];
+  util: number;
+  /** Cargos o unidades con que aparece la persona (pueden diferir de un recinto a otro). */
+  detalles: string[];
+}
+
+/**
+ * Clave de una persona para reconocerla aunque se haya escrito distinto en cada recinto: sin tildes ni puntos, en
+ * mayúsculas y con las palabras ordenadas («Pérez Soto, Juan» = «JUAN PEREZ SOTO»).
+ */
+export const clavePersona = (nombre: string) =>
+  sinTildes(nombre).replace(/[.,;()]/g, ' ').split(/\s+/).filter(Boolean).sort().join(' ').toUpperCase();
+
+/**
+ * Lo que aparece más de una vez en las filas: personas registradas como ocupantes de varios recintos (por ejemplo, con
+ * dos oficinas) o códigos de recinto repetidos (un error de registro). De más a menos recintos.
+ */
+export function buscarRepetidos(filas: FilaAnalisis[], criterio: CriterioRepetido): Repetido[] {
+  const grupos = new Map<string, { nombres: Map<string, number>; recintos: Map<string, FilaAnalisis>; detalles: Set<string> }>();
+  const sumar = (clave: string, nombre: string, f: FilaAnalisis, detalle?: string) => {
+    if (!clave) return;
+    const g = grupos.get(clave) || { nombres: new Map(), recintos: new Map(), detalles: new Set<string>() };
+    g.nombres.set(nombre, (g.nombres.get(nombre) || 0) + 1);
+    g.recintos.set(f.id, f);
+    if (detalle) g.detalles.add(detalle);
+    grupos.set(clave, g);
+  };
+  for (const f of filas) {
+    if (criterio === 'persona') for (const o of f.ocupantes) sumar(clavePersona(o.nombre || ''), o.nombre.trim(), f, [o.cargo, o.unidad].filter(Boolean).join(' · '));
+    else sumar(f.codigo.trim().toUpperCase(), f.codigo.trim(), f);
+  }
+  return [...grupos.values()]
+    .filter(g => g.recintos.size > 1)
+    .map(g => {
+      const recintos = [...g.recintos.values()].sort((a, b) => a.codigo.localeCompare(b.codigo, 'es', { numeric: true }));
+      // Se muestra la forma más usada del nombre.
+      const clave = [...g.nombres.entries()].sort((a, b) => b[1] - a[1])[0][0];
+      return { clave, recintos, util: recintos.reduce((s, f) => s + f.util, 0), detalles: [...g.detalles] };
+    })
+    .sort((a, b) => b.recintos.length - a.recintos.length || b.util - a.util || a.clave.localeCompare(b.clave, 'es'));
+}
+
 const numero = (n: number, decimales = 0) => n.toLocaleString('es-CL', { maximumFractionDigits: decimales });
 export const formatoM2 = (n: number) => `${numero(n, n < 100 ? 1 : 0)} m²`;
 export function formatoMedida(n: number, m: Medida): string {

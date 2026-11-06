@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import {
-  Loader2, ZoomIn, ZoomOut, Maximize2, Minimize2, Scan, Pencil, Trash2, MapPin, CheckCircle2, Circle, X, Undo2, Check, AlertTriangle, Wand2, Tag, BoxSelect, Square,
+  Loader2, ZoomIn, ZoomOut, Maximize2, Minimize2, Scan, Pencil, Trash2, MapPin, CheckCircle2, Circle, X, Undo2, Check, AlertTriangle, Wand2, Tag, BoxSelect, Square, Save,
 } from 'lucide-react';
 import type { DocumentoEdificio, Piso, Recinto, ZonaRecinto } from '../types/recintos';
 import { descargarLamina, eliminarZona, guardarEscalaDocumento, guardarZona, listarZonas } from '../services/recintos';
@@ -86,6 +86,39 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
   const [verticeMarcado, setVerticeMarcado] = useState<number | null>(null);   // esquina elegida para quitarla
   const [guias, setGuias] = useState<{ x?: number; y?: number } | null>(null);  // guías ortogonales al arrastrar o dibujar
   const predibujoAutomatico = useRef(false);
+
+  // Cada contorno se guarda al momento de dibujarlo o corregirlo. Aquí se lleva la cuenta de lo que va en camino y de
+  // lo que no se pudo guardar (por recinto), para mostrarlo junto al botón «Guardar» y reintentarlo desde ahí.
+  const enCamino = useRef(new Set<Promise<unknown>>());
+  const fallidos = useRef(new Map<string, Omit<ZonaRecinto, 'id'>>());
+  const [estadoGuardado, setEstadoGuardado] = useState({ enCamino: 0, fallidos: 0, guardadoEn: null as Date | null });
+  const refrescarEstado = useCallback((guardado = false) => setEstadoGuardado(e => ({
+    enCamino: enCamino.current.size, fallidos: fallidos.current.size, guardadoEn: guardado ? new Date() : e.guardadoEn,
+  })), []);
+  const persistirZona = useCallback(async (datos: Omit<ZonaRecinto, 'id'>): Promise<ZonaRecinto> => {
+    const promesa = guardarZona(datos);
+    enCamino.current.add(promesa); refrescarEstado();
+    let ok = false;
+    try {
+      const z = await promesa;
+      fallidos.current.delete(datos.recinto_id); ok = true;
+      return z;
+    } catch (e) {
+      fallidos.current.set(datos.recinto_id, datos);
+      throw e;
+    } finally {
+      enCamino.current.delete(promesa); refrescarEstado(ok);
+    }
+  }, [refrescarEstado]);
+  // Al cambiar de lámina se parte de cero.
+  useEffect(() => { fallidos.current.clear(); setEstadoGuardado({ enCamino: 0, fallidos: 0, guardadoEn: null }); }, [documento.id]);
+  // Si queda algo sin guardar, el navegador avisa antes de cerrar o recargar la página.
+  useEffect(() => {
+    if (!estadoGuardado.enCamino && !estadoGuardado.fallidos) return;
+    const avisar = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', avisar);
+    return () => window.removeEventListener('beforeunload', avisar);
+  }, [estadoGuardado.enCamino, estadoGuardado.fallidos]);
 
   const recintoPorId = useMemo(() => new Map(recintos.map(r => [r.id, r])), [recintos]);
   const zonasPagina = useMemo(() => zonas.filter(z => z.pagina === pagina && recintoPorId.has(z.recinto_id)), [zonas, pagina, recintoPorId]);
@@ -201,7 +234,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
           const poligono = recortarContraVecinos(d.poligono, ocupados);
           if (!poligono) continue;
           ocupados.push(poligono);
-          nuevas.push(await guardarZona({ documento_id: documento.id, recinto_id: d.recinto_id, pagina: p, poligono }));
+          nuevas.push(await persistirZona({ documento_id: documento.id, recinto_id: d.recinto_id, pagina: p, poligono }));
         }
       }
       setZonas(prev => [...prev.filter(z => !nuevas.some(n => n.recinto_id === z.recinto_id)), ...nuevas]);
@@ -212,7 +245,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
     } finally {
       setPredibujando(false);
     }
-  }, [pdf, recintos, zonaDe, zonas, escala, documento.id]);
+  }, [pdf, recintos, zonaDe, zonas, escala, documento.id, persistirZona]);
 
   // Al cambiar de recinto, sus vértices vuelven a quedar ocultos.
   useEffect(() => { setEditandoContorno(false); }, [seleccion]);
@@ -281,7 +314,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
     if (!poligono) { setAviso('Ese contorno queda completo dentro de otros recintos ya dibujados (los contornos no se superponen).'); return; }
     setGuardando(true);
     try {
-      const z = await guardarZona({ documento_id: documento.id, recinto_id: recintoId, pagina, poligono });
+      const z = await persistirZona({ documento_id: documento.id, recinto_id: recintoId, pagina, poligono });
       setZonas(prev => [...prev.filter(x => x.recinto_id !== z.recinto_id), z]);
       const idxActual = recintosFiltrados.findIndex(r => r.id === recintoId);
       const siguiente = continuarSiguiente
@@ -302,7 +335,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
     } finally {
       setGuardando(false);
     }
-  }, [documento.id, pagina, recintosFiltrados, continuarSiguiente, zonaDe, otrosContornos]);
+  }, [documento.id, pagina, recintosFiltrados, continuarSiguiente, zonaDe, otrosContornos, persistirZona]);
 
   /** Detecta automáticamente los muros y cubículos desde un punto dentro del recinto y guarda el contorno. */
   const detectarYGuardarEnPunto = useCallback(async (recintoId: string, punto: Punto) => {
@@ -432,7 +465,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
     const r = marco.current!.getBoundingClientRect();
     setEncima(z ? { id: z.recinto_id, x: e.clientX - r.left, y: e.clientY - r.top } : null);
   };
-  /** Guarda el contorno corregido; si falla, lo devuelve a como estaba. */
+  /** Guarda el contorno corregido; si falla, queda dibujado y pendiente para reintentarlo con «Guardar». */
   const guardarContorno = async (zona: ZonaRecinto, editado: Punto[]) => {
     const poligono = recortarContraVecinos(editado, otrosContornos(zona.recinto_id, zona.pagina));
     if (!poligono) {
@@ -442,10 +475,33 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
     }
     setZonas(prev => prev.map(z => (z.id === zona.id ? { ...z, poligono } : z)));
     try {
-      await guardarZona({ documento_id: zona.documento_id, recinto_id: zona.recinto_id, pagina: zona.pagina, poligono });
+      await persistirZona({ documento_id: zona.documento_id, recinto_id: zona.recinto_id, pagina: zona.pagina, poligono });
     } catch (e) {
-      setZonas(prev => prev.map(z => (z.id === zona.id ? zona : z)));
+      setError(`${e instanceof Error ? e.message : String(e)}. El cambio quedó pendiente: pulse «Guardar» para reintentarlo.`);
+    }
+  };
+
+  /**
+   * Botón «Guardar»: termina el dibujo o la edición en curso, guarda la escala, espera lo que va en camino y reintenta
+   * lo que no se pudo guardar. Al final confirma cuántos recintos quedaron ubicados en la lámina.
+   */
+  const [guardandoTodo, setGuardandoTodo] = useState(false);
+  const guardarTodo = async () => {
+    setGuardandoTodo(true); setError('');
+    try {
+      if (dibujando && formaDibujo === 'poligono' && dibujando.puntos.length >= 3) await terminarDibujo();
+      setDibujando(null); setCursor(null); setEditandoContorno(false); setVerticeMarcado(null);
+      if (escala !== (documento.escala || '')) { await guardarEscalaDocumento(documento.id, escala); onEscalaGuardada?.(); }
+      await Promise.allSettled([...enCamino.current]);
+      const resultados = await Promise.allSettled([...fallidos.current.values()].map(d => persistirZona(d)));
+      const reintentadas = resultados.flatMap(r => (r.status === 'fulfilled' ? [r.value] : []));
+      if (reintentadas.length) setZonas(prev => [...prev.filter(z => !reintentadas.some(n => n.recinto_id === z.recinto_id)), ...reintentadas]);
+      if (fallidos.current.size) setError(`No se pudieron guardar ${fallidos.current.size} contorno(s). Revise la conexión y vuelva a pulsar «Guardar».`);
+      else { refrescarEstado(true); setAviso(`Cambios guardados. ${ubicados} de ${recintos.length} recintos quedaron ubicados en esta lámina.`); }
+    } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGuardandoTodo(false);
     }
   };
 
@@ -618,7 +674,19 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
           className="flex items-center gap-1 px-2 py-1 rounded-lg border border-teal-300 font-bold text-teal-800 hover:bg-teal-50 disabled:opacity-40">
           {predibujando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />} Predibujar recintos
         </button>
-        <CopiarContornos documento={documento} pdf={pdf} pagina={pagina} zonas={zonasPagina} recintos={recintos} /></>}
+        <CopiarContornos documento={documento} pdf={pdf} pagina={pagina} zonas={zonasPagina} recintos={recintos} />
+        <button type="button" onClick={() => void guardarTodo()} disabled={guardandoTodo || !pdf}
+          title="Termina el dibujo o la edición en curso y confirma que todos los contornos de la lámina quedaron guardados (reintenta los que fallaron)"
+          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold text-white disabled:opacity-50 ${estadoGuardado.fallidos ? 'bg-rose-600 hover:bg-rose-700' : 'bg-teal-700 hover:bg-teal-800'}`}>
+          {guardandoTodo || estadoGuardado.enCamino ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+          {estadoGuardado.fallidos ? `Guardar (${estadoGuardado.fallidos} pendiente${estadoGuardado.fallidos > 1 ? 's' : ''})` : 'Guardar'}
+        </button>
+        <span className="text-[11px] text-slate-500">
+          {estadoGuardado.enCamino ? 'Guardando…'
+            : estadoGuardado.fallidos ? <span className="text-rose-700 font-semibold">Hay cambios sin guardar</span>
+            : estadoGuardado.guardadoEn ? <span className="text-emerald-700">✓ Guardado {estadoGuardado.guardadoEn.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })}</span>
+            : null}
+        </span></>}
         <button type="button" onClick={() => { setModoVarios(m => !m); setVarios(new Set()); setSeleccion(null); }}
           title="Arrastre un rectángulo sobre el plano (por ejemplo, un ala) o haga clic en cada recinto para sumar sus superficies. Alt + arrastrar mueve el plano."
           className={`flex items-center gap-1 px-2 py-1 rounded-lg border font-bold ${modoVarios ? 'bg-slate-900 border-slate-900 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}>

@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  BarChart3, Loader2, X, Link2, Download, RefreshCw, Search, ChevronDown, Check, Sparkles, LayoutGrid, Table2, ExternalLink, AlertTriangle, PieChart,
+  BarChart3, Loader2, X, Link2, Download, RefreshCw, Search, ChevronDown, Check, Sparkles, LayoutGrid, Table2, ExternalLink, AlertTriangle, PieChart, Copy,
 } from 'lucide-react';
 import { cargarDatosAnalisis } from '../services/analisisEspacios';
 import {
-  agrupar, cruzar, DIMENSIONES, filtrar, formatoM2, formatoMedida, fraseRespuesta, MEDIDAS, SIN_DATO, totales, valorMedida,
-  type Dimension, type FilaAnalisis, type Filtros, type Grupo, type Medida,
+  agrupar, buscarRepetidos, CRITERIOS_REPETIDO, cruzar, DIMENSIONES, filtrar, formatoM2, formatoMedida, fraseRespuesta, MEDIDAS, SIN_DATO, totales, valorMedida,
+  type CriterioRepetido, type Dimension, type FilaAnalisis, type Filtros, type Grupo, type Medida,
 } from '../utils/analisisEspacios';
 import { comoTitulo } from '../utils/texto';
 
@@ -17,8 +17,8 @@ const GRIS_OTROS = '#a3a29c';
 const AZUL = '#2a78d6';
 const ESCALA = ['#cde2fb', '#b7d3f6', '#9ec5f4', '#86b6ef', '#6da7ec', '#5598e7', '#3987e5', '#2a78d6', '#256abf', '#1c5cab', '#184f95', '#104281', '#0d366b'];
 
-interface Consulta { f: Filtros; g: Dimension; m: Medida; cf: Dimension; cc: Dimension }
-const CONSULTA_INICIAL: Consulta = { f: {}, g: 'tipo', m: 'util', cf: 'piso', cc: 'tipo' };
+interface Consulta { f: Filtros; g: Dimension; m: Medida; cf: Dimension; cc: Dimension; r: CriterioRepetido; h?: boolean }
+const CONSULTA_INICIAL: Consulta = { f: {}, g: 'tipo', m: 'util', cf: 'piso', cc: 'tipo', r: 'persona' };
 
 const leerConsulta = (texto: string | null): Consulta => {
   try { return texto ? { ...CONSULTA_INICIAL, ...JSON.parse(texto) } : CONSULTA_INICIAL; } catch { return CONSULTA_INICIAL; }
@@ -58,7 +58,9 @@ export function AnalisisEspacios({ onAbrirRecinto, onCerrar }: Props) {
 
   // Cuenta lo vigente hoy: los recintos dados de baja y las obras por entregar (p. ej. «En obra» con fecha futura)
   // no suman, salvo que se pidan con el filtro de estado.
-  const base = useMemo(() => (datos?.filas || []).filter(f => (f.vigente ?? f.estado !== 'Eliminado') || consulta.f.estado?.includes(f.estado)), [datos, consulta.f.estado]);
+  // «Incluir historial» suma todo: lo dado de baja (p. ej. las salas arrendadas de NSL) y las obras por entregar.
+  const base = useMemo(() => (datos?.filas || []).filter(f => consulta.h || (f.vigente ?? f.estado !== 'Eliminado') || consulta.f.estado?.includes(f.estado)), [datos, consulta.f.estado, consulta.h]);
+  const fueraDeHoy = useMemo(() => (datos?.filas || []).filter(f => !(f.vigente ?? f.estado !== 'Eliminado')).length, [datos]);
   const resultado = useMemo(() => filtrar(base, consulta.f), [base, consulta.f]);
   const t = useMemo(() => totales(resultado), [resultado]);
   const nombreEdificio = (c: string) => (datos?.nombresEdificio[c] ? `${c} ${comoTitulo(datos.nombresEdificio[c])}` : c);
@@ -123,8 +125,9 @@ export function AnalisisEspacios({ onAbrirRecinto, onCerrar }: Props) {
       <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm flex flex-wrap items-center gap-2">
         {DIMENSIONES.map(d => {
           const opciones = agrupar(filtrar(base, consulta.f, d.id), d.id, 'recintos').map(g => ({ valor: g.clave, etiqueta: etiqueta(d.id, g.clave), n: g.recintos }));
-          // Un filtro que hoy no distingue nada (todo «Sin dato», como útil/común antes de clasificar los tipos) no se muestra.
-          if (!consulta.f[d.id]?.length && opciones.every(o => o.valor === SIN_DATO)) return null;
+          // Un filtro que no distingue nada no se muestra: una sola opción (hoy todo lo vigente está «Operativo» y es
+          // «Propia») o todo «Sin dato» (útil/común antes de clasificar los tipos). Si ya se eligió algo, se mantiene.
+          if (!consulta.f[d.id]?.length && (opciones.length <= 1 || opciones.every(o => o.valor === SIN_DATO))) return null;
           return (
             <FiltroMultiple key={d.id} titulo={d.nombre} elegidos={consulta.f[d.id] || []} opciones={opciones}
               ordenAlfabetico={d.id !== 'piso'}
@@ -135,6 +138,13 @@ export function AnalisisEspacios({ onAbrirRecinto, onCerrar }: Props) {
           <Search className="w-3.5 h-3.5 text-slate-400" />
           <CampoTexto valor={consulta.f.texto || ''} onCambiar={texto => ponerFiltros({ ...consulta.f, texto })} />
         </label>
+        {fueraDeHoy > 0 && (
+          <label title={`Suma los ${fueraDeHoy} recintos que hoy no cuentan: dados de baja (fin de arriendo, demolición) y obras por entregar. Con él aparecen los filtros de estado y tenencia.`}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border cursor-pointer font-semibold ${consulta.h ? 'bg-amber-50 border-amber-300 text-amber-900' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+            <input type="checkbox" checked={!!consulta.h} onChange={e => cambiar({ h: e.target.checked || undefined })} className="accent-amber-600" />
+            Incluir historial ({fueraDeHoy})
+          </label>
+        )}
         {hayFiltros && <button type="button" onClick={() => ponerFiltros({})} className="ml-auto px-2.5 py-1.5 rounded-lg text-rose-700 font-bold hover:bg-rose-50">Limpiar filtros</button>}
       </div>
 
@@ -177,6 +187,12 @@ export function AnalisisEspacios({ onAbrirRecinto, onCerrar }: Props) {
             etiqueta={etiqueta} onElegir={(vf, vc, df, dc) => ponerFiltros({ ...consulta.f, [df]: [vf], ...(vc !== 'Otros' ? { [dc]: [vc] } : {}) })} />
         </Tarjeta>
 
+        <Tarjeta icono={<Copy className="w-4 h-4 text-teal-700" />} titulo="Duplicados"
+          acciones={<Selector valor={consulta.r} opciones={CRITERIOS_REPETIDO.map(c => ({ valor: c.id, nombre: c.nombre }))} onCambiar={v => cambiar({ r: v as CriterioRepetido })} />}>
+          <Repetidos filas={resultado} criterio={consulta.r} nombreEdificio={nombreEdificio} onAbrir={onAbrirRecinto}
+            onFiltrarTexto={texto => ponerFiltros({ ...consulta.f, texto })} />
+        </Tarjeta>
+
         <Tarjeta icono={<Table2 className="w-4 h-4 text-teal-700" />} titulo={`Recintos (${resultado.length.toLocaleString('es-CL')})`}>
           <Detalle filas={resultado} nombreEdificio={nombreEdificio} onAbrir={onAbrirRecinto} />
         </Tarjeta>
@@ -203,6 +219,7 @@ function PreguntasFrecuentes({ filas, filtros, nombreEdificio, nombreCampus, onE
     { texto: `¿Cómo se reparten oficinas y salas en ${nombreEdificio(edificio)}?`, consulta: { f: { edificio: [edificio], tipo: [...oficinas, ...salas] }, g: 'tipo', m: 'util' } },
     { texto: `¿Cuántos m² ocupa cada unidad en ${nombreCampus(campus)}?`, consulta: { f: { campus: [campus] }, g: 'unidad', m: 'util' } },
     { texto: `¿Cuánta superficie tiene cada piso de ${nombreEdificio(edificio)}?`, consulta: { f: { edificio: [edificio] }, g: 'piso', m: 'util', cf: 'piso', cc: 'tipo' } },
+    { texto: '¿Qué personas tienen más de una oficina?', consulta: { f: { tipo: oficinas }, r: 'persona' } },
     { texto: '¿Qué campus tiene más superficie?', consulta: { f: {}, g: 'campus', m: 'util' } },
   ];
   const preguntas = todas.filter(p => !p.texto.includes('undefined'));
@@ -455,6 +472,75 @@ function MatrizCruce({ filas, df, dc, medida, etiqueta, onElegir }: {
       </table>
       {c.filas.length > filasVisibles.length && <p className="pt-2 text-slate-500">Se muestran las primeras {filasVisibles.length} de {c.filas.length} filas: filtre para acotar.</p>}
       <p className="pt-2 text-slate-500">Valores en {MEDIDAS.find(m => m.id === medida)!.corto}. Más oscuro = más {medida === 'recintos' ? 'recintos' : 'superficie'}. Clic en una celda para filtrar por esa combinación.</p>
+    </div>
+  );
+}
+
+/**
+ * Lo que se repite dentro de la consulta: personas que ocupan más de un recinto (con el filtro de tipo en oficinas,
+ * quién tiene más de una oficina) o códigos de recinto repetidos. Cada fila se abre para ver y abrir sus recintos.
+ */
+function Repetidos({ filas, criterio, nombreEdificio, onAbrir, onFiltrarTexto }: {
+  filas: FilaAnalisis[]; criterio: CriterioRepetido; nombreEdificio: (c: string) => string;
+  onAbrir: (edificio: string, id: string) => void; onFiltrarTexto: (texto: string) => void;
+}) {
+  const repetidos = useMemo(() => buscarRepetidos(filas, criterio), [filas, criterio]);
+  const [abierto, setAbierto] = useState<string | null>(null);
+  const [limite, setLimite] = useState(20);
+  useEffect(() => { setAbierto(null); setLimite(20); }, [criterio, filas]);
+  const persona = criterio === 'persona';
+  if (!repetidos.length) {
+    return <p className="text-slate-500">{persona
+      ? 'Ninguna persona aparece como ocupante de más de un recinto en esta consulta.'
+      : 'No hay códigos de recinto repetidos en esta consulta.'}</p>;
+  }
+  return (
+    <div className="space-y-2">
+      <p className="text-slate-600">
+        {persona
+          ? <><strong>{repetidos.length}</strong> persona(s) aparecen en más de un recinto de esta consulta. Para ver quién tiene más de una oficina, filtre el tipo por oficinas. Los nombres se comparan sin tildes y sin importar el orden de las palabras.</>
+          : <><strong>{repetidos.length}</strong> código(s) están en más de un recinto: conviene corregirlos en la ficha.</>}
+      </p>
+      <ul className="divide-y divide-slate-100 border border-slate-100 rounded-xl">
+        {repetidos.slice(0, limite).map(r => (
+          <li key={r.clave}>
+            <button type="button" onClick={() => setAbierto(a => (a === r.clave ? null : r.clave))}
+              className="w-full grid grid-cols-[1fr_auto_auto] items-center gap-3 px-3 py-2 text-left hover:bg-slate-50">
+              <span className="min-w-0">
+                <span className={`font-bold text-slate-900 ${persona ? '' : 'font-mono'}`}>{persona ? comoTitulo(r.clave) : r.clave}</span>
+                <span className="block truncate text-slate-500">{r.recintos.map(f => f.codigo).join(', ')}</span>
+              </span>
+              <span className="tabular-nums font-semibold text-slate-800">{r.recintos.length} recintos</span>
+              <span className="tabular-nums text-slate-600 w-24 text-right">{formatoM2(r.util)}</span>
+            </button>
+            {abierto === r.clave && (
+              <div className="px-3 pb-3 space-y-1.5">
+                {persona && r.detalles.length > 0 && <p className="text-slate-500">{r.detalles.join(' / ')}</p>}
+                <table className="w-full">
+                  <tbody className="divide-y divide-slate-50">
+                    {r.recintos.map(f => (
+                      <tr key={f.id}>
+                        <td className="py-1 pr-3 font-mono font-bold text-slate-900">{f.codigo}</td>
+                        <td className="py-1 pr-3 text-slate-600 truncate max-w-[16rem]" title={nombreEdificio(f.edificio)}>{nombreEdificio(f.edificio)} · {f.piso}</td>
+                        <td className="py-1 pr-3 text-slate-800">{f.tipo}</td>
+                        <td className="py-1 pr-3 text-slate-500" title={f.ocupantes.map(o => comoTitulo(o.nombre)).join(', ')}>{f.ocupantes.length > 1 ? `compartido con ${f.ocupantes.length - 1}` : persona ? 'individual' : ''}</td>
+                        <td className="py-1 pr-3 text-right tabular-nums">{formatoM2(f.util)}</td>
+                        <td className="py-1 text-right">
+                          <button type="button" onClick={() => onAbrir(f.edificio, f.id)} title="Abrir la ficha del recinto" className="p-1 rounded text-teal-800 hover:bg-teal-50"><ExternalLink className="w-3.5 h-3.5" /></button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {persona && <button type="button" onClick={() => onFiltrarTexto(r.clave)} className="text-teal-800 font-bold hover:underline">Filtrar toda la consulta por esta persona</button>}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      {repetidos.length > limite && (
+        <button type="button" onClick={() => setLimite(l => l + 50)} className="text-teal-800 font-bold hover:underline">Mostrar 50 más (quedan {repetidos.length - limite})</button>
+      )}
     </div>
   );
 }

@@ -43,6 +43,9 @@ interface Props {
   onEditarRecinto: (r: Recinto) => void;
   onVerDocumentos: () => void;
   onRecargar: () => Promise<void> | void;
+  /** Herramientas de dibujo abiertas (va en la dirección de la página, ?vista=plano, para que «atrás» las cierre). */
+  editando: boolean;
+  onEditar: (abrir: boolean) => void;
 }
 
 /**
@@ -52,7 +55,7 @@ interface Props {
  * completas del plano interactivo.
  */
 export function ExploradorEdificio({
-  edificioCodigo, nombreEdificio, pisos, recintos, documentos, todosLosRecintos, destacado, edificiosCampus, onIrEdificio, onVerFicha, onEditarRecinto, onVerDocumentos, onRecargar,
+  edificioCodigo, nombreEdificio, pisos, recintos, documentos, todosLosRecintos, destacado, edificiosCampus, onIrEdificio, onVerFicha, onEditarRecinto, onVerDocumentos, onRecargar, editando, onEditar,
 }: Props) {
   const pisosOrdenados = useMemo(() => [...pisos].sort((a, b) => a.orden - b.orden), [pisos]);
   // Láminas con copia para el visor: la vigente de cada piso y sus versiones anteriores (la historia del piso).
@@ -69,7 +72,6 @@ export function ExploradorEdificio({
   const [seleccion, setSeleccion] = useState<string | null>(destacado || null);
   const [abiertos, setAbiertos] = useState<Set<string>>(() => new Set([pisoInicial()]));
   const [filtro, setFiltro] = useState('');
-  const [editando, setEditando] = useState(false);
   const [laminaElegida, setLaminaElegida] = useState('');
 
   // Al cambiar de edificio (o llegar sus datos), vuelve al piso inicial.
@@ -139,7 +141,7 @@ export function ExploradorEdificio({
     return (
       <div className="space-y-2">
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setEditando(false)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-900 text-white font-bold">
+          <button type="button" onClick={() => onEditar(false)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-900 text-white font-bold">
             <X className="w-3.5 h-3.5" /> Volver a la vista general
           </button>
           <span className="text-slate-500">
@@ -263,7 +265,7 @@ export function ExploradorEdificio({
                   <FileText className="w-3.5 h-3.5" /> Ver PDF
                 </a>
               )}
-              <button type="button" onClick={() => setEditando(true)} className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-amber-300 font-bold text-amber-800 hover:bg-amber-50">
+              <button type="button" onClick={() => onEditar(true)} className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-amber-300 font-bold text-amber-800 hover:bg-amber-50">
                 <Pencil className="w-3.5 h-3.5" /> {lamina ? 'Editar contornos' : 'Subir o vincular lámina'}
               </button>
             </div>
@@ -385,7 +387,7 @@ export function ExploradorEdificio({
             <ul className="divide-y divide-slate-100">
               {docs.slice(0, 6).map(d => (
                 <li key={d.id} className="flex items-center gap-2 py-1.5">
-                  <FileText className={`w-4 h-4 shrink-0 ${d.tipo === 'Plano' ? 'text-rose-500' : 'text-indigo-500'}`} />
+                  <FileText className={`w-4 h-4 shrink-0 ${d.tipo === 'Plano' ? 'text-rose-500' : 'text-teal-500'}`} />
                   <div className="flex-1 min-w-0">
                     <p className="truncate font-semibold text-slate-700" title={d.titulo}>{d.codigo_lamina ? `${d.codigo_lamina} · ` : ''}{d.titulo}</p>
                     <p className="text-[10px] text-slate-500 flex items-center gap-1">
