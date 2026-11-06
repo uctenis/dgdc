@@ -122,7 +122,10 @@ export function ExploradorEdificio({
   // Indicadores del edificio.
   const hoy = resumenSuperficie(recintos);
   const pisosConPlano = pisos.filter(p => laminasDe(p.id, true).length).length;
-  const porRevisar = recintos.filter(r => alertasRecinto(r).length).length;
+  const listaPorRevisar = useMemo(() => recintos.filter(r => alertasRecinto(r).length)
+    .sort((a, b) => a.codigo.localeCompare(b.codigo, 'es', { numeric: true })), [recintos]);
+  const porRevisar = listaPorRevisar.length;
+  const [verPorRevisar, setVerPorRevisar] = useState(false);
 
   // Documentos: primero los del piso elegido, después los del edificio completo.
   const docs = useMemo(() => documentos.filter(d => d.vigente)
@@ -172,8 +175,33 @@ export function ExploradorEdificio({
         <Indicador icono={IconoMapa} titulo="Pisos con plano" valor={`${pisosConPlano} de ${pisos.length}`} detalle="láminas en el visor" tono={pisosConPlano < pisos.length ? 'aviso' : 'ok'} />
         {hoy.porVenir.recintos > 0 && <Indicador icono={Building2} titulo="Arrendada u otra" valor={m2(hoy.noPropia.util)} detalle={`${hoy.noPropia.recintos} recinto(s) no propios`} />}
         {!hoy.porVenir.recintos && <Indicador icono={Users} titulo="Ocupantes" valor={recintos.reduce((s, r) => s + (r.ocupantes?.length || 0), 0).toLocaleString('es-CL')} detalle="personas o unidades" />}
-        <Indicador icono={AlertTriangle} titulo="Por revisar" valor={porRevisar.toLocaleString('es-CL')} detalle="datos dudosos o faltantes" tono={porRevisar ? 'aviso' : 'ok'} />
+        <Indicador icono={AlertTriangle} titulo="Por revisar" valor={porRevisar.toLocaleString('es-CL')} detalle={porRevisar ? (verPorRevisar ? 'clic para ocultar la lista' : 'clic para ver cuáles') : 'sin pendientes'} tono={porRevisar ? 'aviso' : 'ok'}
+          onClick={porRevisar ? () => setVerPorRevisar(v => !v) : undefined} activo={verPorRevisar} />
       </div>
+
+      {/* Lista de lo que hay que revisar: cada recinto lleva su motivo; al elegirlo se marca en el árbol y en el plano. */}
+      {verPorRevisar && porRevisar > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <p className="font-extrabold text-amber-900 flex items-center gap-1.5 mr-auto"><AlertTriangle className="w-4 h-4" /> {porRevisar} recinto(s) por revisar</p>
+            <button type="button" onClick={() => setVerPorRevisar(false)} className="text-amber-700 hover:text-amber-900" title="Cerrar"><X className="w-4 h-4" /></button>
+          </div>
+          <ul className="grid gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
+            {listaPorRevisar.map(r => (
+              <li key={r.id}>
+                <button type="button" onClick={() => elegirRecinto(r)}
+                  className={`w-full text-left bg-white border rounded-xl px-3 py-2 hover:border-amber-400 ${r.id === seleccion ? 'border-amber-500 ring-2 ring-amber-300' : 'border-amber-200'}`}>
+                  <span className="font-mono font-bold text-slate-900">{sinPrefijo(r)}</span>
+                  <span className="text-slate-600"> · {comoTitulo(r.nombre)}</span>
+                  <span className="text-slate-400"> · {pisos.find(p => p.id === r.piso_id)?.nombre || ''}</span>
+                  {alertasRecinto(r).map(a => <span key={a} className="block text-amber-800">• {a}</span>)}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="text-amber-800">Al elegir uno se marca en el plano y su ficha muestra el detalle; corríjalo con «Editar datos».</p>
+        </div>
+      )}
 
       <div className="grid gap-3 lg:grid-cols-[260px_minmax(0,1fr)] 2xl:grid-cols-[270px_minmax(0,1fr)_320px]">
         {/* Árbol de pisos y recintos */}
@@ -406,16 +434,20 @@ export function ExploradorEdificio({
   );
 }
 
-function Indicador({ icono: Icono, titulo, valor, detalle, tono }: { icono: typeof Building2; titulo: string; valor: string; detalle: string; tono?: 'ok' | 'aviso' }) {
+function Indicador({ icono: Icono, titulo, valor, detalle, tono, onClick, activo }: {
+  icono: typeof Building2; titulo: string; valor: string; detalle: string; tono?: 'ok' | 'aviso'; onClick?: () => void; activo?: boolean;
+}) {
+  const Caja = onClick ? 'button' : 'div';
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-3 flex items-center gap-3">
+    <Caja {...(onClick ? { type: 'button' as const, onClick } : {})}
+      className={`bg-white border rounded-2xl shadow-sm p-3 flex items-center gap-3 text-left ${onClick ? 'cursor-pointer hover:border-amber-400 hover:shadow-md transition' : ''} ${activo ? 'border-amber-400 ring-2 ring-amber-200' : 'border-slate-200'}`}>
       <span className={`w-10 h-10 rounded-xl grid place-items-center shrink-0 ${tono === 'aviso' ? 'bg-amber-50 text-amber-700' : 'bg-teal-50 text-teal-700'}`}><Icono className="w-5 h-5" /></span>
       <div className="min-w-0">
         <p className="text-slate-500 truncate">{titulo}</p>
         <p className="text-lg font-extrabold text-slate-900 leading-tight tabular-nums truncate">{valor}</p>
         <p className="text-[10px] text-slate-400 truncate">{detalle}</p>
       </div>
-    </div>
+    </Caja>
   );
 }
 
