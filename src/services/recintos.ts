@@ -4,6 +4,8 @@ import { fechaDeNombre } from '../utils/emparejarLaminas';
 import { supabase } from '../lib/supabase';
 import type { CambioRecinto, DocumentoEdificio, FichaEdificio, Ocupante, Piso, Recinto, ZonaRecinto } from '../types/recintos';
 import { datosDePiso } from '../utils/importacionRecintos';
+import { comoTitulo } from '../utils/texto';
+import { clavePersona } from '../utils/analisisEspacios';
 
 /** Convierte el error de la base en un mensaje entendible. */
 function errorDe(error: { message?: string; code?: string } | null, accion: string): Error {
@@ -149,7 +151,8 @@ export function datosParaGuardar(recinto: Partial<Recinto>): Partial<Recinto> {
   for (const c of COLUMNAS_EDITABLES) if (recinto[c] !== undefined) datos[c] = recinto[c];
   if (Array.isArray(recinto.ocupantes)) {
     datos.ocupantes = recinto.ocupantes
-      .map(o => ({ nombre: (o.nombre || '').trim(), cargo: o.cargo?.trim() || null, unidad: o.unidad?.trim() || null }))
+      // Los nombres de personas se guardan siempre en formato título («María de la Luz Pérez»).
+      .map(o => ({ nombre: comoTitulo(o.nombre || ''), cargo: o.cargo?.trim() || null, unidad: o.unidad?.trim() || null }))
       .filter(o => o.nombre);
   }
   return datos as Partial<Recinto>;
@@ -164,6 +167,32 @@ export async function guardarRecinto(recinto: Omit<Recinto, 'id'> & { id?: strin
   const { data, error } = await consulta;
   if (error) throw errorDe(error, 'No se pudo guardar el recinto');
   return data as Recinto;
+}
+
+/**
+ * Cambia a una persona de recinto (por ejemplo, de oficina): la agrega al destino y, salvo que se pida conservarla
+ * (oficina compartida o segunda oficina), la quita del origen. Ambos cambios quedan en el historial de cada recinto.
+ * Si la persona ya figuraba en el destino, no se duplica.
+ */
+export async function moverOcupante(origenId: string, ocupante: Ocupante, destinoId: string, conservarEnOrigen = false): Promise<void> {
+  if (origenId === destinoId) throw new Error('El recinto de destino es el mismo de origen.');
+  const leer = async (id: string) => {
+    const { data, error } = await supabase.from('recintos').select('id, codigo, ocupantes').eq('id', id).single();
+    if (error) throw errorDe(error, 'No se pudo leer el recinto');
+    return data as Pick<Recinto, 'id' | 'codigo' | 'ocupantes'>;
+  };
+  const [origen, destino] = await Promise.all([leer(origenId), leer(destinoId)]);
+  const clave = clavePersona(ocupante.nombre);
+  const enDestino = (destino.ocupantes || []).some(o => clavePersona(o.nombre) === clave);
+  if (!enDestino) {
+    const { error } = await supabase.from('recintos').update(datosParaGuardar({ ocupantes: [...(destino.ocupantes || []), ocupante] })).eq('id', destinoId);
+    if (error) throw errorDe(error, `No se pudo agregar a la persona en ${destino.codigo}`);
+  }
+  if (!conservarEnOrigen) {
+    const restantes = (origen.ocupantes || []).filter(o => clavePersona(o.nombre) !== clave);
+    const { error } = await supabase.from('recintos').update(datosParaGuardar({ ocupantes: restantes })).eq('id', origenId);
+    if (error) throw errorDe(error, `Se agregó en ${destino.codigo}, pero no se pudo quitar de ${origen.codigo}`);
+  }
 }
 
 export async function eliminarRecinto(id: string): Promise<void> {
@@ -204,6 +233,7 @@ export async function importarRecintos(
     const existentes = new Set((await listarRecintos(edificio)).map(r => r.codigo.toUpperCase()));
     const registros = lista.map(f => ({
       ...f.recinto,
+      ...(f.recinto.ocupantes ? { ocupantes: f.recinto.ocupantes.map(o => ({ ...o, nombre: comoTitulo(o.nombre) })) } : {}),
       edificio_codigo: edificio,
       piso_id: porCodigo.get(f.piso.trim().toUpperCase())!.id,
       origen: 'Planilla' as const,

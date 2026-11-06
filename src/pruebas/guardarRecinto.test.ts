@@ -16,3 +16,10 @@ describe('guardar un recinto', () => {
     expect(datos.ocupantes).toEqual([{ nombre: 'Solís, Juan', cargo: 'Analista', unidad: null }]);
   });
 });
+
+describe('nombres de ocupantes', () => {
+  it('se guardan en formato título', () => {
+    const datos = datosParaGuardar({ ocupantes: [{ nombre: 'MOLINA VALENZUELA, BRÍGIDA DEL PILAR', cargo: 'SECRETARIA' }] });
+    expect(datos.ocupantes?.[0].nombre).toBe('Molina Valenzuela, Brígida del Pilar');
+  });
+});

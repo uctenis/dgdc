@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Building2, Layers, Plus, Pencil, Trash2, History, FileSpreadsheet, FileText, Loader2, AlertTriangle, X, ExternalLink, Copy, DoorOpen, ChevronRight, ChevronDown, Trees, LayoutGrid, Table2, Download, ClipboardCheck, BarChart3,
+  Building2, Layers, Plus, Pencil, Trash2, History, FileSpreadsheet, FileText, Loader2, AlertTriangle, X, ExternalLink, Copy, DoorOpen, ChevronRight, ChevronDown, Trees, LayoutGrid, Table2, ArrowRightLeft, Download, ClipboardCheck, BarChart3,
 } from 'lucide-react';
 import { getCampusList, obtenerEdificiosDeCampus, etiquetaEdificio, obtenerInfoEdificio } from '../data/campusData';
 import { SUPABASE_CONFIGURADO } from '../lib/supabase';
@@ -18,6 +18,7 @@ import { BuscadorEspacios } from './BuscadorEspacios';
 import { ExploradorEdificio } from './ExploradorEdificio';
 import { SubirLaminasCampus } from './SubirLaminasCampus';
 import { RevisionCampus } from './RevisionCampus';
+import { MoverPersonaModal } from './MoverPersonaModal';
 import { alertasRecinto, observacionesSinNotas } from '../utils/alertasRecinto';
 import { formatoFecha } from '../utils/fechas';
 import { comoTitulo } from '../utils/texto';
@@ -105,6 +106,8 @@ export function RecintosPage() {
   const [verAnteriores, setVerAnteriores] = useState(false);
   const [importando, setImportando] = useState(false);
   const [guardando, setGuardando] = useState(false);
+  const [moviendo, setMoviendo] = useState<{ origen: Recinto; ocupante: Ocupante } | null>(null);
+  const [avisoCambio, setAvisoCambio] = useState('');
 
   useEffect(() => {
     if (!SUPABASE_CONFIGURADO) return;
@@ -653,7 +656,23 @@ export function RecintosPage() {
         <FichaRecinto recinto={fichaRecinto} piso={pisos.find(p => p.id === fichaRecinto.piso_id)} onClose={() => setFichaRecinto(null)}
           onEditar={() => { setRecintoEditando(fichaRecinto); setFichaRecinto(null); }}
           onHistorial={() => void abrirHistorial(fichaRecinto)}
-          onVerEnPlano={() => { setResaltado(fichaRecinto.id); setFichaRecinto(null); ir({ vista: 'plano' }); }} />
+          onVerEnPlano={() => { setResaltado(fichaRecinto.id); setFichaRecinto(null); ir({ vista: 'general' }); }}
+          onMover={ocupante => setMoviendo({ origen: fichaRecinto, ocupante })} />
+      )}
+
+      {moviendo && (
+        <MoverPersonaModal origen={moviendo.origen} ocupante={moviendo.ocupante} onClose={() => setMoviendo(null)}
+          onListo={destino => {
+            setAvisoCambio(`${comoTitulo(moviendo.ocupante.nombre)} quedó en ${destino}. El cambio está en el historial de ambos recintos.`);
+            setMoviendo(null); setFichaRecinto(null); void cargar();
+          }} />
+      )}
+
+      {avisoCambio && (
+        <div className="fixed bottom-4 right-4 z-[95] flex items-start gap-2 max-w-sm bg-emerald-700 text-white rounded-xl px-4 py-3 shadow-2xl">
+          <span className="flex-1">{avisoCambio}</span>
+          <button type="button" onClick={() => setAvisoCambio('')}><X className="w-4 h-4" /></button>
+        </div>
       )}
 
       {seleccion.size > 0 && vista === 'recintos' && (() => {
@@ -828,8 +847,9 @@ function EditorOcupantes({ ocupantes, onChange }: { ocupantes: Ocupante[]; onCha
 }
 
 /** Ficha de un recinto: todos sus datos, ocupantes y lo que trae el catastro, con accesos para editar o verlo en el plano. */
-function FichaRecinto({ recinto: r, piso, onClose, onEditar, onHistorial, onVerEnPlano }: {
+function FichaRecinto({ recinto: r, piso, onClose, onEditar, onHistorial, onVerEnPlano, onMover }: {
   recinto: Recinto; piso?: Piso; onClose: () => void; onEditar: () => void; onHistorial: () => void; onVerEnPlano: () => void;
+  onMover: (o: Ocupante) => void;
 }) {
   const dato = (etiqueta: string, valor: ReactNode) => (
     <div><dt className="text-[10px] font-bold uppercase text-slate-400">{etiqueta}</dt><dd className="font-semibold text-slate-800">{valor || '—'}</dd></div>
@@ -878,9 +898,15 @@ function FichaRecinto({ recinto: r, piso, onClose, onEditar, onHistorial, onVerE
           {r.ocupantes?.length ? (
             <ul className="divide-y divide-slate-100 border border-slate-200 rounded-lg">
               {r.ocupantes.map((o, i) => (
-                <li key={i} className="px-3 py-1.5">
-                  <span className="font-semibold text-slate-800">{comoTitulo(o.nombre)}</span>
-                  {(o.cargo || o.unidad) && <span className="text-slate-500"> · {[o.cargo, o.unidad].filter(Boolean).join(' · ')}</span>}
+                <li key={i} className="flex items-center gap-2 px-3 py-1.5">
+                  <span className="flex-1 min-w-0">
+                    <span className="font-semibold text-slate-800">{comoTitulo(o.nombre)}</span>
+                    {(o.cargo || o.unidad) && <span className="text-slate-500"> · {[o.cargo, o.unidad].filter(Boolean).join(' · ')}</span>}
+                  </span>
+                  <button type="button" onClick={() => onMover(o)} title="Cambiar a esta persona a otro recinto (o agregarla a otro sin quitarla de este)"
+                    className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-md border border-teal-300 font-bold text-teal-800 hover:bg-teal-50">
+                    <ArrowRightLeft className="w-3.5 h-3.5" /> Cambiar de recinto
+                  </button>
                 </li>
               ))}
             </ul>
