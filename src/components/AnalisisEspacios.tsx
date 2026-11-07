@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { cargarDatosAnalisis } from '../services/analisisEspacios';
 import {
-  agrupar, buscarRepetidos, CRITERIOS_REPETIDO, listarPersonas, cruzar, DIMENSIONES, filtrar, formatoM2, formatoMedida, fraseRespuesta, MEDIDAS, SIN_DATO, totales, valorMedida,
+  agrupar, valoresDe, buscarRepetidos, CRITERIOS_REPETIDO, listarPersonas, cruzar, DIMENSIONES, filtrar, formatoM2, formatoMedida, fraseRespuesta, MEDIDAS, SIN_DATO, totales, valorMedida,
   type CriterioRepetido, type Dimension, type FilaAnalisis, type Filtros, type Grupo, type Medida,
 } from '../utils/analisisEspacios';
 import { comoTitulo } from '../utils/texto';
@@ -68,6 +68,9 @@ export function AnalisisEspacios({ onAbrirRecinto, onCerrar }: Props) {
   const etiqueta = (d: Dimension, v: string) => (d === 'edificio' ? nombreEdificio(v) : d === 'campus' ? `${v} · ${nombreCampus(v)}` : v);
   const frase = fraseRespuesta(consulta.f, t, { edificio: nombreEdificio, campus: nombreCampus });
   const hayFiltros = DIMENSIONES.some(d => consulta.f[d.id]?.length) || !!consulta.f.texto?.trim();
+  // Para agrupar y cruzar se ofrecen las dimensiones que distinguen algo (hoy, «tenencia» no: todo es propio).
+  const dimensionesUtiles = DIMENSIONES.filter(d => [consulta.g, consulta.cf, consulta.cc].includes(d.id)
+    || new Set(base.flatMap(f => valoresDe(f, d.id))).size > 1);
 
   const copiarEnlace = async () => {
     try { await navigator.clipboard.writeText(window.location.href); setCopiado(true); setTimeout(() => setCopiado(false), 2000); } catch { /* sin portapapeles */ }
@@ -164,7 +167,7 @@ export function AnalisisEspacios({ onAbrirRecinto, onCerrar }: Props) {
         <div className="grid lg:grid-cols-5 gap-4">
           <Tarjeta className="lg:col-span-3" icono={<BarChart3 className="w-4 h-4 text-teal-700" />} titulo={`${MEDIDAS.find(m => m.id === consulta.m)!.nombre} por ${DIMENSIONES.find(d => d.id === consulta.g)!.nombre.toLowerCase()}`}
             acciones={<>
-              <Selector valor={consulta.g} opciones={DIMENSIONES.map(d => ({ valor: d.id, nombre: `Por ${d.nombre.toLowerCase()}` }))} onCambiar={g => cambiar({ g: g as Dimension })} />
+              <Selector valor={consulta.g} opciones={dimensionesUtiles.map(d => ({ valor: d.id, nombre: `Por ${d.nombre.toLowerCase()}` }))} onCambiar={g => cambiar({ g: g as Dimension })} />
               <Selector valor={consulta.m} opciones={MEDIDAS.map(m => ({ valor: m.id, nombre: m.nombre }))} onCambiar={m => cambiar({ m: m as Medida })} />
             </>}>
             <Ranking grupos={agrupar(resultado, consulta.g, consulta.m)} medida={consulta.m} total={valorMedida(t, consulta.m)} etiqueta={v => etiqueta(consulta.g, v)}
@@ -179,9 +182,9 @@ export function AnalisisEspacios({ onAbrirRecinto, onCerrar }: Props) {
 
         <Tarjeta icono={<LayoutGrid className="w-4 h-4 text-teal-700" />} titulo="Cruce"
           acciones={<>
-            <Selector valor={consulta.cf} opciones={DIMENSIONES.map(d => ({ valor: d.id, nombre: `Filas: ${d.nombre.toLowerCase()}` }))} onCambiar={v => cambiar({ cf: v as Dimension })} />
+            <Selector valor={consulta.cf} opciones={dimensionesUtiles.map(d => ({ valor: d.id, nombre: `Filas: ${d.nombre.toLowerCase()}` }))} onCambiar={v => cambiar({ cf: v as Dimension })} />
             <span className="text-slate-400">×</span>
-            <Selector valor={consulta.cc} opciones={DIMENSIONES.filter(d => d.id !== consulta.cf).map(d => ({ valor: d.id, nombre: `Columnas: ${d.nombre.toLowerCase()}` }))} onCambiar={v => cambiar({ cc: v as Dimension })} />
+            <Selector valor={consulta.cc} opciones={dimensionesUtiles.filter(d => d.id !== consulta.cf).map(d => ({ valor: d.id, nombre: `Columnas: ${d.nombre.toLowerCase()}` }))} onCambiar={v => cambiar({ cc: v as Dimension })} />
           </>}>
           <MatrizCruce filas={resultado} df={consulta.cf} dc={consulta.cc === consulta.cf ? (consulta.cf === 'tipo' ? 'piso' : 'tipo') : consulta.cc} medida={consulta.m}
             etiqueta={etiqueta} onElegir={(vf, vc, df, dc) => ponerFiltros({ ...consulta.f, [df]: [vf], ...(vc !== 'Otros' ? { [dc]: [vc] } : {}) })} />

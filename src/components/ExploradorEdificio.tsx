@@ -175,12 +175,11 @@ export function ExploradorEdificio({
       <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 sm:mx-0 sm:px-0 sm:pb-0 sm:grid sm:grid-cols-3 xl:grid-cols-6 sm:overflow-visible">
         <Indicador icono={DoorOpen} titulo="Recintos vigentes" valor={hoy.recintos.toLocaleString('es-CL')} detalle={`${pisos.length} piso(s)`} />
         <Indicador icono={Ruler} titulo="Superficie útil hoy" valor={m2(hoy.util)} detalle={`OGUC ${m2(hoy.oguc)}`} />
-        {hoy.porVenir.recintos > 0
-          ? <Indicador icono={Clock} titulo="Por venir (en obra)" valor={m2(hoy.porVenir.util)} detalle={`${hoy.porVenir.recintos} recinto(s)${hoy.porVenir.desde ? ` · ${textoVigencia({ fecha_alta: hoy.porVenir.desde, fecha_baja: null })}` : ''}`} tono="aviso" />
-          : <Indicador icono={Building2} titulo="Arrendada u otra" valor={m2(hoy.noPropia.util)} detalle={`${hoy.noPropia.recintos} recinto(s) no propios`} />}
+        {/* Por venir y «arrendada u otra» solo aparecen cuando el edificio los tiene; los ocupantes, siempre. */}
+        {hoy.porVenir.recintos > 0 && <Indicador icono={Clock} titulo="Por venir (en obra)" valor={m2(hoy.porVenir.util)} detalle={`${hoy.porVenir.recintos} recinto(s)${hoy.porVenir.desde ? ` · ${textoVigencia({ fecha_alta: hoy.porVenir.desde, fecha_baja: null })}` : ''}`} tono="aviso" />}
         <Indicador icono={IconoMapa} titulo="Pisos con plano" valor={`${pisosConPlano} de ${pisos.length}`} detalle="láminas en el visor" tono={pisosConPlano < pisos.length ? 'aviso' : 'ok'} />
-        {hoy.porVenir.recintos > 0 && <Indicador icono={Building2} titulo="Arrendada u otra" valor={m2(hoy.noPropia.util)} detalle={`${hoy.noPropia.recintos} recinto(s) no propios`} />}
-        {!hoy.porVenir.recintos && <Indicador icono={Users} titulo="Ocupantes" valor={recintos.reduce((s, r) => s + (r.ocupantes?.length || 0), 0).toLocaleString('es-CL')} detalle={onVerPersonas ? 'clic para ver quiénes' : 'personas o unidades'} onClick={onVerPersonas} />}
+        {hoy.noPropia.recintos > 0 && <Indicador icono={Building2} titulo="Arrendada u otra" valor={m2(hoy.noPropia.util)} detalle={`${hoy.noPropia.recintos} recinto(s) no propios`} />}
+        {<Indicador icono={Users} titulo="Ocupantes" valor={recintos.reduce((s, r) => s + (r.ocupantes?.length || 0), 0).toLocaleString('es-CL')} detalle={onVerPersonas ? 'clic para ver quiénes' : 'personas o unidades'} onClick={onVerPersonas} />}
         <Indicador icono={AlertTriangle} titulo="Por revisar" valor={porRevisar.toLocaleString('es-CL')} detalle={porRevisar ? (verPorRevisar ? 'clic para ocultar la lista' : 'clic para ver cuáles') : 'sin pendientes'} tono={porRevisar ? 'aviso' : 'ok'}
           onClick={porRevisar ? () => setVerPorRevisar(v => !v) : undefined} activo={verPorRevisar} />
       </div>

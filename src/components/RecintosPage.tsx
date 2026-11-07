@@ -641,19 +641,25 @@ export function RecintosPage() {
             <label className="font-bold">Superficie útil (m²)<input type="number" min={0} step="0.01" value={recintoEditando.superficie_m2 ?? ''} onChange={e => setRecintoEditando({ ...recintoEditando, superficie_m2: e.target.value === '' ? null : Number(e.target.value) })} className={`mt-1 ${campo} font-normal`} /></label>
             <label className="font-bold">Superficie OGUC (m²)<input type="number" min={0} step="0.01" value={recintoEditando.superficie_oguc_m2 ?? ''} onChange={e => setRecintoEditando({ ...recintoEditando, superficie_oguc_m2: e.target.value === '' ? null : Number(e.target.value) })} className={`mt-1 ${campo} font-normal`} /></label>
             <label className="font-bold">Capacidad (personas)<input type="number" min={0} value={recintoEditando.capacidad ?? ''} onChange={e => setRecintoEditando({ ...recintoEditando, capacidad: e.target.value === '' ? null : Number(e.target.value) })} className={`mt-1 ${campo} font-normal`} /></label>
-            <label className="font-bold">Tenencia
-              <select value={recintoEditando.tenencia || 'Propia'} onChange={e => setRecintoEditando({ ...recintoEditando, tenencia: e.target.value as Tenencia })} className={`mt-1 ${campo} font-normal`}>
-                {TENENCIAS.map(t => <option key={t}>{t}</option>)}
-              </select>
-            </label>
-            <label className="font-bold">Opera desde<input type="date" value={recintoEditando.fecha_alta || ''} onChange={e => setRecintoEditando({ ...recintoEditando, fecha_alta: e.target.value || null })} className={`mt-1 ${campo} font-normal`}
-              title="Vacía si existe desde antes del registro. Si es futura (una obra por entregar), no suma en los totales de hoy." /></label>
-            <label className="font-bold">Motivo del alta<input list="motivos-alta" value={recintoEditando.motivo_alta || ''} onChange={e => setRecintoEditando({ ...recintoEditando, motivo_alta: e.target.value || null })} placeholder="Construcción, arriendo…" className={`mt-1 ${campo} font-normal`} /></label>
-            <datalist id="motivos-alta">{MOTIVOS_ALTA.map(m => <option key={m} value={m} />)}</datalist>
-            <label className="font-bold">De baja desde<input type="date" value={recintoEditando.fecha_baja || ''} onChange={e => setRecintoEditando({ ...recintoEditando, fecha_baja: e.target.value || null })} className={`mt-1 ${campo} font-normal`}
-              title="Desde cuándo dejó de existir o de estar a cargo de la UCT. Si ya pasó, el recinto queda «Eliminado» y sale de los totales de hoy, pero sigue en su historia." /></label>
-            <label className="font-bold sm:col-span-2">Motivo de la baja<input list="motivos-baja" value={recintoEditando.motivo_baja || ''} onChange={e => setRecintoEditando({ ...recintoEditando, motivo_baja: e.target.value || null })} placeholder="Demolición, fin de arriendo…" className={`mt-1 ${campo} font-normal`} /></label>
-            <datalist id="motivos-baja">{MOTIVOS_BAJA.map(m => <option key={m} value={m} />)}</datalist>
+            {/* Alta, baja y tenencia: casi nunca se usan (la UCT arrendó recintos una sola vez), por eso van plegadas. */}
+            <details className="sm:col-span-3 border border-slate-200 rounded-lg" open={!!(recintoEditando.fecha_alta || recintoEditando.fecha_baja || (recintoEditando.tenencia && recintoEditando.tenencia !== 'Propia'))}>
+              <summary className="px-3 py-2 font-bold text-slate-700 cursor-pointer select-none">Historia del recinto <span className="font-normal text-slate-500">(alta, baja y tenencia, si no es propio)</span></summary>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 px-3 pb-3">
+                <label className="font-bold">Opera desde<input type="date" value={recintoEditando.fecha_alta || ''} onChange={e => setRecintoEditando({ ...recintoEditando, fecha_alta: e.target.value || null })} className={`mt-1 ${campo} font-normal`}
+                  title="Vacía si existe desde antes del registro. Si es futura (una obra por entregar), no suma en los totales de hoy." /></label>
+                <label className="font-bold">Motivo del alta<input list="motivos-alta" value={recintoEditando.motivo_alta || ''} onChange={e => setRecintoEditando({ ...recintoEditando, motivo_alta: e.target.value || null })} placeholder="Construcción, arriendo…" className={`mt-1 ${campo} font-normal`} /></label>
+                <datalist id="motivos-alta">{MOTIVOS_ALTA.map(m => <option key={m} value={m} />)}</datalist>
+                <label className="font-bold">De baja desde<input type="date" value={recintoEditando.fecha_baja || ''} onChange={e => setRecintoEditando({ ...recintoEditando, fecha_baja: e.target.value || null })} className={`mt-1 ${campo} font-normal`}
+                  title="Desde cuándo dejó de existir o de estar a cargo de la UCT. Si ya pasó, el recinto queda «Eliminado» y sale de los totales de hoy, pero sigue en su historia." /></label>
+                <label className="font-bold sm:col-span-2">Motivo de la baja<input list="motivos-baja" value={recintoEditando.motivo_baja || ''} onChange={e => setRecintoEditando({ ...recintoEditando, motivo_baja: e.target.value || null })} placeholder="Demolición, fin de arriendo…" className={`mt-1 ${campo} font-normal`} /></label>
+                <datalist id="motivos-baja">{MOTIVOS_BAJA.map(m => <option key={m} value={m} />)}</datalist>
+                <label className="font-bold">Tenencia
+                  <select value={recintoEditando.tenencia || 'Propia'} onChange={e => setRecintoEditando({ ...recintoEditando, tenencia: e.target.value as Tenencia })} className={`mt-1 ${campo} font-normal`}>
+                    {TENENCIAS.map(t => <option key={t}>{t}</option>)}
+                  </select>
+                </label>
+              </div>
+            </details>
             <label className="font-bold">Unidad usuaria<input list="unidades-oficiales" value={recintoEditando.unidad_usuaria || ''} onChange={e => setRecintoEditando({ ...recintoEditando, unidad_usuaria: e.target.value })} placeholder="Fac. de Ingeniería" className={`mt-1 ${campo} font-normal`} /></label>
             <datalist id="unidades-oficiales">{getConfigEspacios().unidades.map(u => <option key={u} value={u} />)}</datalist>
             <label className="font-bold sm:col-span-3">Foto de referencia (enlace de Drive)<input value={recintoEditando.foto_url || ''} onChange={e => setRecintoEditando({ ...recintoEditando, foto_url: e.target.value.trim() })} placeholder="https://drive.google.com/…" className={`mt-1 ${campo} font-normal`} /></label>
