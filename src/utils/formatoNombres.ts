@@ -31,7 +31,7 @@ const TILDES: Record<string, string> = {
   biomecanica: 'biomecánica', capellan: 'capellán', diagnosticos: 'diagnósticos', economicos: 'económicos', estrategicos: 'estratégicos',
   galpon: 'galpón', hermetico: 'hermético', informaticos: 'informáticos', ingles: 'inglés', kinesica: 'kinésica', meson: 'mesón',
   mesones: 'mesones', salon: 'salón', terapeuticos: 'terapéuticos', iformatica: 'informática', educacin: 'educación',
-  estudantil: 'estudiantil', camarin: 'camarín', vicaria: 'vicaría', reunion: 'reunión', solidos: 'sólidos', bano: 'baño', banos: 'baños', area: 'área', areas: 'áreas',
+  estudantil: 'estudiantil', vicaria: 'vicaría', reunion: 'reunión', solidos: 'sólidos', bano: 'baño', banos: 'baños', area: 'área', areas: 'áreas',
 };
 /** Terminaciones que en castellano siempre llevan tilde (-ción, -sión, -logía, -grafía, -nomía…). */
 const TERMINACIONES: [RegExp, string][] = [
