@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import {
-  Loader2, ZoomIn, ZoomOut, Maximize2, Minimize2, Scan, Pencil, Trash2, MapPin, CheckCircle2, Circle, X, Undo2, Check, AlertTriangle, Wand2, Tag, BoxSelect, Square, Save,
+  Loader2, ZoomIn, ZoomOut, Maximize2, Minimize2, Scan, Pencil, Trash2, MapPin, CheckCircle2, Circle, X, Undo2, Check, AlertTriangle, Wand2, Tag, BoxSelect, Square, Save, Plus,
 } from 'lucide-react';
 import type { DocumentoEdificio, Piso, Recinto, ZonaRecinto } from '../types/recintos';
 import { descargarLamina, eliminarZona, guardarEscalaDocumento, guardarZona, listarZonas } from '../services/recintos';
@@ -47,7 +47,7 @@ interface Props {
 export function VisorPlano({ documento, pisos = [], recintos, destacado, onEditarRecinto, onEscalaGuardada, modo = 'edicion', onSeleccionar }: Props) {
   const consulta = modo === 'consulta';
   const [pisoLista, setPisoLista] = useState<string>(documento.piso_id || '');
-  const [estadoLista, setEstadoLista] = useState<'todos' | 'pendientes' | 'ubicados'>('todos');
+  const [estadoLista, setEstadoLista] = useState<'todos' | 'pendientes' | 'ubicados' | 'difieren'>('todos');
   const [filtroRecinto, setFiltroRecinto] = useState('');
   useEffect(() => { setPisoLista(documento.piso_id || ''); }, [documento.piso_id]);
   const lienzo = useRef<HTMLCanvasElement>(null);
@@ -126,14 +126,23 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
   const otrosContornos = useCallback((recintoId: string, enPagina: number) =>
     zonas.filter(z => z.pagina === enPagina && z.recinto_id !== recintoId).map(z => z.poligono), [zonas]);
   const zonaDe = useMemo(() => new Map(zonas.map(z => [z.recinto_id, z])), [zonas]);
+  /** Recinto dibujado cuya superficie medida en el plano se aleja más de 25 % de la registrada (útil y OGUC): contorno dudoso. */
+  const difiere = useCallback((r: Recinto) => {
+    const z = zonaDe.get(r.id);
+    if (!z || !tam) return false;
+    const med = areaRealM2(z.poligono, tam.w, tam.h, escala || getConfigEspacios().parametros.escalaPorDefecto);
+    const regs = [Number(r.superficie_m2) || 0, Number(r.superficie_oguc_m2) || 0].filter(x => x > 0);
+    return med != null && regs.length > 0 && regs.every(x => Math.abs(med - x) / x > 0.25);
+  }, [zonaDe, tam, escala]);
+  const cuantosDifieren = useMemo(() => recintos.filter(difiere).length, [recintos, difiere]);
   const recintosFiltrados = useMemo(() => recintos
     .filter(r => !pisoLista || r.piso_id === pisoLista)
-    .filter(r => estadoLista === 'todos' ? true : estadoLista === 'ubicados' ? zonaDe.has(r.id) : !zonaDe.has(r.id))
+    .filter(r => estadoLista === 'todos' ? true : estadoLista === 'ubicados' ? zonaDe.has(r.id) : estadoLista === 'difieren' ? difiere(r) : !zonaDe.has(r.id))
     .filter(r => {
       const q = filtroRecinto.trim().toLowerCase();
       if (!q) return true;
       return r.codigo.toLowerCase().includes(q) || r.nombre.toLowerCase().includes(q) || (r.uso || '').toLowerCase().includes(q);
-    }), [recintos, pisoLista, estadoLista, filtroRecinto, zonaDe]);
+    }), [recintos, pisoLista, estadoLista, filtroRecinto, zonaDe, difiere]);
 
   // Abre la lámina y sus contornos.
   useEffect(() => {
@@ -978,7 +987,19 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
           )}
           <div className="flex-1 min-h-0 bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col">
             <div className="p-2.5 border-b border-slate-100 space-y-1.5">
-              <p className="font-bold text-slate-700">Recintos <span className="font-normal text-slate-400">· {ubicados} de {recintos.length} en el plano</span></p>
+              <div className="flex items-center gap-1">
+                <p className="font-bold text-slate-700 flex-1">Recintos <span className="font-normal text-slate-400">· {ubicados} de {recintos.length} en el plano</span></p>
+                {/* Un recinto que está en el plano pero no en la lista se crea aquí; luego se ubica con la varita. */}
+                <button type="button" title="Agregar un recinto que está en el plano pero no en el sistema (después se ubica con la varita)"
+                  onClick={() => onEditarRecinto({
+                    edificio_codigo: documento.edificio_codigo, piso_id: documento.piso_id || pisoLista || pisos[0]?.id || '',
+                    codigo: `${documento.edificio_codigo}_`, nombre: '', uso: '', superficie_m2: null, superficie_oguc_m2: null, capacidad: null,
+                    estado: 'Operativo', unidad_usuaria: '', foto_url: '', observaciones: '', atributos: {}, origen: 'Manual',
+                  } as unknown as Recinto)}
+                  className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-md border border-teal-300 text-teal-800 font-bold text-[11px] hover:bg-teal-50">
+                  <Plus className="w-3 h-3" /> Nuevo
+                </button>
+              </div>
               <div className="flex gap-1">
                 {pisos.length > 1 && (
                   <select value={pisoLista} onChange={e => setPisoLista(e.target.value)} className="flex-1 min-w-0 px-2 py-1 border border-slate-300 rounded-lg text-[11px]">
@@ -986,10 +1007,11 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
                     {pisos.map(p => <option key={p.id} value={p.id}>{p.codigo} · {p.nombre}</option>)}
                   </select>
                 )}
-                <select value={estadoLista} onChange={e => setEstadoLista(e.target.value as 'todos' | 'pendientes' | 'ubicados')} className="px-2 py-1 border border-slate-300 rounded-lg text-[11px]">
+                <select value={estadoLista} onChange={e => setEstadoLista(e.target.value as typeof estadoLista)} className="px-2 py-1 border border-slate-300 rounded-lg text-[11px]">
                   <option value="todos">Todos</option>
                   <option value="pendientes">Pendientes ({recintos.length - ubicados})</option>
                   <option value="ubicados">Ubicados ({ubicados})</option>
+                  <option value="difieren">Difieren de lo registrado ({cuantosDifieren})</option>
                 </select>
               </div>
               <input value={filtroRecinto} onChange={e => setFiltroRecinto(e.target.value)} placeholder="Buscar código o nombre…"
