@@ -149,4 +149,6 @@ export function guardarConfigCompartida(clave: string, datos: unknown): void {
   } catch { /* sin almacenamiento */ }
   localStorage.setItem(clave, valor);
   void publicarConfigCompartida(clave, valor, cambio);
+  // Las demás pantallas abiertas (el otro módulo, por ejemplo) se actualizan al momento.
+  if (cambio) window.dispatchEvent(new Event(EVENTO_CONFIG_ACTUALIZADA));
 }

@@ -6,10 +6,20 @@ import { RecintosPage } from '../components/RecintosPage';
 import { ConfigEspacios } from '../components/ConfigEspacios';
 import { AnalisisEspacios } from '../components/AnalisisEspacios';
 import { getCampusList } from '../data/campusData';
+import { useEffect, useState } from 'react';
+import { EVENTO_CONFIG_ACTUALIZADA } from '../services/configCompartida';
 
 /** Gestor de Espacios: módulo propio (campus, edificios, recintos y planos), con su entrada y su menú. */
 export function EspaciosApp() {
   const { user, profile, logout } = useAuth();
+  // Configuración compartida con las licitaciones (campus, edificios, tipos y usos): cuando cambia en otro equipo o
+  // en el otro módulo, el Gestor se vuelve a dibujar con la versión nueva, sin recargar la página.
+  const [versionConfig, setVersionConfig] = useState(0);
+  useEffect(() => {
+    const alActualizar = () => setVersionConfig(v => v + 1);
+    window.addEventListener(EVENTO_CONFIG_ACTUALIZADA, alActualizar);
+    return () => window.removeEventListener(EVENTO_CONFIG_ACTUALIZADA, alActualizar);
+  }, []);
   // Configuración y análisis se abren con ?seccion=…: el botón «atrás» del navegador vuelve al Gestor.
   const [parametros, setParametros] = useSearchParams();
   const seccion = parametros.get('seccion');
@@ -55,7 +65,7 @@ export function EspaciosApp() {
           </div>
         </div>
       </header>
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6" data-config={versionConfig}>
         {enConfiguracion ? <ConfigEspacios onCerrar={() => abrirConfiguracion(false)} />
           : enAnalisis ? <AnalisisEspacios onAbrirRecinto={abrirRecinto} onCerrar={() => abrirSeccion(null)} />
           : <RecintosPage />}

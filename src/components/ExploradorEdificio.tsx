@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Building2, ChevronDown, ChevronRight, DoorOpen, ExternalLink, FileText, Layers, Loader2, Map as IconoMapa, Pencil, Ruler, Search, Users, X,
-  AlertTriangle, Clock, FileImage, History,
+  AlertTriangle, Clock, FileImage, History, PanelLeftClose, PanelLeftOpen, Download,
 } from 'lucide-react';
 import type { DocumentoEdificio, Piso, Recinto } from '../types/recintos';
 import { colorDeCategoria } from '../utils/geometriaPlano';
@@ -11,6 +11,7 @@ import { formatoFecha } from '../utils/fechas';
 import { comoTitulo } from '../utils/texto';
 import { resumenSuperficie, textoVigencia, vigenteEn } from '../utils/vigenciaRecinto';
 import { PlanoInteractivo } from './PlanoInteractivo';
+import { abrirArchivoDocumento } from '../services/recintos';
 
 // El visor (con el lector de PDF) se carga solo cuando hay una lámina que mostrar.
 const VisorPlano = lazy(() => import('./VisorPlano').then(m => ({ default: m.VisorPlano })));
@@ -73,6 +74,8 @@ export function ExploradorEdificio({
   const [abiertos, setAbiertos] = useState<Set<string>>(() => new Set([pisoInicial()]));
   const [filtro, setFiltro] = useState('');
   const [laminaElegida, setLaminaElegida] = useState('');
+  // Árbol de pisos y recintos: abierto en pantallas grandes; en el celular parte cerrado para dejar el plano a la vista.
+  const [verArbol, setVerArbol] = useState(() => typeof window === 'undefined' || window.innerWidth >= 1024);
 
   // Al cambiar de edificio (o llegar sus datos), vuelve al piso inicial.
   useEffect(() => {
@@ -101,6 +104,7 @@ export function ExploradorEdificio({
     };
   }, [fechaPlano, todos, pisoId]);
   const sel = seleccion ? todos.find(r => r.id === seleccion) : undefined;
+  const cad = documentos.find(d => d.vigente && d.formato === 'DWG' && d.archivo);
 
   const porPiso = useMemo(() => {
     const q = filtro.trim().toLowerCase();
@@ -166,7 +170,7 @@ export function ExploradorEdificio({
   return (
     <div className="space-y-3">
       {/* Indicadores */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 sm:mx-0 sm:px-0 sm:pb-0 sm:grid sm:grid-cols-3 xl:grid-cols-6 sm:overflow-visible">
         <Indicador icono={DoorOpen} titulo="Recintos vigentes" valor={hoy.recintos.toLocaleString('es-CL')} detalle={`${pisos.length} piso(s)`} />
         <Indicador icono={Ruler} titulo="Superficie útil hoy" valor={m2(hoy.util)} detalle={`OGUC ${m2(hoy.oguc)}`} />
         {hoy.porVenir.recintos > 0
@@ -203,9 +207,9 @@ export function ExploradorEdificio({
         </div>
       )}
 
-      <div className="grid gap-3 lg:grid-cols-[260px_minmax(0,1fr)] 2xl:grid-cols-[270px_minmax(0,1fr)_320px]">
+      <div className={`grid gap-3 ${verArbol ? 'lg:grid-cols-[240px_minmax(0,1fr)]' : ''} ${sel ? (verArbol ? 'xl:grid-cols-[240px_minmax(0,1fr)_300px]' : 'xl:grid-cols-[minmax(0,1fr)_300px]') : ''}`}>
         {/* Árbol de pisos y recintos */}
-        <aside className="bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col min-h-0 lg:max-h-[78vh]">
+        <aside className={`${verArbol ? 'flex' : 'hidden'} bg-white border border-slate-200 rounded-2xl shadow-sm flex-col min-h-0 max-h-[60vh] lg:max-h-[calc(100vh-150px)]`}>
           <div className="p-3 border-b border-slate-100 space-y-2">
             <p className="font-extrabold text-slate-800">Estructura del edificio</p>
             <label className="flex items-center gap-1.5 px-2 py-1.5 border border-slate-300 rounded-lg focus-within:ring-2 focus-within:ring-teal-400">
@@ -267,6 +271,10 @@ export function ExploradorEdificio({
         {/* Plano del piso */}
         <section className="min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-2xl px-3 py-2 shadow-sm">
+            <button type="button" onClick={() => setVerArbol(v => !v)} title={verArbol ? 'Ocultar la estructura del edificio y ampliar el plano' : 'Ver la estructura del edificio (pisos y recintos)'}
+              className={`flex items-center gap-1 px-2 py-1 rounded-lg border font-bold ${verArbol ? 'bg-slate-900 border-slate-900 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+              {verArbol ? <PanelLeftClose className="w-3.5 h-3.5" /> : <PanelLeftOpen className="w-3.5 h-3.5" />} <span className="hidden sm:inline">Estructura</span>
+            </button>
             <span className="font-extrabold text-slate-800">{piso ? piso.nombre || piso.codigo : 'Sin piso'}</span>
             <span className="text-slate-500">{delPiso.length} recinto(s) · útil <strong className="text-slate-700">{m2(Math.round(supPiso * 100) / 100)}</strong></span>
             {pisosOrdenados.length > 1 && (
@@ -288,10 +296,17 @@ export function ExploradorEdificio({
               </label>
             )}
             <div className="ml-auto flex items-center gap-1.5">
-              {lamina?.drive_url && (
-                <a href={lamina.drive_url} target="_blank" rel="noreferrer" className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 font-bold text-slate-600 hover:bg-slate-50 no-underline">
-                  <FileText className="w-3.5 h-3.5" /> Ver PDF
-                </a>
+              {lamina?.archivo_visor && (
+                <button type="button" onClick={() => void abrirArchivoDocumento(lamina).catch(() => {})} title="Abrir el PDF de esta lámina"
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 font-bold text-slate-600 hover:bg-slate-50">
+                  <FileText className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Ver </span>PDF
+                </button>
+              )}
+              {cad && (
+                <button type="button" onClick={() => void abrirArchivoDocumento(cad, true).catch(() => {})} title="Descargar el CAD (DWG) vigente del edificio"
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-emerald-300 font-bold text-emerald-800 hover:bg-emerald-50">
+                  <Download className="w-3.5 h-3.5" /> DWG
+                </button>
               )}
               <button type="button" onClick={() => onEditar(true)} className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-amber-300 font-bold text-amber-800 hover:bg-amber-50">
                 <Pencil className="w-3.5 h-3.5" /> {lamina ? 'Editar contornos' : 'Subir o vincular lámina'}
@@ -337,10 +352,10 @@ export function ExploradorEdificio({
           )}
         </section>
 
-        {/* Ficha del recinto y documentos */}
-        <aside className="grid gap-3 content-start sm:grid-cols-2 lg:col-span-2 2xl:col-span-1 2xl:grid-cols-1">
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-3 space-y-2.5">
-            {sel ? (
+        {/* Ficha del recinto elegido: a la derecha del plano en pantallas anchas, debajo en las demás. */}
+        {sel && (
+        <aside className={`content-start ${verArbol ? 'lg:col-span-2 xl:col-span-1' : ''}`}>
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-3 space-y-2.5 xl:sticky xl:top-20">
               <>
                 <div className="flex items-start gap-2">
                   {sel.foto_url
@@ -388,9 +403,16 @@ export function ExploradorEdificio({
                   </button>
                 </div>
               </>
-            ) : (
+          </div>
+        </aside>
+        )}
+      </div>
+
+      {/* Bajo el plano: resumen del piso por tipo y los planos y documentos del edificio. */}
+      <div className="grid gap-3 md:grid-cols-2">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-3 space-y-2.5">
               <>
-                <p className="font-extrabold text-slate-800">Resumen del piso</p>
+                <p className="font-extrabold text-slate-800">Resumen del piso{piso ? ` · ${piso.nombre || piso.codigo}` : ''}</p>
                 <p className="text-slate-500">Haga clic en un recinto del plano o del árbol para ver sus datos.</p>
                 <ul className="space-y-1">
                   {tiposPiso.slice(0, 8).map(([tipo, x]) => (
@@ -403,7 +425,6 @@ export function ExploradorEdificio({
                   {tiposPiso.length > 8 && <li className="text-slate-400">y {tiposPiso.length - 8} tipo(s) más</li>}
                 </ul>
               </>
-            )}
           </div>
 
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-3 space-y-2">
@@ -428,7 +449,6 @@ export function ExploradorEdificio({
               ))}
             </ul>
           </div>
-        </aside>
       </div>
     </div>
   );
@@ -440,8 +460,8 @@ function Indicador({ icono: Icono, titulo, valor, detalle, tono, onClick, activo
   const Caja = onClick ? 'button' : 'div';
   return (
     <Caja {...(onClick ? { type: 'button' as const, onClick } : {})}
-      className={`bg-white border rounded-2xl shadow-sm p-3 flex items-center gap-3 text-left ${onClick ? 'cursor-pointer hover:border-amber-400 hover:shadow-md transition' : ''} ${activo ? 'border-amber-400 ring-2 ring-amber-200' : 'border-slate-200'}`}>
-      <span className={`w-10 h-10 rounded-xl grid place-items-center shrink-0 ${tono === 'aviso' ? 'bg-amber-50 text-amber-700' : 'bg-teal-50 text-teal-700'}`}><Icono className="w-5 h-5" /></span>
+      className={`min-w-[150px] sm:min-w-0 bg-white border rounded-2xl shadow-sm p-2.5 flex items-center gap-2.5 text-left ${onClick ? 'cursor-pointer hover:border-amber-400 hover:shadow-md transition' : ''} ${activo ? 'border-amber-400 ring-2 ring-amber-200' : 'border-slate-200'}`}>
+      <span className={`w-8 h-8 rounded-xl grid place-items-center shrink-0 ${tono === 'aviso' ? 'bg-amber-50 text-amber-700' : 'bg-teal-50 text-teal-700'}`}><Icono className="w-5 h-5" /></span>
       <div className="min-w-0">
         <p className="text-slate-500 truncate">{titulo}</p>
         <p className="text-lg font-extrabold text-slate-900 leading-tight tabular-nums truncate">{valor}</p>

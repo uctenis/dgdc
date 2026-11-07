@@ -18,7 +18,7 @@ const PESTANAS: { id: Pestana; nombre: string; icono: typeof Shapes; ayuda: stri
   { id: 'usos', nombre: 'Usos', icono: Tag, ayuda: 'El uso de cada recinto (la lista desplegable al editarlo). Si hay usos oficiales, solo esos se ofrecen.' },
   { id: 'unidades', nombre: 'Unidades usuarias', icono: Users, ayuda: 'Facultades, direcciones y carreras que ocupan los recintos. Las oficiales aparecen como sugerencia al editar un recinto.' },
   { id: 'parametros', nombre: 'Parámetros', icono: SlidersHorizontal, ayuda: 'Umbrales de las alertas «Por revisar» y ajustes del plano interactivo.' },
-  { id: 'campus', nombre: 'Campus y edificios', icono: Building2, ayuda: 'Nombre de cada campus y, por edificio, su nombre y categoría. El nombre se usa en todo el sistema (también en proyectos y licitaciones).' },
+  { id: 'campus', nombre: 'Campus y edificios', icono: Building2, ayuda: 'Nombre de cada campus y, por edificio, su nombre y categoría. El nombre se usa en todo el sistema: es el mismo catálogo de Licitaciones → Configuración → Sedes & Campus, y lo que se cambie en uno se ve en el otro.' },
 ];
 const campo = 'px-2.5 py-1.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-400 disabled:bg-slate-50 disabled:text-slate-500';
 const m2 = (n: number) => `${n.toLocaleString('es-CL', { maximumFractionDigits: 1 })} m²`;

@@ -648,8 +648,9 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
     <div className={pantallaCompleta ? 'fixed inset-0 z-[70] bg-slate-100 p-3 flex flex-col gap-2' : 'flex flex-col gap-2'}>
       {/* Barra de herramientas */}
       <div className="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm">
-        <span className="font-bold text-slate-800">{documento.codigo_lamina || 'Lámina'} · {documento.titulo}</span>
-        <span className="text-slate-400">v{documento.version}</span>
+        {/* En la vista general el piso ya se indica arriba: aquí solo van las herramientas, para dejar espacio al plano. */}
+        {!consulta && <span className="font-bold text-slate-800">{documento.codigo_lamina || 'Lámina'} · {documento.titulo}</span>}
+        {!consulta && <span className="text-slate-400">v{documento.version}</span>}
         {pdf && pdf.numPages > 1 && (
           <select value={pagina} onChange={e => setPagina(Number(e.target.value))} className="px-2 py-1 border border-slate-300 rounded-lg">
             {Array.from({ length: pdf.numPages }, (_, i) => <option key={i} value={i + 1}>Página {i + 1}</option>)}
@@ -721,7 +722,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
         </div>
       )}
 
-      <div className={`flex gap-2 ${pantallaCompleta ? 'flex-1 min-h-0' : 'h-[70vh] min-h-[480px]'}`}>
+      <div className={`flex gap-2 ${pantallaCompleta ? 'flex-1 min-h-0' : consulta ? 'h-[60vh] sm:h-[calc(100vh-200px)] min-h-[380px] sm:min-h-[520px]' : 'h-[70vh] min-h-[480px]'}`}>
         {/* Plano */}
         <div ref={marco}
           className={`relative flex-1 min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-[radial-gradient(circle,#e2e8f0_1px,transparent_1px)] [background-size:18px_18px] bg-slate-50 select-none touch-none ${dibujando || modoVarios ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'}`}

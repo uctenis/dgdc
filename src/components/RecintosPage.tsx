@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Building2, Layers, Plus, Pencil, Trash2, History, FileSpreadsheet, FileText, Loader2, AlertTriangle, X, ExternalLink, Copy, DoorOpen, ChevronRight, ChevronDown, Trees, LayoutGrid, Table2, ArrowRightLeft, Download, ClipboardCheck, BarChart3,
+  Building2, Layers, Plus, Pencil, Trash2, History, FileSpreadsheet, FileText, Loader2, AlertTriangle, X, ExternalLink, Copy, DoorOpen, ChevronRight, ChevronDown, Trees, LayoutGrid, Table2, ArrowRightLeft, Search, Download, ClipboardCheck, BarChart3,
 } from 'lucide-react';
-import { getCampusList, obtenerEdificiosDeCampus, etiquetaEdificio, obtenerInfoEdificio } from '../data/campusData';
+import { getCampusList, saveCampusList, obtenerEdificiosDeCampus, etiquetaEdificio, obtenerInfoEdificio } from '../data/campusData';
+import { useAuth } from '../context/AuthContext';
 import { SUPABASE_CONFIGURADO } from '../lib/supabase';
 import {
   listarPisos, listarEdificiosConDatos, obtenerFichaEdificio, listarUsos, guardarPiso, eliminarPiso, listarRecintos, guardarRecinto, eliminarRecinto, historialRecinto,
-  listarDocumentos, registrarDocumento, listarRecintosDeCampus, separarUnidades,
+  listarDocumentos, registrarDocumento, listarRecintosDeCampus, separarUnidades, abrirArchivoDocumento,
 } from '../services/recintos';
 import {
   ESTADOS_RECINTO, TENENCIAS, MOTIVOS_ALTA, MOTIVOS_BAJA, TIPOS_DOCUMENTO, ESPECIALIDADES, FORMATOS_DOCUMENTO,
@@ -66,12 +67,20 @@ export function RecintosPage() {
   const sinConfigurar = enBase.filter(e => e.startsWith(campusSigla) && !delCampus.includes(e) && !configurados.some(c => c.edificios.includes(e)))
     .sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
   const edificios = [...delCampus, ...sinConfigurar];
+  const [filtroEdificios, setFiltroEdificios] = useState('');
+  const [verComunes, setVerComunes] = useState(false);
   const edificio = parametros.get('edificio') || '';
   // Nombre del edificio: el del catastro y, si no tiene, el de la configuración de campus.
-  const nombreEdificio = (e: string) => nombresCatastro[e] || obtenerInfoEdificio(e)?.nombre || '';
+  // Un solo nombre para cada edificio en todo el sistema: el de la configuración compartida (el mismo que muestran
+  // las licitaciones); el del catastro solo si la configuración no tiene uno.
+  const nombreEdificio = (e: string) => obtenerInfoEdificio(e)?.nombre || nombresCatastro[e] || '';
   // Espacio común del catastro (categoría 3: camping, accesos, áreas verdes) o zona exterior de la configuración.
   const esEspacioComun = (e: string) => categorias[e] === '3' || !!obtenerInfoEdificio(e)?.esExterior;
   const etiqueta = (e: string) => (nombreEdificio(e) ? `${e} · ${nombreEdificio(e)}` : etiquetaEdificio(e));
+  const edificiosFiltrados = edificios.filter(e => {
+    const q = filtroEdificios.trim().toLowerCase();
+    return !q || e.toLowerCase().includes(q) || (nombreEdificio(e) || '').toLowerCase().includes(q);
+  });
   // Sin «vista» en la dirección se abre la vista general (árbol, plano y ficha); «recintos» es la tabla por piso.
   const vista = (['recintos', 'plano', 'documentos'].includes(parametros.get('vista') || '') ? parametros.get('vista') : 'general') as Vista;
   /**
@@ -108,6 +117,22 @@ export function RecintosPage() {
   const [guardando, setGuardando] = useState(false);
   const [moviendo, setMoviendo] = useState<{ origen: Recinto; ocupante: Ocupante } | null>(null);
   const [avisoCambio, setAvisoCambio] = useState('');
+
+  // Los edificios que en la configuración compartida no tienen nombre toman el del catastro, para que las licitaciones
+  // los muestren igual que el Gestor (solo el administrador publica la configuración).
+  const { isAdmin } = useAuth();
+  useEffect(() => {
+    if (!isAdmin || !Object.keys(nombresCatastro).length) return;
+    let cambio = false;
+    const nueva = getCampusList().map(c => {
+      const info = { ...(c.edificiosInfo || {}) };
+      for (const e of c.edificios) {
+        if (!info[e]?.nombre?.trim() && nombresCatastro[e]?.trim()) { info[e] = { ...(info[e] || {}), nombre: comoTitulo(nombresCatastro[e]) }; cambio = true; }
+      }
+      return { ...c, edificiosInfo: info };
+    });
+    if (cambio) saveCampusList(nueva);
+  }, [isAdmin, nombresCatastro]);
 
   useEffect(() => {
     if (!SUPABASE_CONFIGURADO) return;
@@ -221,6 +246,11 @@ export function RecintosPage() {
   const superficieTotal = resumenHoy.util;
   const superficieOguc = resumenHoy.oguc;
   const documentosVisibles = documentos.filter(d => verAnteriores || d.vigente);
+  // CAD (DWG) vigente del edificio, guardado en el sistema: se descarga desde cualquier lámina.
+  const cadVigente = documentos.find(d => d.vigente && d.formato === 'DWG' && d.archivo);
+  const abrirArchivo = async (d: DocumentoEdificio, cad = false) => {
+    try { await abrirArchivoDocumento(d, cad); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
   const porEspecialidad = ESPECIALIDADES.map(e => ({ especialidad: e, lista: documentosVisibles.filter(d => d.especialidad === e) })).filter(g => g.lista.length);
 
   const nuevoRecinto = (pisoId: string): RecintoEditable => ({
@@ -242,35 +272,38 @@ export function RecintosPage() {
 
   return (
     <div className="space-y-4 text-xs">
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-end gap-3">
-        <div className="mr-auto">
-          <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2"><Building2 className="w-5 h-5 text-teal-600" /> Recintos y planos</h2>
-          <p className="text-slate-500">Pisos y recintos de cada edificio, con el índice de sus planos vigentes. Los archivos siguen en Drive.</p>
+      {/* Encabezado: buscador y una sola ruta de navegación (Campus › campus › edificio), con selectores en cada nivel. */}
+      <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2 shrink-0"><Building2 className="w-5 h-5 text-teal-700" /> Recintos y planos</h2>
+          <div className="flex-1 min-w-[240px]"><BuscadorEspacios onElegir={irA} /></div>
         </div>
-        <label className="font-bold text-slate-700">Campus
-          <select value={campusSigla} onChange={e => { ir({ campus: e.target.value }); setResaltado(null); }} className={`block mt-1 ${campo} min-w-[200px] font-normal`}>
-            <option value="">— Elija un campus —</option>
-            {campus.map(c => <option key={c.sigla} value={c.sigla}>{c.sigla} — {c.nombre}</option>)}
-          </select>
-        </label>
-        {campusSigla && (
-          <label className="font-bold text-slate-700">Edificio o zona
-            <select value={edificio} onChange={e => { ir({ edificio: e.target.value }); setResaltado(null); }} className={`block mt-1 ${campo} min-w-[220px] font-normal`}>
-              <option value="">— Elija un edificio —</option>
+        <nav className="flex flex-wrap items-center gap-1.5" aria-label="Ubicación">
+          <button type="button" onClick={() => { ir({ campus: '' }); setResaltado(null); }}
+            className={`px-2.5 py-1.5 rounded-lg font-bold ${campusSigla ? 'text-teal-800 hover:bg-teal-50' : 'bg-slate-900 text-white'}`}>Todos los campus</button>
+          {campusSigla && <>
+            <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+            <select value={campusSigla} onChange={e => { ir({ campus: e.target.value }); setResaltado(null); }} aria-label="Campus"
+              className={`max-w-[70vw] sm:max-w-xs px-2.5 py-1.5 rounded-lg border font-bold ${edificio ? 'border-slate-300 bg-white text-teal-800' : 'border-slate-900 bg-slate-900 text-white'}`}>
+              {campus.map(c => <option key={c.sigla} value={c.sigla}>{c.sigla} · {c.nombre}</option>)}
+            </select>
+            <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+            <select value={edificio} onChange={e => { ir({ edificio: e.target.value }); setResaltado(null); }} aria-label="Edificio"
+              className={`max-w-[85vw] sm:max-w-sm px-2.5 py-1.5 rounded-lg border font-bold ${edificio ? 'border-slate-900 bg-slate-900 text-white' : 'border-dashed border-slate-300 bg-white text-slate-500'}`}>
+              <option value="">Elegir edificio…</option>
               {edificios.map(e => <option key={e} value={e}>{etiqueta(e)}{sinConfigurar.includes(e) ? ' (sin configurar)' : ''}{enBase.includes(e) ? '' : ' · sin datos'}</option>)}
             </select>
-          </label>
-        )}
-        <div className="basis-full"><BuscadorEspacios onElegir={irA} /></div>
+          </>}
+        </nav>
       </div>
 
       {!campusSigla && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-3">
           {campus.map(c => {
             const conDatos = enBase.filter(e => (configurados.find(k => k.edificios.includes(e))?.sigla || e.slice(0, 3)) === c.sigla).length;
             return (
               <button key={c.sigla} type="button" onClick={() => ir({ campus: c.sigla })}
-                className="text-left bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:border-teal-400 hover:shadow-md transition">
+                className="text-left bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 shadow-sm hover:border-teal-400 hover:shadow-md transition">
                 <span className="font-mono font-extrabold text-teal-800">{c.sigla}</span>
                 <span className="block font-bold text-slate-800 leading-tight mt-0.5">{c.nombre}</span>
                 <span className="block text-slate-500 mt-1">{conDatos ? `${conDatos} edificio(s) con datos` : 'Sin datos aún'}</span>
@@ -280,16 +313,6 @@ export function RecintosPage() {
         </div>
       )}
 
-      {campusSigla && (
-        <nav className="flex flex-wrap items-center gap-1.5 text-slate-500">
-          <button type="button" onClick={() => { ir({ campus: '' }); setResaltado(null); }} className="font-bold text-teal-800 hover:underline">Campus</button>
-          <ChevronRight className="w-3.5 h-3.5" />
-          {edificio
-            ? <button type="button" onClick={() => { ir({ edificio: '' }); setResaltado(null); }} className="font-bold text-teal-800 hover:underline">{campus.find(c => c.sigla === campusSigla)?.nombre || campusSigla}</button>
-            : <span className="font-bold text-slate-800">{campus.find(c => c.sigla === campusSigla)?.nombre || campusSigla}</span>}
-          {edificio && <><ChevronRight className="w-3.5 h-3.5" /><span className="font-bold text-slate-800">{etiqueta(edificio)}</span></>}
-        </nav>
-      )}
 
       {campusSigla && !edificio && (
         edificios.length ? (
@@ -309,32 +332,48 @@ export function RecintosPage() {
               </button>
               <SubirLaminasCampus siglaCampus={campusSigla} />
             </div>
+            {edificios.length > 8 && (
+              <label className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus-within:ring-2 focus-within:ring-teal-400 max-w-md">
+                <Search className="w-3.5 h-3.5 text-slate-400" />
+                <input value={filtroEdificios} onChange={e => setFiltroEdificios(e.target.value)} placeholder={`Filtrar los ${edificios.length} edificios por código o nombre…`} className="flex-1 min-w-0 outline-none" />
+                {filtroEdificios && <button type="button" onClick={() => setFiltroEdificios('')}><X className="w-3.5 h-3.5 text-slate-400" /></button>}
+              </label>
+            )}
             {[
-              { titulo: 'Edificios y construcciones', lista: edificios.filter(e => !esEspacioComun(e)) },
-              { titulo: 'Espacios comunes y exteriores', lista: edificios.filter(esEspacioComun) },
-            ].filter(g => g.lista.length).map(g => (
+              { titulo: 'Edificios y construcciones', lista: edificiosFiltrados.filter(e => !esEspacioComun(e)), plegable: false },
+              { titulo: 'Espacios comunes y exteriores', lista: edificiosFiltrados.filter(esEspacioComun), plegable: true },
+            ].filter(g => g.lista.length).map(g => {
+              // Los espacios comunes parten plegados (son muchos y se consultan poco), salvo al filtrar.
+              const abierta = !g.plegable || verComunes || !!filtroEdificios.trim();
+              return (
               <section key={g.titulo} className="space-y-2">
-                <h3 className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">{g.titulo} <span className="font-normal">({g.lista.length})</span></h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                <button type="button" disabled={!g.plegable} onClick={() => setVerComunes(v => !v)}
+                  className="flex items-center gap-1 text-[11px] font-extrabold uppercase tracking-wide text-slate-500 disabled:cursor-default">
+                  {g.plegable && <ChevronDown className={`w-3.5 h-3.5 transition-transform ${abierta ? '' : '-rotate-90'}`} />}
+                  {g.titulo} <span className="font-normal">({g.lista.length})</span>
+                </button>
+                {abierta && <div className="grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 sm:gap-3">
                   {g.lista.map(e => {
                     const info = obtenerInfoEdificio(e);
                     const conDatos = enBase.includes(e);
                     const Icono = esEspacioComun(e) ? Trees : Building2;
                     return (
                       <button key={e} type="button" onClick={() => { ir({ edificio: e }); setResaltado(null); }}
-                        className={`text-left bg-white border rounded-2xl p-4 shadow-sm hover:border-teal-400 hover:shadow-md transition ${conDatos ? 'border-slate-200' : 'border-dashed border-slate-300'}`}>
+                        className={`text-left bg-white border rounded-xl sm:rounded-2xl px-3 py-2 sm:p-4 shadow-sm hover:border-teal-400 hover:shadow-md transition ${conDatos ? 'border-slate-200' : 'border-dashed border-slate-300'}`}>
                         <span className="flex items-center gap-1.5">
                           <Icono className={`w-4 h-4 ${conDatos ? 'text-teal-700' : 'text-slate-400'}`} />
                           <span className="font-mono font-extrabold text-teal-800">{e}</span>
                         </span>
                         <span className="block font-bold text-slate-800 leading-tight mt-1">{nombreEdificio(e) || (info?.esExterior ? info.nombre : sinConfigurar.includes(e) ? 'Sin configurar (solo en el catastro)' : 'Sin nombre')}</span>
-                        <span className={`block mt-1 ${conDatos ? 'text-emerald-700' : 'text-slate-400'}`}>{conDatos ? 'Con datos del catastro' : 'Sin datos aún'}</span>
+                        <span className={`hidden sm:block mt-1 ${conDatos ? 'text-emerald-700' : 'text-slate-400'}`}>{conDatos ? 'Con datos del catastro' : 'Sin datos aún'}</span>
                       </button>
                     );
                   })}
-                </div>
+                </div>}
               </section>
-            ))}
+              );
+            })}
+            {!edificiosFiltrados.length && <p className="text-slate-500">Ningún edificio coincide con «{filtroEdificios}».</p>}
           </div>
         ) : (
           <p className="bg-white border border-dashed border-slate-300 rounded-2xl p-6 text-center text-slate-500">Este campus aún no tiene edificios registrados.</p>
@@ -508,6 +547,9 @@ export function RecintosPage() {
               <div className="flex flex-wrap items-center gap-3">
                 <button type="button" onClick={() => setDocumentoNuevo(nuevoDocumento())} className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-bold"><Plus className="w-3.5 h-3.5" /> Registrar plano o documento</button>
                 <label className="flex items-center gap-1.5 text-slate-600"><input type="checkbox" checked={verAnteriores} onChange={e => setVerAnteriores(e.target.checked)} /> Mostrar versiones anteriores</label>
+                {cadVigente
+                  ? <button type="button" onClick={() => void abrirArchivo(cadVigente, true)} className="ml-auto flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold"><Download className="w-3.5 h-3.5" /> Descargar CAD (DWG)</button>
+                  : <span className="ml-auto text-slate-400" title="Súbalo con «Subir láminas y CAD del campus» en la página del campus">Sin CAD (DWG) en el sistema</span>}
               </div>
               {!cargando && !porEspecialidad.length && (
                 <p className="bg-white border border-dashed border-slate-300 rounded-2xl p-6 text-center text-slate-500">
@@ -529,7 +571,13 @@ export function RecintosPage() {
                         {d.fecha_documento && <span className="text-[10px] text-slate-500">· {formatoFecha(d.fecha_documento)}</span>}
                         <span className={`text-[10px] font-bold ${d.vigente ? 'text-emerald-700' : 'text-slate-400'}`}>{d.vigente ? 'Vigente' : 'Reemplazado'}</span>
                         <div className="ml-auto flex items-center gap-1">
-                          <a href={d.drive_url} target="_blank" rel="noreferrer" className="flex items-center gap-1 px-2 py-1 text-sky-700 hover:bg-sky-50 rounded-md font-bold"><ExternalLink className="w-3.5 h-3.5" /> Abrir</a>
+                          {/* Cada botón lleva a un archivo que existe: la lámina guardada en el sistema, el CAD del edificio o Drive. */}
+                          {d.archivo_visor && <button type="button" onClick={() => void abrirArchivo(d)} className="flex items-center gap-1 px-2 py-1 text-sky-700 hover:bg-sky-50 rounded-md font-bold"><FileText className="w-3.5 h-3.5" /> Ver PDF</button>}
+                          {(d.archivo || (d.formato === 'PDF' && cadVigente)) && (
+                            <button type="button" onClick={() => void abrirArchivo(d.archivo ? d : cadVigente!, true)} title={d.archivo ? 'Descargar este CAD' : `Descargar el CAD vigente del edificio (${cadVigente?.titulo.replace(/^CAD del edificio · /, '')})`}
+                              className="flex items-center gap-1 px-2 py-1 text-emerald-700 hover:bg-emerald-50 rounded-md font-bold"><Download className="w-3.5 h-3.5" /> DWG</button>
+                          )}
+                          {/^https:\/\//.test(d.drive_url || '') && <a href={d.drive_url} target="_blank" rel="noreferrer" className="flex items-center gap-1 px-2 py-1 text-slate-600 hover:bg-slate-50 rounded-md font-bold"><ExternalLink className="w-3.5 h-3.5" /> Drive</a>}
                           {d.vigente && <button type="button" onClick={() => setDocumentoNuevo(nuevoDocumento(d))} className="flex items-center gap-1 px-2 py-1 text-teal-700 hover:bg-teal-50 rounded-md font-bold" title="Registrar una versión nueva de este plano: la actual queda como reemplazada"><Copy className="w-3.5 h-3.5" /> Nueva versión</button>}
                         </div>
                       </div>

@@ -26,6 +26,12 @@ const TILDES: Record<string, string> = {
   sicologia: 'psicología', tecnica: 'técnica', tecnicas: 'técnicas', tecnico: 'técnico', tecnicos: 'técnicos', tecnologico: 'tecnológico',
   tecnologica: 'tecnológica', tecnologicas: 'tecnológicas', terapeutica: 'terapéutica', tesoreria: 'tesorería', ultimo: 'último',
   unico: 'único', vicerrectoria: 'vicerrectoría', vehiculos: 'vehículos', energetica: 'energética', farmacologia: 'farmacología',
+  rectoria: 'rectoría', prorrectoria: 'prorrectoría', contraloria: 'contraloría', cancilleria: 'cancillería', filosofia: 'filosofía',
+  microscopia: 'microscopía', arqueologica: 'arqueológica', arqueologico: 'arqueológico', artisticos: 'artísticos',
+  biomecanica: 'biomecánica', capellan: 'capellán', diagnosticos: 'diagnósticos', economicos: 'económicos', estrategicos: 'estratégicos',
+  galpon: 'galpón', hermetico: 'hermético', informaticos: 'informáticos', ingles: 'inglés', kinesica: 'kinésica', meson: 'mesón',
+  mesones: 'mesones', salon: 'salón', terapeuticos: 'terapéuticos', iformatica: 'informática', educacin: 'educación',
+  estudantil: 'estudiantil', camarin: 'camarín', vicaria: 'vicaría', reunion: 'reunión', solidos: 'sólidos', bano: 'baño', banos: 'baños', area: 'área', areas: 'áreas',
 };
 /** Terminaciones que en castellano siempre llevan tilde (-ción, -sión, -logía, -grafía, -nomía…). */
 const TERMINACIONES: [RegExp, string][] = [
@@ -82,6 +88,21 @@ function tilde(palabra: string): string {
   if (/[áéíóú]/.test(min)) return min;
   for (const [fin, conTilde] of TERMINACIONES) if (fin.test(min)) return min.replace(fin, conTilde);
   return min;
+}
+
+/**
+ * Corrige solo las tildes de un texto ya escrito, sin cambiar sus mayúsculas: «Rectoria» → «Rectoría»,
+ * «LABORATORIO DE QUIMICA» → «LABORATORIO DE QUÍMICA». Se aplica a todo nombre, uso y unidad al guardar.
+ */
+export function corregirTildes(texto?: string | null): string {
+  if (!texto) return texto || '';
+  return texto.replace(/\p{L}+/gu, w => {
+    if (/[áéíóúÁÉÍÓÚ]/.test(w) || SIGLAS.has(w.toUpperCase())) return w;
+    const t = tilde(w);
+    if (t === w.toLowerCase()) return w;
+    if (w === w.toUpperCase() && w.length > 1) return t.toUpperCase();
+    return w.charAt(0) === w.charAt(0).toUpperCase() ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+  });
 }
 
 /** Separa en palabras conservando la puntuación («SALA (IDIOMAS)», «DAI - PACE»). */

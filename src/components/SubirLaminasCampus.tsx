@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Loader2, Upload, CheckCircle2, AlertTriangle, X, History, MinusCircle } from 'lucide-react';
-import { crearYSubirLamina, listarLaminasDeCampus, listarPisos, subirLaminaVisor } from '../services/recintos';
+import { crearYSubirLamina, listarLaminasDeCampus, listarPisos, subirCadEdificio, subirLaminaVisor } from '../services/recintos';
 import type { DocumentoEdificio, Piso } from '../types/recintos';
 import { archivoRegistrado, inferirDatosLamina, inferirLaminaAnterior, laminaDeArchivo, pisoDeLamina } from '../utils/emparejarLaminas';
 import { edificioActual } from '../data/codigosAntiguosEdificios';
@@ -29,7 +29,18 @@ export function SubirLaminasCampus({ siglaCampus, onListo }: { siglaCampus: stri
     return pisosPorEdificio.get(edificio)!;
   };
 
+  /** DWG: el CAD vigente del edificio que indica el nombre («CSF07 240110 CA.dwg»), para descargarlo desde el sistema. */
+  const subirCad = async (archivo: File): Promise<Resultado> => {
+    const inferido = inferirDatosLamina(archivo.name.replace(/\.dwg$/i, '.pdf'), siglaCampus);
+    if (!inferido || inferido.edificio_codigo === siglaCampus.toUpperCase()) {
+      return { archivo: archivo.name, error: 'No se pudo identificar el edificio (nombre esperado: «CSF07 240110.dwg»)' };
+    }
+    await subirCadEdificio(inferido.edificio_codigo, archivo);
+    return { archivo: archivo.name, destino: `${inferido.edificio_codigo} · CAD (DWG) vigente` };
+  };
+
   const subirVigente = async (archivo: File, documentos: DocumentoEdificio[]): Promise<Resultado> => {
+    if (/\.dwg$/i.test(archivo.name)) return subirCad(archivo);
     const documento = laminaDeArchivo(archivo.name, documentos);
     if (documento) {
       await subirLaminaVisor(documento, archivo);
@@ -114,7 +125,7 @@ export function SubirLaminasCampus({ siglaCampus, onListo }: { siglaCampus: stri
         title="Elija los PDF de las láminas actuales del campus (descargados de su carpeta en Drive); cada uno se asocia a su lámina registrada"
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-teal-300 bg-white font-bold text-teal-800 hover:bg-teal-50 disabled:opacity-50">
         {subiendo && modo.current === 'vigentes' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-        {subiendo && modo.current === 'vigentes' ? subiendo : 'Subir láminas del campus (PDF)'}
+        {subiendo && modo.current === 'vigentes' ? subiendo : 'Subir láminas y CAD del campus (PDF y DWG)'}
       </button>
       <button type="button" disabled={!!subiendo} onClick={() => abrir('anteriores')}
         title="Elija los PDF de la carpeta «anteriores» del campus: quedan como versiones históricas, con la fecha de su nombre"
@@ -122,7 +133,7 @@ export function SubirLaminasCampus({ siglaCampus, onListo }: { siglaCampus: stri
         {subiendo && modo.current === 'anteriores' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <History className="w-3.5 h-3.5" />}
         {subiendo && modo.current === 'anteriores' ? subiendo : 'Subir láminas anteriores (historia)'}
       </button>
-      <input ref={entrada} type="file" accept="application/pdf" multiple className="hidden" onChange={e => void subir([...(e.target.files || [])])} />
+      <input ref={entrada} type="file" accept=".pdf,.dwg,application/pdf" multiple className="hidden" onChange={e => void subir([...(e.target.files || [])])} />
       {resultados && (
         <div className="basis-full bg-white border border-slate-200 rounded-xl p-3 shadow-sm space-y-1">
           <div className="flex items-center gap-2">

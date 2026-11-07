@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import type { CambioRecinto, DocumentoEdificio, FichaEdificio, Ocupante, Piso, Recinto, ZonaRecinto } from '../types/recintos';
 import { datosDePiso } from '../utils/importacionRecintos';
 import { comoTitulo } from '../utils/texto';
+import { corregirTildes } from '../utils/formatoNombres';
 import { clavePersona } from '../utils/analisisEspacios';
 
 /** Convierte el error de la base en un mensaje entendible. */
@@ -149,6 +150,8 @@ const COLUMNAS_EDITABLES = [
 export function datosParaGuardar(recinto: Partial<Recinto>): Partial<Recinto> {
   const datos: Record<string, unknown> = {};
   for (const c of COLUMNAS_EDITABLES) if (recinto[c] !== undefined) datos[c] = recinto[c];
+  // Las tildes que faltan se corrigen siempre («Rectoria» → «Rectoría»), sin tocar las mayúsculas.
+  for (const c of ['nombre', 'uso', 'unidad_usuaria'] as const) if (typeof datos[c] === 'string') datos[c] = corregirTildes(datos[c] as string);
   if (Array.isArray(recinto.ocupantes)) {
     datos.ocupantes = recinto.ocupantes
       // Los nombres de personas se guardan siempre en formato título («María de la Luz Pérez»).
@@ -233,6 +236,7 @@ export async function importarRecintos(
     const existentes = new Set((await listarRecintos(edificio)).map(r => r.codigo.toUpperCase()));
     const registros = lista.map(f => ({
       ...f.recinto,
+      nombre: corregirTildes(f.recinto.nombre), uso: corregirTildes(f.recinto.uso), unidad_usuaria: corregirTildes(f.recinto.unidad_usuaria),
       ...(f.recinto.ocupantes ? { ocupantes: f.recinto.ocupantes.map(o => ({ ...o, nombre: comoTitulo(o.nombre) })) } : {}),
       edificio_codigo: edificio,
       piso_id: porCodigo.get(f.piso.trim().toUpperCase())!.id,
@@ -384,6 +388,43 @@ export async function listarLaminasDeCampus(siglaCampus: string, incluirAnterior
   const { data, error } = await consulta;
   if (error) throw errorDe(error, 'No se pudieron leer las láminas del campus');
   return data as DocumentoEdificio[];
+}
+
+/**
+ * Sube el CAD (DWG) vigente de un edificio: queda registrado como documento «Plano · DWG» con su archivo en el
+ * almacenamiento «cad», y el DWG anterior pasa a versión reemplazada (sigue descargable en su historial).
+ */
+export async function subirCadEdificio(edificio: string, archivo: File): Promise<DocumentoEdificio> {
+  const { data: previos } = await supabase.from('documentos').select('id').eq('edificio_codigo', edificio)
+    .eq('tipo', 'Plano').eq('formato', 'DWG').eq('vigente', true);
+  const sinExt = archivo.name.replace(/\.dwg$/i, '').trim();
+  const fecha = fechaDeNombre(sinExt);
+  const doc = await registrarDocumento({
+    edificio_codigo: edificio, piso_id: null, titulo: `CAD del edificio · ${archivo.name}`, tipo: 'Plano', especialidad: 'Arquitectura',
+    formato: 'DWG', codigo_lamina: null, version: fecha || '1', fecha_documento: fecha || new Date().toISOString().slice(0, 10),
+    reemplaza_a: null, drive_url: '', proyecto_codigo: null, observaciones: `Archivo: ${archivo.name}`, archivo_visor: null, escala: null,
+  });
+  const ruta = `${edificio}/${doc.id}-${Date.now()}.dwg`;
+  const subida = await supabase.storage.from('cad').upload(ruta, archivo, { upsert: true, contentType: 'application/octet-stream' });
+  if (subida.error) {
+    await supabase.from('documentos').delete().eq('id', doc.id);
+    throw errorDe({ message: subida.error.message }, `No se pudo subir el CAD de ${edificio} (¿falta ejecutar la migración 0008?)`);
+  }
+  const { error } = await supabase.from('documentos').update({ archivo: ruta }).eq('id', doc.id);
+  if (error) throw errorDe(error, 'No se pudo registrar el CAD');
+  const anteriores = (previos || []).map(p => (p as { id: string }).id);
+  if (anteriores.length) await supabase.from('documentos').update({ vigente: false }).in('id', anteriores);
+  return { ...doc, archivo: ruta };
+}
+
+/** Abre (PDF) o descarga (DWG) el archivo guardado de un documento, con un enlace temporal. */
+export async function abrirArchivoDocumento(d: Pick<DocumentoEdificio, 'archivo' | 'archivo_visor' | 'titulo' | 'edificio_codigo' | 'codigo_lamina'>, cad = false): Promise<void> {
+  const ruta = cad ? d.archivo : d.archivo_visor;
+  if (!ruta) throw new Error('Este documento no tiene archivo guardado en el sistema.');
+  const nombre = cad ? (d.titulo.replace(/^CAD del edificio · /, '') || `${d.edificio_codigo}.dwg`) : `${d.edificio_codigo} ${d.codigo_lamina || ''}.pdf`.replace(/\s+\.pdf$/, '.pdf');
+  const { data, error } = await supabase.storage.from(cad ? 'cad' : 'laminas').createSignedUrl(ruta, 120, cad ? { download: nombre } : undefined);
+  if (error || !data) throw errorDe({ message: error?.message }, 'No se pudo abrir el archivo');
+  window.open(data.signedUrl, '_blank', 'noopener');
 }
 
 export async function descargarLamina(ruta: string): Promise<ArrayBuffer> {

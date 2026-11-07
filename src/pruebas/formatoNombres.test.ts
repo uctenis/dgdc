@@ -36,3 +36,13 @@ describe('formato de nombres (criterio RAE)', () => {
     expect(avisosNombre('CARRERA DE MEDICINA', 'unidad')).toEqual([]);
   });
 });
+
+describe('tildes al guardar', () => {
+  it('corrige solo las tildes y respeta las mayúsculas', async () => {
+    const { corregirTildes } = await import('../utils/formatoNombres');
+    expect(corregirTildes('Rectoria')).toBe('Rectoría');
+    expect(corregirTildes('LABORATORIO DE QUIMICA')).toBe('LABORATORIO DE QUÍMICA');
+    expect(corregirTildes('Sala de reunion UCT')).toBe('Sala de reunión UCT');
+    expect(corregirTildes('Oficina')).toBe('Oficina');
+  });
+});

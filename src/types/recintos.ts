@@ -105,6 +105,8 @@ export interface DocumentoEdificio {
   observaciones?: string | null;
   /** Copia de la lámina en el almacenamiento privado "laminas", para el visor (el original sigue en Drive). */
   archivo_visor?: string | null;
+  /** DWG del edificio guardado en el almacenamiento «cad» (migración 0008). */
+  archivo?: string | null;
   /** Escala de la lámina impresa ("1:65"), para medir superficies sobre el plano. */
   escala?: string | null;
   creado_en?: string;
