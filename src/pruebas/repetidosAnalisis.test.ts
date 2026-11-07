@@ -28,3 +28,15 @@ describe('duplicados en el análisis', () => {
     expect(buscarRepetidos(filas, 'codigo').map(x => [x.clave, x.recintos.length])).toEqual([['CJP08_304', 2]]);
   });
 });
+
+describe('personas', () => {
+  it('lista a cada persona una vez, con sus edificios y recintos', async () => {
+    const { listarPersonas } = await import('../utils/analisisEspacios');
+    const p = listarPersonas([
+      fila('CJP08_301', { ocupantes: [{ nombre: 'Pérez Soto, Juan', cargo: 'Director' }] }),
+      fila('CJP01_101', { edificio: 'CJP01', ocupantes: [{ nombre: 'JUAN PEREZ SOTO' }, { nombre: 'Ana Rojas' }] }),
+    ]);
+    expect(p.map(x => [x.nombre, x.recintos.length, x.edificios])).toEqual([['Ana Rojas', 1, ['CJP01']], ['Pérez Soto, Juan', 2, ['CJP01', 'CJP08']]]);
+    expect(p[1].cargos).toEqual(['Director']);
+  });
+});

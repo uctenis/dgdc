@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  BarChart3, Loader2, X, Link2, Download, RefreshCw, Search, ChevronDown, Check, Sparkles, LayoutGrid, Table2, ExternalLink, AlertTriangle, PieChart, Copy,
+  BarChart3, Loader2, X, Link2, Download, RefreshCw, Search, ChevronDown, Check, Sparkles, LayoutGrid, Table2, ExternalLink, AlertTriangle, PieChart, Copy, Users,
 } from 'lucide-react';
 import { cargarDatosAnalisis } from '../services/analisisEspacios';
 import {
-  agrupar, buscarRepetidos, CRITERIOS_REPETIDO, cruzar, DIMENSIONES, filtrar, formatoM2, formatoMedida, fraseRespuesta, MEDIDAS, SIN_DATO, totales, valorMedida,
+  agrupar, buscarRepetidos, CRITERIOS_REPETIDO, listarPersonas, cruzar, DIMENSIONES, filtrar, formatoM2, formatoMedida, fraseRespuesta, MEDIDAS, SIN_DATO, totales, valorMedida,
   type CriterioRepetido, type Dimension, type FilaAnalisis, type Filtros, type Grupo, type Medida,
 } from '../utils/analisisEspacios';
 import { comoTitulo } from '../utils/texto';
@@ -17,7 +17,7 @@ const GRIS_OTROS = '#a3a29c';
 const AZUL = '#2a78d6';
 const ESCALA = ['#cde2fb', '#b7d3f6', '#9ec5f4', '#86b6ef', '#6da7ec', '#5598e7', '#3987e5', '#2a78d6', '#256abf', '#1c5cab', '#184f95', '#104281', '#0d366b'];
 
-interface Consulta { f: Filtros; g: Dimension; m: Medida; cf: Dimension; cc: Dimension; r: CriterioRepetido; h?: boolean }
+interface Consulta { f: Filtros; g: Dimension; m: Medida; cf: Dimension; cc: Dimension; r: CriterioRepetido; h?: boolean; vp?: boolean }
 const CONSULTA_INICIAL: Consulta = { f: {}, g: 'tipo', m: 'util', cf: 'piso', cc: 'tipo', r: 'persona' };
 
 const leerConsulta = (texto: string | null): Consulta => {
@@ -185,6 +185,11 @@ export function AnalisisEspacios({ onAbrirRecinto, onCerrar }: Props) {
           </>}>
           <MatrizCruce filas={resultado} df={consulta.cf} dc={consulta.cc === consulta.cf ? (consulta.cf === 'tipo' ? 'piso' : 'tipo') : consulta.cc} medida={consulta.m}
             etiqueta={etiqueta} onElegir={(vf, vc, df, dc) => ponerFiltros({ ...consulta.f, [df]: [vf], ...(vc !== 'Otros' ? { [dc]: [vc] } : {}) })} />
+        </Tarjeta>
+
+        <Tarjeta icono={<Users className="w-4 h-4 text-teal-700" />} titulo="Personas">
+          <Personas filas={resultado} nombreEdificio={nombreEdificio} onAbrir={onAbrirRecinto} irAqui={!!consulta.vp}
+            tituloExcel={consulta.f.edificio?.length === 1 ? consulta.f.edificio[0] : consulta.f.campus?.length === 1 ? consulta.f.campus[0] : 'consulta'} />
         </Tarjeta>
 
         <Tarjeta icono={<Copy className="w-4 h-4 text-teal-700" />} titulo="Duplicados"
@@ -472,6 +477,97 @@ function MatrizCruce({ filas, df, dc, medida, etiqueta, onElegir }: {
       </table>
       {c.filas.length > filasVisibles.length && <p className="pt-2 text-slate-500">Se muestran las primeras {filasVisibles.length} de {c.filas.length} filas: filtre para acotar.</p>}
       <p className="pt-2 text-slate-500">Valores en {MEDIDAS.find(m => m.id === medida)!.corto}. Más oscuro = más {medida === 'recintos' ? 'recintos' : 'superficie'}. Clic en una celda para filtrar por esa combinación.</p>
+    </div>
+  );
+}
+
+/**
+ * Quiénes están en la consulta (un edificio, un campus, una unidad…): cada persona una vez, con su cargo, unidad,
+ * edificios y recintos. Se busca sin tildes, se ordena y se descarga a Excel.
+ */
+function Personas({ filas, nombreEdificio, onAbrir, irAqui, tituloExcel }: {
+  filas: FilaAnalisis[]; nombreEdificio: (c: string) => string; onAbrir: (edificio: string, id: string) => void; irAqui: boolean; tituloExcel: string;
+}) {
+  const todas = useMemo(() => listarPersonas(filas), [filas]);
+  const [buscar, setBuscar] = useState('');
+  const [orden, setOrden] = useState<'nombre' | 'edificio' | 'unidad' | 'recintos'>('nombre');
+  const [limite, setLimite] = useState(50);
+  const [descargando, setDescargando] = useState(false);
+  const caja = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (irAqui) caja.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [irAqui]);
+  const lista = useMemo(() => {
+    const sinTilde = (t: string) => t.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '');
+    const palabras = sinTilde(buscar).split(/\s+/).filter(Boolean);
+    const filtradas = todas.filter(p => {
+      if (!palabras.length) return true;
+      const texto = sinTilde([p.nombre, ...p.cargos, ...p.unidades, ...p.edificios.map(nombreEdificio), ...p.recintos.map(f => `${f.codigo} ${f.tipo}`)].join(' '));
+      return palabras.every(w => texto.includes(w));
+    });
+    const clave = (p: (typeof todas)[number]) => (orden === 'edificio' ? p.edificios.join() : orden === 'unidad' ? (p.unidades[0] || '~') : '');
+    return [...filtradas].sort((a, b) => (orden === 'recintos'
+      ? b.recintos.length - a.recintos.length || a.nombre.localeCompare(b.nombre, 'es')
+      : clave(a).localeCompare(clave(b), 'es', { numeric: true }) || a.nombre.localeCompare(b.nombre, 'es')));
+  }, [todas, buscar, orden]); // eslint-disable-line react-hooks/exhaustive-deps
+  const descargar = async () => {
+    setDescargando(true);
+    try {
+      const { exportarPersonasExcel } = await import('../utils/exportarPersonas');
+      await exportarPersonasExcel(lista, nombreEdificio, tituloExcel);
+    } finally {
+      setDescargando(false);
+    }
+  };
+  if (!todas.length) return <p className="text-slate-500">En esta consulta no hay personas registradas como ocupantes.</p>;
+  return (
+    <div ref={caja} className="space-y-2 scroll-mt-20">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-slate-600 mr-auto">
+          <strong>{todas.length.toLocaleString('es-CL')}</strong> persona(s) en {new Set(todas.flatMap(p => p.edificios)).size} edificio(s)
+          {lista.length !== todas.length ? ` · ${lista.length} con «${buscar}»` : ''}
+        </p>
+        <label className="flex items-center gap-1.5 px-2.5 py-1.5 border border-slate-300 rounded-lg focus-within:ring-2 focus-within:ring-teal-400">
+          <Search className="w-3.5 h-3.5 text-slate-400" />
+          <input value={buscar} onChange={e => { setBuscar(e.target.value); setLimite(50); }} placeholder="Nombre, cargo, unidad o recinto" className="outline-none w-48" />
+        </label>
+        <Selector valor={orden} opciones={[{ valor: 'nombre', nombre: 'Por nombre' }, { valor: 'edificio', nombre: 'Por edificio' }, { valor: 'unidad', nombre: 'Por unidad' }, { valor: 'recintos', nombre: 'Más recintos primero' }]}
+          onCambiar={v => setOrden(v as typeof orden)} />
+        <button type="button" disabled={descargando || !lista.length} onClick={() => void descargar()}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-300 font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+          {descargando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />} Excel
+        </button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] table-fixed">
+          <colgroup><col className="w-[24%]" /><col className="w-[16%]" /><col className="w-[22%]" /><col className="w-[18%]" /><col /></colgroup>
+          <thead className="text-slate-500 text-[10px] uppercase tracking-wide border-b border-slate-100">
+            <tr><th className="px-3 py-2 text-left">Nombre</th><th className="px-3 py-2 text-left">Cargo</th><th className="px-3 py-2 text-left">Unidad</th><th className="px-3 py-2 text-left">Edificio</th><th className="px-3 py-2 text-left">Recinto(s)</th></tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {lista.slice(0, limite).map(p => (
+              <tr key={`${p.nombre}-${p.recintos[0]?.id}`} className="hover:bg-slate-50 align-top">
+                <td className="px-3 py-1.5 font-semibold text-slate-900">
+                  {comoTitulo(p.nombre)}
+                  {p.recintos.length > 1 && <span className="ml-1 px-1.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">{p.recintos.length} recintos</span>}
+                </td>
+                <td className="px-3 py-1.5 text-slate-600 truncate" title={p.cargos.join(', ')}>{p.cargos.join(' / ') || '—'}</td>
+                <td className="px-3 py-1.5 text-slate-600 truncate" title={p.unidades.join(', ')}>{p.unidades.join(' / ') || '—'}</td>
+                <td className="px-3 py-1.5 text-slate-600 truncate" title={p.edificios.map(nombreEdificio).join(', ')}>{p.edificios.map(nombreEdificio).join(' / ')}</td>
+                <td className="px-3 py-1.5">
+                  <span className="flex flex-wrap gap-1">
+                    {p.recintos.map(f => (
+                      <button key={f.id} type="button" onClick={() => onAbrir(f.edificio, f.id)} title={`${f.tipo} · ${f.piso} · abrir la ficha`}
+                        className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-teal-100 font-mono text-[11px] text-slate-700">{f.codigo}</button>
+                    ))}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {lista.length > limite && (
+        <button type="button" onClick={() => setLimite(l => l + 100)} className="text-teal-800 font-bold hover:underline">Mostrar 100 más (quedan {lista.length - limite})</button>
+      )}
     </div>
   );
 }

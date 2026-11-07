@@ -61,6 +61,17 @@ export const normalizarBusqueda = (s: string) => s.toLowerCase().normalize('NFD'
  * cargo o unidad de sus ocupantes). Con varias palabras, el recinto debe tenerlas todas, en cualquier orden: «Ana
  * Pérez» encuentra a «PÉREZ SOTO, ANA MARÍA».
  */
+type EdificioBuscable = { codigo: string; nombre: string | null; direccion: string | null; uso_principal: string | null; campus_nombre: string | null };
+let cacheEdificios: { cuando: number; lista: EdificioBuscable[] } | null = null;
+/** Todos los edificios (código, nombre, dirección, uso y campus), guardados 10 minutos para buscar sin consultar cada tecla. */
+async function edificiosParaBuscar(): Promise<EdificioBuscable[]> {
+  if (cacheEdificios && Date.now() - cacheEdificios.cuando < 600000) return cacheEdificios.lista;
+  const { data, error } = await supabase.from('edificios').select('codigo, nombre, direccion, uso_principal, campus_nombre').order('codigo');
+  if (error) throw errorDe(error, 'No se pudo buscar');
+  cacheEdificios = { cuando: Date.now(), lista: data as EdificioBuscable[] };
+  return cacheEdificios.lista;
+}
+
 export async function buscarEspacios(texto: string): Promise<ResultadoBusqueda[]> {
   // Se quitan los caracteres que tienen significado en el filtro de la base.
   const t = texto.replace(/[,()%*"\\]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -70,15 +81,18 @@ export async function buscarEspacios(texto: string): Promise<ResultadoBusqueda[]
   const columnas = 'id, edificio_codigo, codigo, nombre, uso, unidad_usuaria, superficie_m2, estado, ocupantes';
   let consultaRecintos = supabase.from('recintos').select(columnas);
   for (const palabra of palabras) consultaRecintos = consultaRecintos.ilike('busqueda', `%${palabra}%`);
-  let [e, r] = await Promise.all([
-    supabase.from('edificios').select('codigo, nombre, direccion, uso_principal')
-      .or(`codigo.ilike.${p},nombre.ilike.${p},direccion.ilike.${p}`).order('codigo').limit(10),
-    consultaRecintos.order('codigo').limit(60),
-  ]);
+  // Los edificios son pocos: se leen una vez y se filtran aquí, sin tildes y con las palabras en cualquier orden
+  // («duran» encuentra «TERESA DURÁN»; «clotario csf» encuentra «CSF16 · Clotario Blest»).
+  const [todos, r0] = await Promise.all([edificiosParaBuscar(), consultaRecintos.order('codigo').limit(60)]);
+  let r = r0;
+  const e = { error: null as null | { message: string }, data: todos.filter(x => {
+    const texto = normalizarBusqueda([x.codigo, x.nombre, x.direccion, x.uso_principal, x.campus_nombre].filter(Boolean).join(' '));
+    return palabras.every(w => texto.includes(w));
+  }).slice(0, 12) };
   // Si la base aún no tiene la columna de búsqueda (migración 0006 pendiente), se busca como antes: sin ocupantes.
   if (r.error && /busqueda/.test(r.error.message)) {
     r = await supabase.from('recintos').select(columnas)
-      .or(`codigo.ilike.${p},nombre.ilike.${p},uso.ilike.${p},unidad_usuaria.ilike.${p}`).order('codigo').limit(60);
+      .or(`codigo.ilike.${p},nombre.ilike.${p},uso.ilike.${p},unidad_usuaria.ilike.${p}`).order('codigo').limit(60) as typeof r0;
   }
   if (e.error || r.error) throw errorDe(e.error || r.error, 'No se pudo buscar');
   type FilaEdificio = { codigo: string; nombre: string | null; direccion: string | null; uso_principal: string | null };

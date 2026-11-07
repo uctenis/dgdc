@@ -539,7 +539,8 @@ export function RecintosPage() {
             <ExploradorEdificio editando={vista === 'plano'} onEditar={abrir => ir({ vista: abrir ? 'plano' : 'general' })} edificioCodigo={edificio} nombreEdificio={nombreEdificio(edificio)} pisos={pisos} recintos={activos} documentos={documentos} todosLosRecintos={recintos}
               destacado={resaltado} edificiosCampus={edificios.filter(e => enBase.includes(e)).map(e => ({ codigo: e, etiqueta: etiqueta(e) }))}
               onIrEdificio={e => { ir({ edificio: e }); setResaltado(null); }} onVerFicha={r => setFichaRecinto(r)} onEditarRecinto={r => setRecintoEditando(r)}
-              onVerDocumentos={() => ir({ vista: 'documentos' })} onRecargar={cargar} />
+              onVerDocumentos={() => ir({ vista: 'documentos' })}
+              onVerPersonas={() => analizar({ f: { edificio: [edificio] }, g: 'tipo', m: 'ocupantes', cf: 'piso', cc: 'tipo', vp: true })} onRecargar={cargar} />
           )}
 
           {vista === 'documentos' && (

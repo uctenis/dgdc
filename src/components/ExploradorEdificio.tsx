@@ -46,6 +46,8 @@ interface Props {
   onRecargar: () => Promise<void> | void;
   /** Herramientas de dibujo abiertas (va en la dirección de la página, ?vista=plano, para que «atrás» las cierre). */
   editando: boolean;
+  /** Abre la lista de personas del edificio (Análisis, tarjeta «Personas»). */
+  onVerPersonas?: () => void;
   onEditar: (abrir: boolean) => void;
 }
 
@@ -56,7 +58,7 @@ interface Props {
  * completas del plano interactivo.
  */
 export function ExploradorEdificio({
-  edificioCodigo, nombreEdificio, pisos, recintos, documentos, todosLosRecintos, destacado, edificiosCampus, onIrEdificio, onVerFicha, onEditarRecinto, onVerDocumentos, onRecargar, editando, onEditar,
+  edificioCodigo, nombreEdificio, pisos, recintos, documentos, todosLosRecintos, destacado, edificiosCampus, onIrEdificio, onVerFicha, onEditarRecinto, onVerDocumentos, onRecargar, editando, onEditar, onVerPersonas,
 }: Props) {
   const pisosOrdenados = useMemo(() => [...pisos].sort((a, b) => a.orden - b.orden), [pisos]);
   // Láminas con copia para el visor: la vigente de cada piso y sus versiones anteriores (la historia del piso).
@@ -178,7 +180,7 @@ export function ExploradorEdificio({
           : <Indicador icono={Building2} titulo="Arrendada u otra" valor={m2(hoy.noPropia.util)} detalle={`${hoy.noPropia.recintos} recinto(s) no propios`} />}
         <Indicador icono={IconoMapa} titulo="Pisos con plano" valor={`${pisosConPlano} de ${pisos.length}`} detalle="láminas en el visor" tono={pisosConPlano < pisos.length ? 'aviso' : 'ok'} />
         {hoy.porVenir.recintos > 0 && <Indicador icono={Building2} titulo="Arrendada u otra" valor={m2(hoy.noPropia.util)} detalle={`${hoy.noPropia.recintos} recinto(s) no propios`} />}
-        {!hoy.porVenir.recintos && <Indicador icono={Users} titulo="Ocupantes" valor={recintos.reduce((s, r) => s + (r.ocupantes?.length || 0), 0).toLocaleString('es-CL')} detalle="personas o unidades" />}
+        {!hoy.porVenir.recintos && <Indicador icono={Users} titulo="Ocupantes" valor={recintos.reduce((s, r) => s + (r.ocupantes?.length || 0), 0).toLocaleString('es-CL')} detalle={onVerPersonas ? 'clic para ver quiénes' : 'personas o unidades'} onClick={onVerPersonas} />}
         <Indicador icono={AlertTriangle} titulo="Por revisar" valor={porRevisar.toLocaleString('es-CL')} detalle={porRevisar ? (verPorRevisar ? 'clic para ocultar la lista' : 'clic para ver cuáles') : 'sin pendientes'} tono={porRevisar ? 'aviso' : 'ok'}
           onClick={porRevisar ? () => setVerPorRevisar(v => !v) : undefined} activo={verPorRevisar} />
       </div>

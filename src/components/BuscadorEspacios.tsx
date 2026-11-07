@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Search, Loader2, Building2, DoorOpen, X, UserRound } from 'lucide-react';
 import { getCampusList, etiquetaEdificio } from '../data/campusData';
-import { buscarEspacios, type ResultadoBusqueda } from '../services/recintos';
+import { buscarEspacios, normalizarBusqueda, type ResultadoBusqueda } from '../services/recintos';
 import { comoTitulo } from '../utils/texto';
 
 /**
@@ -27,10 +27,10 @@ export function BuscadorEspacios({ onElegir }: { onElegir: (edificio: string, re
       try {
         const remotos = await buscarEspacios(t);
         // Edificios de la configuración cuyo nombre coincide aunque aún no tengan ficha en la base.
-        const n = t.toLowerCase();
+        const palabras = normalizarBusqueda(t).split(/\s+/).filter(Boolean);
         const yaEstan = new Set(remotos.filter(r => r.tipo === 'edificio').map(r => r.codigo));
         const locales: ResultadoBusqueda[] = getCampusList().flatMap(c => c.edificios)
-          .filter(e => !yaEstan.has(e) && etiquetaEdificio(e).toLowerCase().includes(n))
+          .filter(e => !yaEstan.has(e) && palabras.every(w => normalizarBusqueda(etiquetaEdificio(e)).includes(w)))
           .slice(0, 8)
           .map(e => ({ tipo: 'edificio', edificio_codigo: e, codigo: e, nombre: etiquetaEdificio(e).replace(/^\S+\s*·\s*/, ''), detalle: 'configuración' }));
         if (vigente) { setResultados([...remotos.filter(r => r.tipo === 'edificio'), ...locales, ...remotos.filter(r => r.tipo === 'recinto')]); setError(''); }

@@ -201,6 +201,47 @@ export function buscarRepetidos(filas: FilaAnalisis[], criterio: CriterioRepetid
     .sort((a, b) => b.recintos.length - a.recintos.length || b.util - a.util || a.clave.localeCompare(b.clave, 'es'));
 }
 
+// ── Personas ──
+
+export interface Persona {
+  nombre: string;
+  cargos: string[];
+  unidades: string[];
+  recintos: FilaAnalisis[];
+  edificios: string[];
+  campus: string[];
+  util: number;
+}
+
+/**
+ * Cada persona registrada como ocupante, una sola vez aunque esté en varios recintos (se reconoce por su nombre sin
+ * tildes y sin importar el orden de las palabras), con sus cargos, unidades, edificios y recintos.
+ */
+export function listarPersonas(filas: FilaAnalisis[]): Persona[] {
+  const mapa = new Map<string, { nombres: Map<string, number>; cargos: Set<string>; unidades: Set<string>; recintos: Map<string, FilaAnalisis> }>();
+  for (const f of filas) for (const o of f.ocupantes) {
+    const clave = clavePersona(o.nombre || '');
+    if (!clave) continue;
+    const g = mapa.get(clave) || { nombres: new Map(), cargos: new Set<string>(), unidades: new Set<string>(), recintos: new Map() };
+    const nombre = o.nombre.trim();
+    g.nombres.set(nombre, (g.nombres.get(nombre) || 0) + 1);
+    if (o.cargo?.trim()) g.cargos.add(o.cargo.trim());
+    const unidad = o.unidad?.trim() || (f.unidades.length === 1 ? f.unidades[0] : '');
+    if (unidad) g.unidades.add(unidad);
+    g.recintos.set(f.id, f);
+    mapa.set(clave, g);
+  }
+  return [...mapa.values()].map(g => {
+    const recintos = [...g.recintos.values()].sort((a, b) => a.codigo.localeCompare(b.codigo, 'es', { numeric: true }));
+    return {
+      nombre: [...g.nombres.entries()].sort((a, b) => b[1] - a[1])[0][0],
+      cargos: [...g.cargos], unidades: [...g.unidades], recintos,
+      edificios: [...new Set(recintos.map(f => f.edificio))], campus: [...new Set(recintos.map(f => f.campus))],
+      util: recintos.reduce((x, f) => x + f.util, 0),
+    };
+  }).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+}
+
 const numero = (n: number, decimales = 0) => n.toLocaleString('es-CL', { maximumFractionDigits: decimales });
 export const formatoM2 = (n: number) => `${numero(n, n < 100 ? 1 : 0)} m²`;
 export function formatoMedida(n: number, m: Medida): string {
