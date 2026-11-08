@@ -2402,7 +2402,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     <h4 className="font-bold text-slate-900 text-sm">Catálogo de Campus UCT y Edificios</h4>
                     <p className="text-[11px] text-slate-500">
                       Agregue o quite edificios y registre la dirección de cada sede — se usa para completar Bases y Contratos automáticamente.
-                      {' '}Es el mismo catálogo del Gestor de Espacios (Configuración → Campus y edificios): lo que se cambie en uno se ve en el otro.
+                      {' '}Es el mismo catálogo del Gestor de Espacios. Los nombres de los edificios se corrigen allá (Configuración → Campus y edificios), que es la fuente oficial.
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">

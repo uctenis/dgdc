@@ -71,9 +71,10 @@ export function RecintosPage() {
   const [verComunes, setVerComunes] = useState(false);
   const edificio = parametros.get('edificio') || '';
   // Nombre del edificio: el del catastro y, si no tiene, el de la configuración de campus.
-  // Un solo nombre para cada edificio en todo el sistema: el de la configuración compartida (el mismo que muestran
-  // las licitaciones); el del catastro solo si la configuración no tiene uno.
-  const nombreEdificio = (e: string) => obtenerInfoEdificio(e)?.nombre || nombresCatastro[e] || '';
+  // Un solo nombre para cada edificio en todo el sistema: el de la ficha del Gestor (fuente oficial, «Cabaña 1»), y si
+  // no tiene, el de la configuración compartida. La configuración se pone al día con la ficha (ver más abajo), así las
+  // licitaciones muestran el mismo nombre y no el de la carpeta de Drive («CSN11 (cabaña S)»).
+  const nombreEdificio = (e: string) => nombresCatastro[e] || obtenerInfoEdificio(e)?.nombre || '';
   // Espacio común del catastro (categoría 3: camping, accesos, áreas verdes) o zona exterior de la configuración.
   const esEspacioComun = (e: string) => categorias[e] === '3' || !!obtenerInfoEdificio(e)?.esExterior;
   const etiqueta = (e: string) => (nombreEdificio(e) ? `${e} · ${nombreEdificio(e)}` : etiquetaEdificio(e));
@@ -118,8 +119,8 @@ export function RecintosPage() {
   const [moviendo, setMoviendo] = useState<{ origen: Recinto; ocupante: Ocupante } | null>(null);
   const [avisoCambio, setAvisoCambio] = useState('');
 
-  // Los edificios que en la configuración compartida no tienen nombre toman el del catastro, para que las licitaciones
-  // los muestren igual que el Gestor (solo el administrador publica la configuración).
+  // La configuración compartida toma el nombre de la ficha de cada edificio (si no tenía o era distinto), para que las
+  // licitaciones lo muestren igual que el Gestor (solo el administrador publica la configuración).
   const { isAdmin } = useAuth();
   useEffect(() => {
     if (!isAdmin || !Object.keys(nombresCatastro).length) return;
@@ -127,7 +128,8 @@ export function RecintosPage() {
     const nueva = getCampusList().map(c => {
       const info = { ...(c.edificiosInfo || {}) };
       for (const e of c.edificios) {
-        if (!info[e]?.nombre?.trim() && nombresCatastro[e]?.trim()) { info[e] = { ...(info[e] || {}), nombre: comoTitulo(nombresCatastro[e]) }; cambio = true; }
+        const oficial = nombresCatastro[e]?.trim() ? comoTitulo(nombresCatastro[e]) : '';
+        if (oficial && (info[e]?.nombre || '').trim() !== oficial) { info[e] = { ...(info[e] || {}), nombre: oficial }; cambio = true; }
       }
       return { ...c, edificiosInfo: info };
     });
