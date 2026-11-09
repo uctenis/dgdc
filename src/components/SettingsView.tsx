@@ -61,6 +61,7 @@ import {
 import { formatoMonedaCLP } from '../services/evaluationEngine';
 import { ANIO_CARTERA_INICIAL, presupuestoDelAnio } from '../utils/carteraAnual';
 import { uploadFirmaImagen } from '../services/storageService';
+import { PanelUnificacion } from './PanelUnificacion';
 import { updateUserProfile, migrarSiglaCampus } from '../services/firestoreService';
 import {
   getPlantillaBasesPorFamilia,
@@ -2839,6 +2840,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             {/* TAB 8: RESPALDOS Y SISTEMA */}
             {activeTab === 'respaldos' && (
               <div className="space-y-6 text-xs">
+                {isAdmin && <PanelUnificacion />}
                 
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
                   <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">

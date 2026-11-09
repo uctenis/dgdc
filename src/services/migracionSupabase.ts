@@ -1,9 +1,17 @@
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, type DocumentData } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { supabase, SUPABASE_CONFIGURADO } from '../lib/supabase';
 import { SYSTEM_ADMIN_EMAIL } from '../lib/adminSistema';
 
+// ═══════════════════════════════════════════════════════════════════
+// UNIFICACIÓN EN SUPABASE · ETAPA 1: COPIA COMPLETA Y VERIFICABLE
+// Firestore sigue siendo la fuente. El administrador copia todo a las tablas de Supabase (migraciones 0011 y 0014):
+// sola una vez al día al entrar, o a mano desde Configuración › Unificación, donde además se comparan los conteos.
+// Es idempotente (upsert por id): repetirla no duplica nada.
+// ═══════════════════════════════════════════════════════════════════
+
 const CLAVE_MIGRACION_STORAGE = 'dgdc:migracion_firestore_supabase_v1';
+const ahora = () => new Date().toISOString();
 
 /**
  * Fecha en ISO a partir de lo que guarda Firestore (texto, Timestamp o milisegundos). Si no se puede leer, usa la de
@@ -12,26 +20,39 @@ const CLAVE_MIGRACION_STORAGE = 'dgdc:migracion_firestore_supabase_v1';
 function fechaIso(v: unknown): string {
   const t = v as { toDate?: () => Date } | null;
   const fecha = typeof t?.toDate === 'function' ? t.toDate() : typeof v === 'number' || typeof v === 'string' ? new Date(v) : null;
-  return fecha && !Number.isNaN(fecha.getTime()) ? fecha.toISOString() : new Date().toISOString();
+  return fecha && !Number.isNaN(fecha.getTime()) ? fecha.toISOString() : ahora();
+}
+const texto = (v: unknown) => (typeof v === 'string' && v ? v : null);
+
+export interface ConteoTabla { leidos: number; copiados: number; error?: string }
+export interface ResumenMigracionSupabase {
+  fecha: string;
+  completa: boolean;
+  /** Por tabla de Supabase: documentos leídos en Firestore y filas copiadas. */
+  porTabla: Record<string, ConteoTabla>;
 }
 
-export interface ResumenMigracionSupabase {
-  configuracion: number;
-  proveedores: number;
-  proyectos: number;
-  licitaciones: number;
-  cotizaciones: number;
-  subcolecciones: number;
-  inscripciones: number;
-  fecha: string;
+/** Sube filas en tandas y anota el resultado en el resumen. */
+async function subir(resumen: ResumenMigracionSupabase, tabla: string, filas: Record<string, unknown>[], onConflict: string, opciones: { tanda?: number; soloNuevas?: boolean; clave?: string } = {}) {
+  const clave = opciones.clave || tabla;
+  const c = (resumen.porTabla[clave] ||= { leidos: 0, copiados: 0 });
+  c.leidos += filas.length;
+  const tanda = opciones.tanda || 400;
+  for (let i = 0; i < filas.length; i += tanda) {
+    const parte = filas.slice(i, i + tanda);
+    const { error } = await supabase.from(tabla).upsert(parte, { onConflict, ignoreDuplicates: !!opciones.soloNuevas });
+    if (error) c.error = error.message;
+    else c.copiados += parte.length;
+  }
 }
+
+const docs = async (...ruta: [string, ...string[]]) => (await getDocs(collection(db, ...ruta)).catch(() => null))?.docs || [];
 
 /**
- * Sincroniza automáticamente en segundo plano las colecciones de Firestore hacia las tablas
- * relacionales de Supabase (`0011_unificacion_supabase.sql`) cuando ingresa el administrador.
- * Es idempotente (`upsert`): se puede ejecutar múltiples veces sin duplicar registros.
+ * Copia Firestore → Supabase. Sin `forzar`, corre como mucho una vez al día y solo para el administrador del sistema;
+ * con `forzar` (botón de Configuración) incluye además el historial de auditoría y las fotos del libro de obra.
  */
-export async function sincronizarFirestoreASupabase(forzar = false): Promise<ResumenMigracionSupabase | null> {
+export async function sincronizarFirestoreASupabase(forzar = false, onAvance?: (texto: string) => void): Promise<ResumenMigracionSupabase | null> {
   if (!SUPABASE_CONFIGURADO) return null;
   const email = (auth.currentUser?.email || '').toLowerCase();
   if (email !== SYSTEM_ADMIN_EMAIL) return null;
@@ -39,232 +60,240 @@ export async function sincronizarFirestoreASupabase(forzar = false): Promise<Res
   if (!forzar) {
     try {
       const previo = localStorage.getItem(CLAVE_MIGRACION_STORAGE);
-      if (previo) {
-        const datos = JSON.parse(previo) as { fecha?: string };
-        // Una vez al día basta (las escrituras en vivo mantienen la copia entre medio). Cada pasada lee todas las
-        // colecciones y subcolecciones de Firestore, y hacerlo cada hora puede agotar la cuota diaria de lecturas.
-        if (datos.fecha && Date.now() - new Date(datos.fecha).getTime() < 24 * 3600_000) {
-          return null;
-        }
-      }
+      const datos = previo ? (JSON.parse(previo) as { fecha?: string }) : null;
+      // Una vez al día basta (las escrituras en vivo mantienen la copia entre medio): cada pasada lee todas las
+      // colecciones de Firestore y hacerlo seguido puede agotar la cuota diaria de lecturas.
+      if (datos?.fecha && Date.now() - new Date(datos.fecha).getTime() < 24 * 3600_000) return null;
     } catch { /* continuar */ }
   }
 
-  // Verificar primero si la tabla `public.configuracion` de la migración 0011 ya está creada en Supabase
+  // Sin las tablas de la migración 0011 no hay dónde copiar.
   const { error: probeError } = await supabase.from('configuracion').select('id').limit(1);
-  if (probeError) {
-    // La migración 0011 aún no se ha aplicado en el servidor Supabase
-    return null;
-  }
+  if (probeError) return null;
 
-  const resumen: ResumenMigracionSupabase = {
-    configuracion: 0,
-    proveedores: 0,
-    proyectos: 0,
-    licitaciones: 0,
-    cotizaciones: 0,
-    subcolecciones: 0,
-    inscripciones: 0,
-    fecha: new Date().toISOString(),
-  };
+  const resumen: ResumenMigracionSupabase = { fecha: ahora(), completa: forzar, porTabla: {} };
+  const avance = (t: string) => onAvance?.(t);
 
   try {
     // 1. Configuración compartida
-    const configSnap = await getDocs(collection(db, 'configuracion'));
-    if (!configSnap.empty) {
-      const filas = configSnap.docs.map(d => ({
-        id: d.id,
-        valor: String(d.data().valor ?? ''),
-        actualizado_por: (d.data().actualizadoPor as string) || email,
-        fecha_actualizacion: new Date().toISOString(),
+    avance('Configuración…');
+    await subir(resumen, 'configuracion', (await docs('configuracion')).map(d => ({
+      id: d.id, valor: String(d.data().valor ?? ''), actualizado_por: texto(d.data().actualizadoPor) || email, fecha_actualizacion: ahora(),
+    })), 'id');
+
+    // 2. Usuarios (perfiles y roles)
+    avance('Usuarios…');
+    await subir(resumen, 'usuarios', (await docs('usuarios')).map(d => {
+      const u = d.data();
+      return {
+        uid: d.id, email: String(u.email || ''), role: ['admin', 'responsable', 'proveedor'].includes(u.role) ? u.role : 'responsable',
+        display_name: texto(u.displayName), proveedor_id: texto(u.proveedorId), token_invitacion: texto(u.tokenInvitacion),
+        fecha_registro: fechaIso(u.fechaRegistro), verificado: u.verificado ?? true, datos: { ...u, uid: d.id }, actualizado_en: ahora(),
+      };
+    }), 'uid');
+
+    // 3. Proveedores, evaluaciones de desempeño e historial de obras
+    avance('Proveedores…');
+    const proveedores = await docs('proveedores');
+    await subir(resumen, 'proveedores', proveedores.map(d => {
+      const p = d.data();
+      return {
+        id: d.id, rut: String(p.rut || ''), razon_social: String(p.razonSocial || ''), email: texto(p.email),
+        estado: String(p.estado || 'Activo'), fecha_registro: fechaIso(p.fechaRegistro), datos: p, actualizado_en: ahora(),
+      };
+    }), 'id');
+    const evaluaciones: Record<string, unknown>[] = [];
+    const historial: Record<string, unknown>[] = [];
+    for (const p of proveedores) {
+      const [ev, hi] = await Promise.all([docs('proveedores', p.id, 'evaluacionesDesempeno'), docs('proveedores', p.id, 'historialObras')]);
+      ev.forEach(e => evaluaciones.push({
+        id: e.id, proveedor_id: p.id, licitacion_id: texto(e.data().licitacionId), fecha: String(e.data().fecha || ''),
+        puntaje_final: Number(e.data().puntajeFinal || 0), datos: e.data(), actualizado_en: ahora(),
       }));
-      const { error } = await supabase.from('configuracion').upsert(filas, { onConflict: 'id' });
-      if (!error) resumen.configuracion = filas.length;
+      hi.forEach(h => historial.push({
+        id: h.id, proveedor_id: p.id, licitacion_id: String(h.data().licitacionId || h.id), fecha: texto(h.data().fecha), datos: h.data(),
+      }));
     }
+    await subir(resumen, 'evaluaciones_desempeno', evaluaciones, 'id');
+    await subir(resumen, 'historial_obras_proveedor', historial, 'proveedor_id,id');
 
-    // 2. Proveedores + evaluaciones de desempeño + historial de obras
-    const provSnap = await getDocs(collection(db, 'proveedores'));
-    if (!provSnap.empty) {
-      const filasProv = provSnap.docs.map(d => {
-        const data = d.data();
-        return {
-          id: d.id,
-          rut: String(data.rut || ''),
-          razon_social: String(data.razonSocial || ''),
-          email: data.email ? String(data.email) : null,
-          estado: String(data.estado || 'Activo'),
-          fecha_registro: fechaIso(data.fechaRegistro),
-          datos: data,
-          actualizado_en: new Date().toISOString(),
-        };
-      });
-      const { error } = await supabase.from('proveedores').upsert(filasProv, { onConflict: 'id' });
-      if (!error) resumen.proveedores = filasProv.length;
-
-      for (const pDoc of provSnap.docs) {
-        const [evalSnap, histSnap] = await Promise.all([
-          getDocs(collection(db, 'proveedores', pDoc.id, 'evaluacionesDesempeno')).catch(() => null),
-          getDocs(collection(db, 'proveedores', pDoc.id, 'historialObras')).catch(() => null),
-        ]);
-        if (evalSnap && !evalSnap.empty) {
-          const evals = evalSnap.docs.map(e => ({
-            id: e.id,
-            proveedor_id: pDoc.id,
-            licitacion_id: (e.data().licitacionId as string) || null,
-            fecha: String(e.data().fecha || ''),
-            puntaje_final: Number(e.data().puntajeFinal || 0),
-            datos: e.data(),
-          }));
-          await supabase.from('evaluaciones_desempeno').upsert(evals, { onConflict: 'id' });
-        }
-        if (histSnap && !histSnap.empty) {
-          const hists = histSnap.docs.map(h => ({
-            id: h.id,
-            proveedor_id: pDoc.id,
-            licitacion_id: String(h.data().licitacionId || h.id),
-            fecha: (h.data().fecha as string) || null,
-            datos: h.data(),
-          }));
-          await supabase.from('historial_obras_proveedor').upsert(hists, { onConflict: 'proveedor_id,id' });
-        }
-      }
+    // 4. Proyectos de la Cartera y su bitácora
+    avance('Proyectos…');
+    const proyectos = await docs('proyectos');
+    await subir(resumen, 'proyectos', proyectos.map(d => {
+      const p = d.data();
+      return {
+        id: d.id, correlativo: Number(p.correlativo || 1), codigo_proyecto: String(p.codigoProyecto || d.id), nombre: String(p.nombre || ''),
+        anio_presupuesto: p.anioPresupuesto ? Number(p.anioPresupuesto) : null, campus_sigla: texto(p.campusSigla),
+        edificio_sigla: texto(p.edificioSigla), estado: texto(p.estado), gasto_efectivo: Number(p.gastoEfectivo || 0), datos: p, actualizado_en: ahora(),
+      };
+    }), 'id');
+    const bitacoras: Record<string, unknown>[] = [];
+    for (const p of proyectos) {
+      (await docs('proyectos', p.id, 'bitacoraDesarrollo')).forEach(b => bitacoras.push({
+        proyecto_id: p.id, tipo: 'bitacoraDesarrollo', id: b.id, fecha: texto(b.data().fecha), estado: texto(b.data().estado), datos: b.data(), actualizado_en: ahora(),
+      }));
     }
+    await subir(resumen, 'proyecto_subcolecciones', bitacoras, 'proyecto_id,tipo,id');
 
-    // 3. Proyectos de la Cartera
-    const proySnap = await getDocs(collection(db, 'proyectos'));
-    if (!proySnap.empty) {
-      const filasProy = proySnap.docs.map(d => {
-        const data = d.data();
-        return {
-          id: d.id,
-          correlativo: Number(data.correlativo || 1),
-          codigo_proyecto: String(data.codigoProyecto || d.id),
-          nombre: String(data.nombre || ''),
-          anio_presupuesto: data.anioPresupuesto ? Number(data.anioPresupuesto) : null,
-          campus_sigla: (data.campusSigla as string) || null,
-          edificio_sigla: (data.edificioSigla as string) || null,
-          estado: (data.estado as string) || null,
-          gasto_efectivo: Number(data.gastoEfectivo || 0),
-          datos: data,
-          actualizado_en: new Date().toISOString(),
-        };
-      });
-      const { error } = await supabase.from('proyectos').upsert(filasProy, { onConflict: 'id' });
-      if (!error) resumen.proyectos = filasProy.length;
-    }
+    // 5. Contadores de correlativos
+    await subir(resumen, 'contadores', (await docs('_counters')).map(d => ({ id: d.id, datos: d.data(), actualizado_en: ahora() })), 'id');
 
-    // 4. Licitaciones y sus subcolecciones
-    const licSnap = await getDocs(collection(db, 'licitaciones'));
-    if (!licSnap.empty) {
-      const filasLic = licSnap.docs.map(d => {
-        const data = d.data();
-        return {
-          id: d.id,
-          proyecto_maestro_id: (data.proyectoMaestroId as string) || null,
-          codigo_proyecto: (data.codigoProyecto as string) || null,
-          nombre_proyecto: String(data.nombreProyecto || ''),
-          estado: String(data.estado || 'Borrador'),
-          proveedor_ganador_id: (data.proveedorAdjudicadoId as string) || (data.proveedorGanadorId as string) || null,
-          limite_ofertas_ms: data.limiteOfertasMs ? Number(data.limiteOfertasMs) : null,
-          datos: data,
-          actualizado_en: new Date().toISOString(),
-        };
-      });
-      const { error } = await supabase.from('licitaciones').upsert(filasLic, { onConflict: 'id' });
-      if (!error) resumen.licitaciones = filasLic.length;
-
-      const tiposSub = [
-        'estadosPago', 'aumentosObra', 'garantias', 'multas',
-        'aclaraciones', 'consultas', 'consultasPublicadas', 'envios',
-        'libroObra', 'bitacoraDesarrollo',
-      ] as const;
-
-      for (const lDoc of licSnap.docs) {
-        // Invitados
-        const invSnap = await getDocs(collection(db, 'licitaciones', lDoc.id, 'invitados')).catch(() => null);
-        if (invSnap && !invSnap.empty) {
-          const filasInv = invSnap.docs.map(i => ({
-            licitacion_id: lDoc.id,
-            proveedor_id: i.id,
-            proveedor_email: (i.data().proveedorEmail as string) || null,
-            proveedor_nombre: (i.data().proveedorNombre as string) || null,
-            token_acceso: (i.data().tokenAcceso as string) || null,
-            estado_propuesta: (i.data().estadoPropuesta as string) || null,
-            datos: i.data(),
-            actualizado_en: new Date().toISOString(),
-          }));
-          await supabase.from('licitacion_invitados').upsert(filasInv, { onConflict: 'licitacion_id,proveedor_id' });
+    // 6. Licitaciones y todo lo que cuelga de ellas
+    avance('Licitaciones…');
+    const licitaciones = await docs('licitaciones');
+    await subir(resumen, 'licitaciones', licitaciones.map(d => {
+      const l = d.data();
+      return {
+        id: d.id, proyecto_maestro_id: texto(l.proyectoMaestroId), codigo_proyecto: texto(l.codigoProyecto), nombre_proyecto: String(l.nombreProyecto || ''),
+        estado: String(l.estado || 'Borrador'), proveedor_ganador_id: texto(l.proveedorAdjudicadoId) || texto(l.proveedorGanadorId),
+        limite_ofertas_ms: l.limiteOfertasMs ? Number(l.limiteOfertasMs) : null, datos: l, actualizado_en: ahora(),
+      };
+    }), 'id');
+    const invitados: Record<string, unknown>[] = [];
+    const tokens: Record<string, unknown>[] = [];
+    const propuestas: Record<string, unknown>[] = [];
+    const subcolecciones: Record<string, unknown>[] = [];
+    const fotos: Record<string, unknown>[] = [];
+    const TIPOS = ['estadosPago', 'aumentosObra', 'garantias', 'multas', 'aclaraciones', 'consultas', 'consultasPublicadas', 'envios', 'libroObra', 'bitacoraDesarrollo', 'control'] as const;
+    let n = 0;
+    for (const l of licitaciones) {
+      avance(`Licitaciones… ${++n} de ${licitaciones.length}`);
+      (await docs('licitaciones', l.id, 'invitados')).forEach(i => {
+        const v = i.data();
+        invitados.push({
+          licitacion_id: l.id, proveedor_id: i.id, proveedor_email: texto(v.proveedorEmail), proveedor_nombre: texto(v.proveedorNombre),
+          token_acceso: texto(v.tokenAcceso), estado_propuesta: texto(v.estadoPropuesta), datos: v, actualizado_en: ahora(),
+        });
+        // Firestore no deja listar «invitaciones» (los tokens): se reconstruyen desde cada invitado.
+        if (texto(v.tokenAcceso)) {
+          tokens.push({
+            token: v.tokenAcceso, licitacion_id: l.id, proveedor_id: i.id,
+            proveedor_email: String(v.proveedorEmail || ''), proveedor_nombre: String(v.proveedorNombre || ''),
+          });
         }
-
-        // Propuestas
-        const propSnap = await getDocs(collection(db, 'licitaciones', lDoc.id, 'propuestas')).catch(() => null);
-        if (propSnap && !propSnap.empty) {
-          const filasProp = propSnap.docs.map(p => ({
-            licitacion_id: lDoc.id,
-            proveedor_id: p.id,
-            estado: (p.data().estado as string) || null,
-            datos: p.data(),
-            actualizado_en: new Date().toISOString(),
-          }));
-          await supabase.from('licitacion_propuestas').upsert(filasProp, { onConflict: 'licitacion_id,proveedor_id' });
-        }
-
-        // Resto de subcolecciones de licitación
-        for (const tipo of tiposSub) {
-          const subSnap = await getDocs(collection(db, 'licitaciones', lDoc.id, tipo)).catch(() => null);
-          if (subSnap && !subSnap.empty) {
-            const filasSub = subSnap.docs.map(s => ({
-              id: s.id,
-              licitacion_id: lDoc.id,
-              tipo,
-              proveedor_id: (s.data().proveedorId as string) || null,
-              numero: s.data().numero !== undefined ? Number(s.data().numero) : null,
-              fecha: (s.data().fecha as string) || (s.data().fechaPregunta as string) || null,
-              estado: (s.data().estado as string) || null,
-              datos: s.data(),
-              actualizado_en: new Date().toISOString(),
+      });
+      (await docs('licitaciones', l.id, 'propuestas')).forEach(p => propuestas.push({
+        licitacion_id: l.id, proveedor_id: p.id, estado: texto(p.data().estado), datos: p.data(), actualizado_en: ahora(),
+      }));
+      for (const tipo of TIPOS) {
+        const lista = await docs('licitaciones', l.id, tipo);
+        lista.forEach(s => {
+          const v: DocumentData = s.data();
+          subcolecciones.push({
+            id: s.id, licitacion_id: l.id, tipo, proveedor_id: texto(v.proveedorId),
+            numero: typeof v.numero === 'number' ? v.numero : v.numero !== undefined && !Number.isNaN(Number(v.numero)) ? Number(v.numero) : null,
+            fecha: texto(v.fecha) || texto(v.fechaPregunta), estado: texto(v.estado), datos: v, actualizado_en: ahora(),
+          });
+        });
+        // Las fotos del libro de obra cuelgan de cada anotación (pesadas: solo en la copia completa).
+        if (tipo === 'libroObra' && forzar) {
+          for (const entrada of lista) {
+            (await docs('licitaciones', l.id, 'libroObra', entrada.id, 'fotos')).forEach(f => fotos.push({
+              id: `${entrada.id}/${f.id}`, licitacion_id: l.id, tipo: 'libroObraFotos', fecha: texto(f.data().fecha), datos: { ...f.data(), entradaId: entrada.id }, actualizado_en: ahora(),
             }));
-            const { error: subErr } = await supabase.from('licitacion_subcolecciones').upsert(filasSub, { onConflict: 'licitacion_id,tipo,id' });
-            if (!subErr) resumen.subcolecciones += filasSub.length;
           }
         }
       }
     }
+    await subir(resumen, 'licitacion_invitados', invitados, 'licitacion_id,proveedor_id');
+    await subir(resumen, 'invitaciones_acceso', tokens, 'token');
+    await subir(resumen, 'licitacion_propuestas', propuestas, 'licitacion_id,proveedor_id');
+    await subir(resumen, 'licitacion_subcolecciones', subcolecciones, 'licitacion_id,tipo,id');
+    if (forzar) await subir(resumen, 'licitacion_subcolecciones', fotos, 'licitacion_id,tipo,id', { tanda: 20, clave: 'licitacion_subcolecciones:libroObraFotos' });
 
-    // 5. Cotizaciones
-    const cotSnap = await getDocs(collection(db, 'cotizaciones'));
-    if (!cotSnap.empty) {
-      const filasCot = cotSnap.docs.map(d => ({
-        id: d.id,
-        licitacion_id: String(d.data().licitacionId || ''),
-        proveedor_id: String(d.data().proveedorId || ''),
-        monto_total: Number(d.data().montoTotal || 0),
-        fecha_carga: (d.data().fechaCarga as string) || null,
-        datos: d.data(),
-        actualizado_en: new Date().toISOString(),
-      }));
-      const { error } = await supabase.from('cotizaciones').upsert(filasCot, { onConflict: 'id' });
-      if (!error) resumen.cotizaciones = filasCot.length;
-    }
+    // 7. Cotizaciones
+    avance('Cotizaciones…');
+    await subir(resumen, 'cotizaciones', (await docs('cotizaciones')).map(d => {
+      const c = d.data();
+      return {
+        id: d.id, licitacion_id: String(c.licitacionId || ''), proveedor_id: String(c.proveedorId || ''), monto_total: Number(c.montoTotal || 0),
+        fecha_carga: texto(c.fechaCarga), datos: c, actualizado_en: ahora(),
+      };
+    }), 'id');
 
-    // 6. Inscripciones de proveedores
-    const inscSnap = await getDocs(collection(db, 'inscripcionesProveedores'));
-    if (!inscSnap.empty) {
-      const filasInsc = inscSnap.docs.map(d => ({
-        codigo: d.id,
-        estado: String(d.data().estado || 'Invitada'),
-        datos: d.data(),
-        actualizado_en: new Date().toISOString(),
-      }));
-      const { error } = await supabase.from('inscripciones_proveedores').upsert(filasInsc, { onConflict: 'codigo' });
-      if (!error) resumen.inscripciones = filasInsc.length;
+    // 8. Inscripciones de proveedores
+    await subir(resumen, 'inscripciones_proveedores', (await docs('inscripcionesProveedores')).map(d => ({
+      codigo: d.id, estado: String(d.data().estado || 'Invitada'), datos: d.data(), actualizado_en: ahora(),
+    })), 'codigo');
+
+    // 9. Registro de archivos (el contenido se copia aparte, con copiarContenidoArchivos). No se envía «ruta», para no
+    //    borrar la de los archivos ya copiados.
+    avance('Archivos…');
+    await subir(resumen, 'archivos', (await docs('archivos')).map(d => {
+      const a = d.data();
+      return {
+        id: d.id, nombre: String(a.nombre || d.id), tipo: texto(a.tipo), tamano: Number(a.tamano || 0),
+        acceso: ['interno', 'invitados', 'oferta', 'inscripcion'].includes(a.acceso) ? a.acceso : 'interno',
+        licitacion_id: texto(a.licitacionId), proveedor_id: texto(a.proveedorId), inscripcion: texto(a.inscripcion),
+        subido_por: texto(a.subidoPor), fecha: texto(a.fecha), datos: a,
+      };
+    }), 'id');
+
+    // 10. Historial de auditoría (solo en la copia completa: puede ser largo)
+    if (forzar) {
+      avance('Historial de auditoría…');
+      await subir(resumen, 'auditoria', (await docs('auditoria')).map(d => {
+        const a = d.data();
+        return {
+          origen_id: d.id, fecha: fechaIso(a.fecha), usuario: String(a.usuario || 'desconocido'), accion: String(a.accion || ''),
+          entidad: String(a.entidad || ''), entidad_id: String(a.entidadId || ''), nombre: texto(a.nombre), licitacion_id: texto(a.licitacionId),
+          cambios: a.cambios ?? null, detalle: texto(a.detalle),
+        };
+      }), 'origen_id', { soloNuevas: true });
     }
 
     localStorage.setItem(CLAVE_MIGRACION_STORAGE, JSON.stringify(resumen));
+    avance('Listo');
     return resumen;
   } catch (err) {
     console.warn('Error parcial sincronizando Firestore hacia Supabase:', err);
-    return null;
+    resumen.porTabla['(error general)'] = { leidos: 0, copiados: 0, error: err instanceof Error ? err.message : String(err) };
+    return resumen;
   }
 }
 
+/** Último resumen de copia guardado en este navegador (para mostrarlo en Configuración). */
+export function ultimoResumenCopia(): ResumenMigracionSupabase | null {
+  try {
+    const r = JSON.parse(localStorage.getItem(CLAVE_MIGRACION_STORAGE) || 'null') as ResumenMigracionSupabase | null;
+    return r?.porTabla ? r : null;
+  } catch { return null; }
+}
+
+/** Registros por tabla en Supabase (función conteo_unificacion de la migración 0014: solo números). */
+export async function conteoSupabase(): Promise<Record<string, number>> {
+  const { data, error } = await supabase.rpc('conteo_unificacion');
+  if (error) throw new Error(`No se pudieron contar los registros en Supabase (¿falta ejecutar la migración 0014?): ${error.message}`);
+  return Object.fromEntries((data as { tabla: string; registros: number }[]).map(f => [f.tabla, Number(f.registros)]));
+}
+
+/**
+ * Copia el contenido de los archivos guardados en Firestore (pedazos en base64) al almacenamiento «archivos-sistema»
+ * de Supabase, con el mismo id, y anota la ruta. Solo los que aún no tienen ruta: se puede interrumpir y retomar.
+ */
+export async function copiarContenidoArchivos(onAvance?: (hechos: number, total: number, nombre: string) => void): Promise<{ copiados: number; errores: string[] }> {
+  const { data, error } = await supabase.from('archivos').select('id, nombre, tipo').is('ruta', null);
+  if (error) throw new Error(`No se pudo leer el registro de archivos: ${error.message}`);
+  const pendientes = data as { id: string; nombre: string; tipo: string | null }[];
+  const errores: string[] = [];
+  let copiados = 0;
+  for (const [i, a] of pendientes.entries()) {
+    onAvance?.(i, pendientes.length, a.nombre);
+    try {
+      const partes = (await docs('archivos', a.id, 'partes')).map(p => p.data() as { n: number; datos: string }).sort((x, y) => x.n - y.n);
+      if (!partes.length) throw new Error('sin contenido en Firestore');
+      const bytes = partes.map(p => Uint8Array.from(atob(p.datos), ch => ch.charCodeAt(0)));
+      const blob = new Blob(bytes, { type: a.tipo || 'application/octet-stream' });
+      const subida = await supabase.storage.from('archivos-sistema').upload(a.id, blob, { upsert: true, contentType: a.tipo || 'application/octet-stream' });
+      if (subida.error) throw new Error(subida.error.message);
+      const { error: e2 } = await supabase.from('archivos').update({ ruta: a.id }).eq('id', a.id);
+      if (e2) throw new Error(e2.message);
+      copiados++;
+    } catch (e) {
+      errores.push(`${a.nombre}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  onAvance?.(pendientes.length, pendientes.length, '');
+  return { copiados, errores };
+}
