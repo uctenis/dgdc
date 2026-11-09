@@ -72,6 +72,16 @@ async function edificiosParaBuscar(): Promise<EdificioBuscable[]> {
   return cacheEdificios.lista;
 }
 
+let cacheValores: { cuando: number; filas: Pick<Recinto, 'unidad_usuaria' | 'ocupantes'>[] } | null = null;
+/** Unidad y ocupantes de todos los recintos vigentes: base del autocompletado de unidades y personas. */
+export async function valoresParaAutocompletar(): Promise<Pick<Recinto, 'unidad_usuaria' | 'ocupantes'>[]> {
+  if (cacheValores && Date.now() - cacheValores.cuando < 600000) return cacheValores.filas;
+  const { data, error } = await supabase.from('recintos').select('unidad_usuaria, ocupantes').neq('estado', 'Eliminado');
+  if (error) throw errorDe(error, 'No se pudieron leer las unidades');
+  cacheValores = { cuando: Date.now(), filas: data as Pick<Recinto, 'unidad_usuaria' | 'ocupantes'>[] };
+  return cacheValores.filas;
+}
+
 export async function buscarEspacios(texto: string): Promise<ResultadoBusqueda[]> {
   // Se quitan los caracteres que tienen significado en el filtro de la base.
   const t = texto.replace(/[,()%*"\\]/g, ' ').replace(/\s+/g, ' ').trim();

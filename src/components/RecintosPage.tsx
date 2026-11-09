@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Building2, Layers, Plus, Pencil, Trash2, History, FileSpreadsheet, FileText, Loader2, AlertTriangle, X, ExternalLink, Copy, DoorOpen, ChevronRight, ChevronDown, Trees, LayoutGrid, Table2, ArrowRightLeft, Search, Ruler, Download, ClipboardCheck, BarChart3,
+  Building2, Layers, Plus, Pencil, Trash2, History, FileSpreadsheet, FileText, Loader2, AlertTriangle, X, ExternalLink, Copy, DoorOpen, ChevronRight, ChevronDown, Trees, LayoutGrid, Table2, ArrowRightLeft, Search, Ruler, Sparkles, Download, ClipboardCheck, BarChart3,
 } from 'lucide-react';
 import { getCampusList, saveCampusList, obtenerEdificiosDeCampus, etiquetaEdificio, obtenerInfoEdificio } from '../data/campusData';
 import { useAuth } from '../context/AuthContext';
 import { SUPABASE_CONFIGURADO } from '../lib/supabase';
 import {
   listarPisos, listarEdificiosConDatos, obtenerFichaEdificio, listarUsos, guardarPiso, eliminarPiso, listarRecintos, guardarRecinto, eliminarRecinto, historialRecinto,
-  listarDocumentos, registrarDocumento, listarRecintosDeCampus, separarUnidades, abrirArchivoDocumento,
+  listarDocumentos, registrarDocumento, listarRecintosDeCampus, separarUnidades, abrirArchivoDocumento, valoresParaAutocompletar,
 } from '../services/recintos';
 import {
   ESTADOS_RECINTO, TENENCIAS, MOTIVOS_ALTA, MOTIVOS_BAJA, TIPOS_DOCUMENTO, ESPECIALIDADES, FORMATOS_DOCUMENTO,
@@ -21,6 +21,8 @@ import { SubirLaminasCampus } from './SubirLaminasCampus';
 import { RevisionCampus } from './RevisionCampus';
 import { MoverPersonaModal } from './MoverPersonaModal';
 import { CubicacionEdificio } from './CubicacionEdificio';
+import { CampoAutocompletar, type OpcionAutocompletar } from './CampoAutocompletar';
+import { catalogoPersonas, catalogoUnidades, sinTildes, unidadSugerida, unidadesDe } from '../utils/sugerencias';
 import { alertasRecinto, observacionesSinNotas } from '../utils/alertasRecinto';
 import { formatoFecha } from '../utils/fechas';
 import { comoTitulo } from '../utils/texto';
@@ -118,6 +120,12 @@ export function RecintosPage() {
   const [importando, setImportando] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [moviendo, setMoviendo] = useState<{ origen: Recinto; ocupante: Ocupante } | null>(null);
+  // Unidades y personas que ya existen (todos los campus): se cargan al abrir el formulario de un recinto.
+  const [valoresBase, setValoresBase] = useState<Pick<Recinto, 'unidad_usuaria' | 'ocupantes'>[]>([]);
+  const editandoAlgo = !!recintoEditando;
+  useEffect(() => { if (editandoAlgo && !valoresBase.length) valoresParaAutocompletar().then(setValoresBase).catch(() => {}); }, [editandoAlgo]); // eslint-disable-line react-hooks/exhaustive-deps
+  const opcionesUnidad = useMemo(() => catalogoUnidades(valoresBase, getConfigEspacios().unidades), [valoresBase]);
+  const opcionesPersona = useMemo(() => catalogoPersonas(valoresBase).map(p => ({ ...p, detalle: [p.cargo, p.unidad].filter(Boolean).join(' · ') })), [valoresBase]);
   const [avisoCambio, setAvisoCambio] = useState('');
 
   // La configuración compartida toma el nombre de la ficha de cada edificio (si no tenía o era distinto), para que las
@@ -669,10 +677,25 @@ export function RecintosPage() {
                 </label>
               </div>
             </details>
-            <label className="font-bold">Unidad usuaria<input list="unidades-oficiales" value={recintoEditando.unidad_usuaria || ''} onChange={e => setRecintoEditando({ ...recintoEditando, unidad_usuaria: e.target.value })} placeholder="Fac. de Ingeniería" className={`mt-1 ${campo} font-normal`} /></label>
-            <datalist id="unidades-oficiales">{getConfigEspacios().unidades.map(u => <option key={u} value={u} />)}</datalist>
+            <div className="font-bold sm:col-span-2">Unidad usuaria
+              <CampoAutocompletar varias valor={recintoEditando.unidad_usuaria || ''} opciones={opcionesUnidad}
+                onCambiar={v => setRecintoEditando({ ...recintoEditando, unidad_usuaria: v })}
+                placeholder="Escriba para buscar entre las unidades existentes (varias: «A / B»)" className={`mt-1 ${campo} font-normal`} />
+              {(() => {
+                // Sugerencia: la unidad que usa la mayoría de los recintos del piso (o del edificio).
+                const s = unidadSugerida({ id: recintoEditando.id || '', piso_id: recintoEditando.piso_id }, recintos);
+                if (!s || unidadesDe(recintoEditando.unidad_usuaria).some(u => sinTildes(u) === sinTildes(s.unidad))) return null;
+                return (
+                  <button type="button" onClick={() => setRecintoEditando({ ...recintoEditando, unidad_usuaria: [...unidadesDe(recintoEditando.unidad_usuaria), s.unidad].join(' / ') })}
+                    className="mt-1 flex items-center gap-1 text-[11px] font-normal text-teal-800 hover:underline text-left">
+                    <Sparkles className="w-3 h-3 shrink-0" /> Sugerencia: <strong>{s.unidad}</strong> ({s.usan} de {s.de} recintos del {s.donde} con unidad)
+                  </button>
+                );
+              })()}
+            </div>
             <label className="font-bold sm:col-span-3">Foto de referencia (enlace de Drive)<input value={recintoEditando.foto_url || ''} onChange={e => setRecintoEditando({ ...recintoEditando, foto_url: e.target.value.trim() })} placeholder="https://drive.google.com/…" className={`mt-1 ${campo} font-normal`} /></label>
-            <EditorOcupantes ocupantes={recintoEditando.ocupantes || []} onChange={ocupantes => setRecintoEditando({ ...recintoEditando, ocupantes })} />
+            <EditorOcupantes ocupantes={recintoEditando.ocupantes || []} onChange={ocupantes => setRecintoEditando({ ...recintoEditando, ocupantes })}
+              personas={opcionesPersona} unidades={opcionesUnidad} />
             <label className="font-bold sm:col-span-3">Observaciones<textarea rows={2} value={recintoEditando.observaciones || ''} onChange={e => setRecintoEditando({ ...recintoEditando, observaciones: e.target.value })} className={`mt-1 ${campo} font-normal`} /></label>
           </div>
           {Object.keys(recintoEditando.atributos || {}).length > 0 && (
@@ -888,7 +911,9 @@ function textoOcupante(o: Ocupante): string {
 }
 
 /** Lista editable de ocupantes de un recinto (personas o unidades, según el catastro). */
-function EditorOcupantes({ ocupantes, onChange }: { ocupantes: Ocupante[]; onChange: (o: Ocupante[]) => void }) {
+function EditorOcupantes({ ocupantes, onChange, personas = [], unidades = [] }: {
+  ocupantes: Ocupante[]; onChange: (o: Ocupante[]) => void; personas?: (OpcionAutocompletar & { cargo?: string | null; unidad?: string | null })[]; unidades?: OpcionAutocompletar[];
+}) {
   const cambiar = (i: number, campo: keyof Ocupante, valor: string) => onChange(ocupantes.map((o, k) => (k === i ? { ...o, [campo]: valor } : o)));
   return (
     <div className="sm:col-span-3 space-y-1.5">
@@ -900,9 +925,14 @@ function EditorOcupantes({ ocupantes, onChange }: { ocupantes: Ocupante[]; onCha
       {ocupantes.length === 0 && <p className="text-slate-400">Sin ocupantes registrados.</p>}
       {ocupantes.map((o, i) => (
         <div key={i} className="grid grid-cols-[1.4fr_1fr_1.2fr_auto] gap-1.5">
-          <input value={o.nombre} onChange={e => cambiar(i, 'nombre', e.target.value)} placeholder="Nombre de la persona o unidad" className={campo} />
+          {/* Al elegir una persona que ya existe, se completan su cargo y unidad (si estaban vacíos). */}
+          <CampoAutocompletar valor={o.nombre} opciones={personas} onCambiar={v => cambiar(i, 'nombre', v)} placeholder="Nombre (escriba para buscar)" className={`w-full ${campo}`}
+            onElegir={p => {
+              const conocida = personas.find(x => x.texto === p.texto);
+              onChange(ocupantes.map((x, k) => (k === i ? { ...x, nombre: p.texto, cargo: x.cargo || conocida?.cargo || '', unidad: x.unidad || conocida?.unidad || '' } : x)));
+            }} />
           <input value={o.cargo || ''} onChange={e => cambiar(i, 'cargo', e.target.value)} placeholder="Cargo" className={campo} />
-          <input value={o.unidad || ''} onChange={e => cambiar(i, 'unidad', e.target.value)} placeholder="Unidad" className={campo} />
+          <CampoAutocompletar valor={o.unidad || ''} opciones={unidades} onCambiar={v => cambiar(i, 'unidad', v)} placeholder="Unidad" className={`w-full ${campo}`} />
           <button type="button" title="Quitar" onClick={() => onChange(ocupantes.filter((_, k) => k !== i))} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md"><Trash2 className="w-3.5 h-3.5" /></button>
         </div>
       ))}
