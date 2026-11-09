@@ -376,3 +376,4 @@ create policy archivos_sistema_uct on storage.objects
   for all to anon, authenticated
   using (bucket_id = 'archivos-sistema' and (public.es_personal_uct() or public.uid_sesion() <> ''))
   with check (bucket_id = 'archivos-sistema' and (public.es_personal_uct() or public.uid_sesion() <> ''));
+

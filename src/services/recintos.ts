@@ -451,6 +451,46 @@ export async function abrirArchivoDocumento(d: Pick<DocumentoEdificio, 'archivo'
   window.open(data.signedUrl, '_blank', 'noopener');
 }
 
+// ── Plano general (o ilustración) de cada campus ──
+// Un solo archivo vigente por campus en «laminas/campus/<SIGLA>/», PDF o imagen. Cada subida usa un nombre nuevo (por
+// la caché del almacenamiento) y borra las anteriores.
+
+export interface PlanoGeneralCampus { ruta: string; esPdf: boolean; url: string }
+
+const TIPOS_PLANO_CAMPUS: Record<string, string> = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' };
+
+/** Plano general vigente del campus (con un enlace temporal para mostrarlo), o null si aún no tiene. */
+export async function obtenerPlanoGeneralCampus(sigla: string): Promise<PlanoGeneralCampus | null> {
+  const carpeta = `campus/${sigla}`;
+  const { data, error } = await supabase.storage.from('laminas').list(carpeta, { sortBy: { column: 'name', order: 'desc' }, limit: 20 });
+  if (error) throw errorDe({ message: error.message }, 'No se pudo leer el plano general del campus');
+  const archivo = (data || []).find(f => /\.(pdf|png|jpe?g|webp)$/i.test(f.name));
+  if (!archivo) return null;
+  const ruta = `${carpeta}/${archivo.name}`;
+  const firmado = await supabase.storage.from('laminas').createSignedUrl(ruta, 3600);
+  if (firmado.error || !firmado.data) throw errorDe({ message: firmado.error?.message }, 'No se pudo abrir el plano general del campus');
+  return { ruta, esPdf: /\.pdf$/i.test(archivo.name), url: firmado.data.signedUrl };
+}
+
+/** Sube (o reemplaza) el plano general o la ilustración del campus: PDF, PNG, JPG o WebP. */
+export async function subirPlanoGeneralCampus(sigla: string, archivo: File): Promise<void> {
+  const ext = (archivo.name.split('.').pop() || '').toLowerCase();
+  const tipo = TIPOS_PLANO_CAMPUS[ext];
+  if (!tipo) throw new Error('El plano general debe ser un PDF o una imagen (PNG, JPG o WebP).');
+  const carpeta = `campus/${sigla}`;
+  const { data: anteriores } = await supabase.storage.from('laminas').list(carpeta, { limit: 100 });
+  const ruta = `${carpeta}/general-${Date.now()}.${ext === 'jpeg' ? 'jpg' : ext}`;
+  const subida = await supabase.storage.from('laminas').upload(ruta, archivo, { upsert: true, contentType: tipo });
+  if (subida.error) {
+    const sinPermisoTipo = /mime|not supported|tipo/i.test(subida.error.message) && tipo !== 'application/pdf';
+    throw errorDe({ message: subida.error.message }, sinPermisoTipo
+      ? 'El almacenamiento aún no acepta imágenes: falta ejecutar la migración 0012 (o suba el plano en PDF)'
+      : 'No se pudo subir el plano general del campus');
+  }
+  const viejos = (anteriores || []).map(f => `${carpeta}/${f.name}`).filter(r => r !== ruta);
+  if (viejos.length) await supabase.storage.from('laminas').remove(viejos).catch(() => {});
+}
+
 export async function descargarLamina(ruta: string): Promise<ArrayBuffer> {
   const { data, error } = await supabase.storage.from('laminas').download(ruta);
   if (error || !data) throw errorDe({ message: error?.message }, 'No se pudo abrir la lámina');

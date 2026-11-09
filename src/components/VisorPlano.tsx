@@ -284,11 +284,36 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
     void predibujar(true);
   }, [pdf, cargando, zonas.length, predibujar]);
 
-  // Zoom con la rueda del mouse, centrado en el puntero.
+  // El plano «se activa» con un clic o un toque (como los mapas incrustados): mientras no esté activo, la rueda y el
+  // dedo desplazan la página. Ctrl + rueda (o pellizcar en el trackpad) hace zoom siempre. En pantalla completa el
+  // plano está siempre activo.
+  const [planoActivo, setPlanoActivo] = useState(false);
+  const activoEfectivo = planoActivo || pantallaCompleta;
+  const activoRef = useRef(activoEfectivo);
+  activoRef.current = activoEfectivo;
+  const [pistaZoom, setPistaZoom] = useState(false);
+  const temporizadorPista = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!planoActivo) return;
+    // Un clic o toque fuera del plano lo desactiva (en el celular no hay «sacar el mouse»).
+    const fuera = (e: PointerEvent) => { if (!marco.current?.contains(e.target as Node)) setPlanoActivo(false); };
+    document.addEventListener('pointerdown', fuera);
+    return () => document.removeEventListener('pointerdown', fuera);
+  }, [planoActivo]);
+  useEffect(() => () => { if (temporizadorPista.current) clearTimeout(temporizadorPista.current); }, []);
+
+  // Zoom con la rueda del mouse, centrado en el puntero (solo con el plano activo o con Ctrl).
   useEffect(() => {
     const m = marco.current;
     if (!m) return;
     const rueda = (e: WheelEvent) => {
+      if (!activoRef.current && !e.ctrlKey && !e.metaKey) {
+        // Se deja pasar a la página y se muestra cómo hacer zoom.
+        setPistaZoom(true);
+        if (temporizadorPista.current) clearTimeout(temporizadorPista.current);
+        temporizadorPista.current = setTimeout(() => setPistaZoom(false), 1600);
+        return;
+      }
       e.preventDefault();
       const r = m.getBoundingClientRect();
       const px = e.clientX - r.left, py = e.clientY - r.top;
@@ -376,6 +401,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
   };
 
   const alPresionar = (e: React.PointerEvent) => {
+    if (!planoActivo) { setPlanoActivo(true); setPistaZoom(false); }
     const vertice = (e.target as Element).getAttribute?.('data-vertice');
     const medio = (e.target as Element).getAttribute?.('data-medio');
     const poliActivo = (e.target as Element).getAttribute?.('data-poligono-activo');
@@ -734,9 +760,23 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
       <div className={`flex gap-2 ${pantallaCompleta ? 'flex-1 min-h-0' : consulta ? 'h-[65vh] sm:h-[calc(100vh-150px)] min-h-[420px] sm:min-h-[600px]' : 'h-[70vh] min-h-[480px]'}`}>
         {/* Plano */}
         <div ref={marco}
-          className={`relative flex-1 min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-[radial-gradient(circle,#e2e8f0_1px,transparent_1px)] [background-size:18px_18px] bg-slate-50 select-none touch-none ${dibujando || modoVarios ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'}`}
-          onPointerDown={alPresionar} onPointerMove={alMover} onPointerUp={alSoltar} onPointerLeave={() => setEncima(null)}
+          className={`relative flex-1 min-w-0 overflow-hidden rounded-xl border bg-[radial-gradient(circle,#e2e8f0_1px,transparent_1px)] [background-size:18px_18px] bg-slate-50 select-none transition-shadow ${activoEfectivo ? 'touch-none border-teal-500 ring-2 ring-teal-500/30' : 'touch-pan-y border-slate-200'} ${dibujando || modoVarios ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'}`}
+          onPointerDown={alPresionar} onPointerMove={alMover} onPointerUp={alSoltar}
+          // El navegador tomó el gesto para desplazar la página (dedo con el plano inactivo): se descarta el arrastre.
+          onPointerCancel={() => { arrastre.current = null; setRectangulo(null); }}
+          onPointerLeave={e => {
+            setEncima(null);
+            // Con mouse, sacar el puntero del plano lo desactiva (en pantallas táctiles este evento llega al soltar el dedo).
+            if (e.pointerType === 'mouse' && !arrastre.current && !arrastreVertice.current && !arrastrePoligono.current) setPlanoActivo(false);
+          }}
           onDoubleClick={e => (dibujando ? void terminarDibujo() : editarVertice(e))}>
+          {pistaZoom && !activoEfectivo && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-900/35 pointer-events-none">
+              <p className="bg-slate-900/90 text-white text-sm font-semibold rounded-xl px-4 py-2.5 shadow-xl text-center">
+                Haga clic en el plano para acercar con la rueda<span className="block text-xs font-normal text-slate-300">o use Ctrl + rueda</span>
+              </p>
+            </div>
+          )}
           <div className="absolute left-0 top-0 origin-top-left" style={{ transform: `translate(${vista.x}px, ${vista.y}px) scale(${vista.k})`, width: tam?.w, height: tam?.h }}>
             <canvas ref={lienzo} className="block bg-white shadow-xl" style={{ width: tam?.w, height: tam?.h }} />
             {tam && (

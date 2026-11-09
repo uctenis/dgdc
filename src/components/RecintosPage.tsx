@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Building2, Layers, Plus, Pencil, Trash2, History, FileSpreadsheet, FileText, Loader2, AlertTriangle, X, ExternalLink, Copy, DoorOpen, ChevronRight, ChevronDown, Trees, LayoutGrid, Table2, ArrowRightLeft, Search, Ruler, Sparkles, Download, ClipboardCheck, BarChart3,
+  Building2, Layers, Plus, Pencil, Trash2, History, FileSpreadsheet, FileText, Loader2, AlertTriangle, X, ExternalLink, Copy, DoorOpen, ChevronRight, ChevronDown, Trees, LayoutGrid, Table2, ArrowRightLeft, Search, Ruler, Sparkles, Download, ClipboardCheck, BarChart3, Home,
 } from 'lucide-react';
 import { getCampusList, saveCampusList, obtenerEdificiosDeCampus, etiquetaEdificio, obtenerInfoEdificio } from '../data/campusData';
 import { useAuth } from '../context/AuthContext';
@@ -21,6 +21,7 @@ import { SubirLaminasCampus } from './SubirLaminasCampus';
 import { RevisionCampus } from './RevisionCampus';
 import { MoverPersonaModal } from './MoverPersonaModal';
 import { CubicacionEdificio } from './CubicacionEdificio';
+import { PlanoGeneralCampus } from './PlanoGeneralCampus';
 import { CampoAutocompletar, type OpcionAutocompletar } from './CampoAutocompletar';
 import { catalogoPersonas, catalogoUnidades, sinTildes, unidadSugerida, unidadesDe } from '../utils/sugerencias';
 import { alertasRecinto, observacionesSinNotas } from '../utils/alertasRecinto';
@@ -290,8 +291,10 @@ export function RecintosPage() {
           <div className="flex-1 min-w-[240px]"><BuscadorEspacios onElegir={irA} /></div>
         </div>
         <nav className="flex flex-wrap items-center gap-1.5" aria-label="Ubicación">
-          <button type="button" onClick={() => { ir({ campus: '' }); setResaltado(null); }}
-            className={`px-2.5 py-1.5 rounded-lg font-bold ${campusSigla ? 'text-teal-800 hover:bg-teal-50' : 'bg-slate-900 text-white'}`}>Todos los campus</button>
+          <button type="button" onClick={() => { ir({ campus: '' }); setResaltado(null); }} title="Inicio: elegir campus" aria-label="Inicio: elegir campus"
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-bold ${campusSigla ? 'text-teal-800 hover:bg-teal-50' : 'bg-slate-900 text-white'}`}>
+            <Home className="w-4 h-4" /><span className={campusSigla ? 'hidden sm:inline' : ''}>Todos los campus</span>
+          </button>
           {campusSigla && <>
             <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
             <select value={campusSigla} onChange={e => { ir({ campus: e.target.value }); setResaltado(null); }} aria-label="Campus"
@@ -343,6 +346,7 @@ export function RecintosPage() {
               </button>
               <SubirLaminasCampus siglaCampus={campusSigla} />
             </div>
+            <PlanoGeneralCampus sigla={campusSigla} nombre={campus.find(c => c.sigla === campusSigla)?.nombre || campusSigla} />
             {edificios.length > 8 && (
               <label className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus-within:ring-2 focus-within:ring-teal-400 max-w-md">
                 <Search className="w-3.5 h-3.5 text-slate-400" />
