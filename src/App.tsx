@@ -545,7 +545,9 @@ export function App() {
           <Route path="/" element={<BloqueaProveedor><InternalLoginPage /></BloqueaProveedor>} />
           <Route path="/login" element={<BloqueaProveedor><InternalLoginPage /></BloqueaProveedor>} />
           {/* Rutas internas */}
-          <Route path="/adjudicaciones" element={<BloqueaProveedor><ProtectedInternalRoute><AdminApp /></ProtectedInternalRoute></BloqueaProveedor>} />
+          <Route path="/proyectos" element={<BloqueaProveedor><ProtectedInternalRoute><AdminApp /></ProtectedInternalRoute></BloqueaProveedor>} />
+          {/* Nombre anterior del módulo: los enlaces y marcadores guardados siguen funcionando. */}
+          <Route path="/adjudicaciones" element={<Navigate to="/proyectos" replace />} />
           {/* Gestor de Espacios: módulo propio, con su entrada y su menú (comparte el inicio de sesión). */}
           <Route path="/espacios" element={<BloqueaProveedor><ProtectedInternalRoute><EspaciosApp /></ProtectedInternalRoute></BloqueaProveedor>} />
           <Route path="/libro-obra" element={<BloqueaProveedor><ProtectedInternalRoute><LibroObraMovilPage /></ProtectedInternalRoute></BloqueaProveedor>} />

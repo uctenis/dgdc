@@ -8,11 +8,11 @@ import fotoCampus from '../assets/inicio-campus.jpg';
 const MODULOS = [
   {
     id: 'adjudicaciones',
-    nombre: 'Licitaciones',
-    titulo: 'Gestor de Adjudicaciones',
-    detalle: 'Cartera de proyectos, procesos de licitación, evaluación de ofertas, actas y seguimiento de obras.',
+    nombre: 'Proyectos',
+    titulo: 'Gestor de Proyectos',
+    detalle: 'Cartera de proyectos, presupuestos, procesos de licitación, evaluación de ofertas, actas y seguimiento de obras.',
     temas: ['Cartera', 'Evaluación', 'Actas', 'Proveedores'],
-    ruta: '/adjudicaciones',
+    ruta: '/proyectos',
     icono: FolderKanban,
     color: '#1d4ed8',
     suave: '#eff6ff',
