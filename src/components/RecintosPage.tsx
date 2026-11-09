@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Building2, Layers, Plus, Pencil, Trash2, History, FileSpreadsheet, FileText, Loader2, AlertTriangle, X, ExternalLink, Copy, DoorOpen, ChevronRight, ChevronDown, Trees, LayoutGrid, Table2, ArrowRightLeft, Search, Download, ClipboardCheck, BarChart3,
+  Building2, Layers, Plus, Pencil, Trash2, History, FileSpreadsheet, FileText, Loader2, AlertTriangle, X, ExternalLink, Copy, DoorOpen, ChevronRight, ChevronDown, Trees, LayoutGrid, Table2, ArrowRightLeft, Search, Ruler, Download, ClipboardCheck, BarChart3,
 } from 'lucide-react';
 import { getCampusList, saveCampusList, obtenerEdificiosDeCampus, etiquetaEdificio, obtenerInfoEdificio } from '../data/campusData';
 import { useAuth } from '../context/AuthContext';
@@ -20,6 +20,7 @@ import { ExploradorEdificio } from './ExploradorEdificio';
 import { SubirLaminasCampus } from './SubirLaminasCampus';
 import { RevisionCampus } from './RevisionCampus';
 import { MoverPersonaModal } from './MoverPersonaModal';
+import { CubicacionEdificio } from './CubicacionEdificio';
 import { alertasRecinto, observacionesSinNotas } from '../utils/alertasRecinto';
 import { formatoFecha } from '../utils/fechas';
 import { comoTitulo } from '../utils/texto';
@@ -39,7 +40,7 @@ const COLOR_ESTADO: Record<string, string> = {
 const campo = 'w-full px-2.5 py-1.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-400';
 
 type RecintoEditable = Omit<Recinto, 'id'> & { id?: string };
-type Vista = 'general' | 'recintos' | 'plano' | 'documentos';
+type Vista = 'general' | 'recintos' | 'plano' | 'documentos' | 'cubicacion';
 type DocumentoNuevo = Omit<DocumentoEdificio, 'id' | 'vigente' | 'creado_en' | 'creado_por'>;
 
 /** Módulo de control documental: pisos y recintos de cada edificio, y el índice de sus planos (los archivos siguen en Drive). */
@@ -83,7 +84,7 @@ export function RecintosPage() {
     return !q || e.toLowerCase().includes(q) || (nombreEdificio(e) || '').toLowerCase().includes(q);
   });
   // Sin «vista» en la dirección se abre la vista general (árbol, plano y ficha); «recintos» es la tabla por piso.
-  const vista = (['recintos', 'plano', 'documentos'].includes(parametros.get('vista') || '') ? parametros.get('vista') : 'general') as Vista;
+  const vista = (['recintos', 'plano', 'documentos', 'cubicacion'].includes(parametros.get('vista') || '') ? parametros.get('vista') : 'general') as Vista;
   /**
    * Cambia de campus, edificio o pestaña. Elegir un campus parte sin edificio, y elegir un edificio parte en sus recintos.
    * Cambiar de campus o edificio deja un paso en el historial; cambiar de pestaña, no.
@@ -392,6 +393,7 @@ export function RecintosPage() {
                 { id: 'general', texto: 'Vista general', Icono: LayoutGrid },
                 { id: 'recintos', texto: `Tabla de recintos (${activos.length})`, Icono: Table2 },
                 { id: 'documentos', texto: `Planos y documentos (${documentos.filter(d => d.vigente).length})`, Icono: FileText },
+                { id: 'cubicacion', texto: 'Cubicación', Icono: Ruler },
               ] as const).map(({ id, texto, Icono }) => (
                 <button key={id} type="button" onClick={() => ir({ vista: id })}
                   className={`shrink-0 px-3.5 py-2 rounded-xl font-bold flex items-center gap-2 transition ${(vista === id || (id === 'general' && vista === 'plano')) ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'}`}>
@@ -543,6 +545,11 @@ export function RecintosPage() {
               onIrEdificio={e => { ir({ edificio: e }); setResaltado(null); }} onVerFicha={r => setFichaRecinto(r)} onEditarRecinto={r => setRecintoEditando(r)}
               onVerDocumentos={() => ir({ vista: 'documentos' })}
               onVerPersonas={() => analizar({ f: { edificio: [edificio] }, g: 'tipo', m: 'ocupantes', cf: 'piso', cc: 'tipo', vp: true })} onRecargar={cargar} />
+          )}
+
+          {vista === 'cubicacion' && (
+            <CubicacionEdificio pisos={pisos} recintos={recintos}
+              onGuardarAltura={(p, altura) => accion(() => guardarPiso({ ...p, altura_m: altura, altura_origen: altura ? 'Manual' : null }))} />
           )}
 
           {vista === 'documentos' && (

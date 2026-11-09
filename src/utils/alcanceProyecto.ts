@@ -2,6 +2,7 @@
 // oficiales. Lo usa la ficha del proyecto para mostrarlo y el presupuesto con IA para cubicar.
 import type { Piso, Recinto } from '../types/recintos';
 import { vigenteEn, hoyISO } from './vigenciaRecinto';
+import { ALTURA_PISO_DEFECTO, perimetroDe } from './cubicacion';
 
 export interface AlcanceEspacios {
   /** Pisos completos que interviene el proyecto (id del piso). */
@@ -16,6 +17,8 @@ export interface ResumenAlcance {
   oguc: number;
   porTipo: { tipo: string; n: number; util: number }[];
   pisos: string[];
+  /** Muros interiores en bruto (m²): perímetro de cada recinto × altura de su piso. */
+  muros: number;
 }
 
 /** Recintos vigentes que cubre el alcance (los de los pisos elegidos más los elegidos uno a uno), con sus totales. */
@@ -38,6 +41,7 @@ export function resumirAlcance(alcance: AlcanceEspacios | undefined, pisos: Piso
     oguc: lista.reduce((s, r) => s + (Number(r.superficie_oguc_m2) || 0), 0),
     porTipo: [...tipos.entries()].map(([tipo, x]) => ({ tipo, ...x })).sort((a, b) => b.util - a.util),
     pisos: nombresPiso,
+    muros: lista.reduce((s, r) => s + perimetroDe(r).m * (Number(pisos.find(p => p.id === r.piso_id)?.altura_m) || ALTURA_PISO_DEFECTO), 0),
   };
 }
 
@@ -52,6 +56,6 @@ export function textoAlcanceParaIA(edificio: string, r: ResumenAlcance): string 
   const tipos = r.porTipo.map(t => `${t.tipo} (${t.n}, ${m2(t.util)})`).join('; ');
   const detalle = r.recintos.slice(0, 120).map(x => `${x.codigo} ${x.nombre} ${m2(Number(x.superficie_m2) || 0)}`).join('; ');
   return `Intervención en ${edificio}, ${r.pisos.join(', ') || 'recintos puntuales'}: ${r.recintos.length} recintos, `
-    + `${m2(r.util)} útiles (${m2(r.oguc)} OGUC, a eje de muros). Por tipo: ${tipos}. `
+    + `${m2(r.util)} útiles (${m2(r.oguc)} OGUC, a eje de muros); muros interiores ${m2(r.muros)} en bruto (perímetro de recintos × altura de piso, sin descontar vanos). Por tipo: ${tipos}. `
     + `Detalle de recintos: ${detalle}${r.recintos.length > 120 ? ` y ${r.recintos.length - 120} más` : ''}.`;
 }

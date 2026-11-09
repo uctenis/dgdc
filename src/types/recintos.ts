@@ -46,6 +46,9 @@ export interface Piso {
   nombre: string;
   orden: number;
   observaciones?: string | null;
+  /** Altura de piso a piso en metros (migración 0009); sin dato se usa la altura por defecto. */
+  altura_m?: number | null;
+  altura_origen?: string | null;
 }
 
 /** Persona o unidad que ocupa un recinto, según el catastro (sin RUT ni datos de contrato). */
@@ -66,6 +69,8 @@ export interface Recinto {
   superficie_m2?: number | null;
   /** Superficie según OGUC (incluye muros). */
   superficie_oguc_m2?: number | null;
+  /** Perímetro del contorno del recinto en metros (migración 0009), para estimar muros. */
+  perimetro_m?: number | null;
   capacidad?: number | null;
   estado: EstadoRecinto;
   /** Desde cuándo existe u opera («AAAA-MM-DD»); vacía = desde antes del registro. Futura = obra por entregar. */
