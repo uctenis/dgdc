@@ -1,5 +1,6 @@
 import { addDoc, collection, limit, onSnapshot, orderBy, query, serverTimestamp, type Unsubscribe } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+import { supabase, SUPABASE_CONFIGURADO } from '../lib/supabase';
 
 /**
  * Registro de cambios (colección `auditoria`): quién hizo qué, cuándo y con qué valores antes y después.
@@ -71,7 +72,21 @@ export function registrarCambio(entrada: Omit<RegistroAuditoria, 'id' | 'fecha' 
       ultimos.set(clave, ahora);
     }
     const limpio = Object.fromEntries(Object.entries(entrada).filter(([, v]) => v !== undefined));
-    void addDoc(collection(db, 'auditoria'), { ...limpio, usuario, fecha: new Date().toISOString(), _createdAt: serverTimestamp() })
+    const fecha = new Date().toISOString();
+    if (SUPABASE_CONFIGURADO) {
+      void supabase.from('auditoria').insert({
+        fecha,
+        usuario,
+        accion: entrada.accion,
+        entidad: entrada.entidad,
+        entidad_id: entrada.entidadId,
+        nombre: entrada.nombre ?? null,
+        licitacion_id: entrada.licitacionId ?? null,
+        cambios: entrada.cambios ?? null,
+        detalle: entrada.detalle ?? null,
+      });
+    }
+    void addDoc(collection(db, 'auditoria'), { ...limpio, usuario, fecha, _createdAt: serverTimestamp() })
       .catch(err => console.warn('No se pudo guardar el registro de cambios:', err));
   } catch (err) {
     console.warn('No se pudo preparar el registro de cambios:', err);

@@ -12,7 +12,9 @@
 import { registrarCambio, resumirValor } from './auditoriaService';
 import { collection, doc, getDocs, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+import { supabase, SUPABASE_CONFIGURADO } from '../lib/supabase';
 import { SYSTEM_ADMIN_EMAIL } from '../lib/adminSistema';
+import { sincronizarFirestoreASupabase } from './migracionSupabase';
 
 const COLECCION = 'configuracion';
 
@@ -68,21 +70,42 @@ function escribirLocal(clave: string, valor: string): boolean {
  */
 export async function cargarConfigCompartida(): Promise<void> {
   try {
-    const snap = await getDocs(collection(db, COLECCION));
-    const enFirebase = new Set<string>();
     let cambio = false;
-    snap.forEach(d => {
-      if (!CLAVES.has(d.id)) return;
-      enFirebase.add(d.id);
-      const valor = d.data().valor;
-      if (typeof valor === 'string' && escribirLocal(d.id, valor)) cambio = true;
-    });
+    const enRemoto = new Set<string>();
+
+    // 1. Intentar leer primero desde Supabase (tabla public.configuracion)
+    let leidoDeSupabase = false;
+    if (SUPABASE_CONFIGURADO) {
+      const { data, error } = await supabase.from('configuracion').select('id, valor');
+      if (!error && data && data.length > 0) {
+        leidoDeSupabase = true;
+        for (const fila of data) {
+          if (!CLAVES.has(fila.id)) continue;
+          enRemoto.add(fila.id);
+          if (typeof fila.valor === 'string' && escribirLocal(fila.id, fila.valor)) cambio = true;
+        }
+      }
+    }
+
+    // 2. Respaldo desde Firestore si aún no estaba en Supabase
+    if (!leidoDeSupabase) {
+      const snap = await getDocs(collection(db, COLECCION));
+      snap.forEach(d => {
+        if (!CLAVES.has(d.id)) return;
+        enRemoto.add(d.id);
+        const valor = d.data().valor;
+        if (typeof valor === 'string' && escribirLocal(d.id, valor)) cambio = true;
+      });
+    }
+
     if (esAdmin()) {
       for (const clave of CLAVES_CONFIG_COMPARTIDA) {
-        if (enFirebase.has(clave)) continue;
+        if (enRemoto.has(clave)) continue;
         const local = localStorage.getItem(clave);
         if (local) await escribirEnFirebase(clave, local);
       }
+      // Sincronizar automáticamente colecciones hacia Supabase en segundo plano
+      void sincronizarFirestoreASupabase();
     }
     estado = { sincronizado: true, ultimaSincronizacion: new Date().toISOString() };
     cargaInicialLista = true;
@@ -126,13 +149,21 @@ async function publicarConfigCompartida(clave: string, valor: string, registrar 
 
 async function escribirEnFirebase(clave: string, valor: string): Promise<void> {
   try {
+    if (SUPABASE_CONFIGURADO) {
+      await supabase.from('configuracion').upsert({
+        id: clave,
+        valor,
+        actualizado_por: auth.currentUser?.email || null,
+        fecha_actualizacion: new Date().toISOString(),
+      }, { onConflict: 'id' });
+    }
     await setDoc(doc(db, COLECCION, clave), {
       valor,
       actualizadoPor: auth.currentUser?.email || null,
       fechaActualizacion: serverTimestamp(),
     });
   } catch (err) {
-    console.warn(`No se pudo publicar la configuración "${clave}" en Firebase:`, err);
+    console.warn(`No se pudo publicar la configuración "${clave}":`, err);
     estado = { ...estado, error: err instanceof Error ? err.message : String(err) };
   }
 }
