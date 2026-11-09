@@ -19,6 +19,7 @@ import { RESPONSABLES_INFRAESTRUCTURA } from '../data/responsablesData';
 import { formatearEnteroConMiles, desformatearEntero } from '../utils/rutUtils';
 import { agruparPorFase } from '../utils/itemizadoOrganizer';
 import { AumentosObraPanel } from './AumentosObraPanel';
+import { AlcanceEspaciosProyecto } from './AlcanceEspaciosProyecto';
 import { ItemizadoProyectoPanel } from './ItemizadoProyectoPanel';
 import { ProgramaTrabajoPanel } from './ProgramaTrabajoPanel';
 import { calcularFechaTerminoEfectiva } from '../utils/avanceFinanciero';
@@ -503,6 +504,24 @@ export const FichaProyectoPage: React.FC<FichaProyectoPageProps> = ({
     } catch (e) {
       console.error(e);
       alert(`Error guardando tipo de obra / rubro: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  // Alcance del proyecto en el Gestor de Espacios (pisos y recintos que interviene): vive en el proyecto de la Cartera.
+  const [alcanceEspacios, setAlcanceEspacios] = useState(proyectoMaestroEfectivo?.alcanceEspacios || { pisos: [] as string[], recintos: [] as string[] });
+  // El proyecto de la Cartera llega en vivo (puede llegar después del primer dibujo): el alcance lo sigue.
+  const alcanceGuardado = JSON.stringify(proyectoMaestroEfectivo?.alcanceEspacios || null);
+  useEffect(() => {
+    const g = proyectoMaestroEfectivo?.alcanceEspacios;
+    if (g) setAlcanceEspacios(g);
+  }, [alcanceGuardado]); // eslint-disable-line react-hooks/exhaustive-deps
+  const guardarAlcance = async (a: { pisos: string[]; recintos: string[] }) => {
+    setAlcanceEspacios(a);
+    try {
+      if (idProyectoMaestro) await updateProyectoMaestro(idProyectoMaestro, { alcanceEspacios: a });
+      setHasChanges(true);
+    } catch (e) {
+      alert(`Error guardando el alcance: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
@@ -1026,6 +1045,8 @@ Para confirmar, escriba el código del proyecto: ${codigoConfirmacion}`
                   const val = e.target.value;
                   setMainData({ ...mainData, edificioSigla: val });
                   saveInlineUpdate({ edificioSigla: val });
+                  // Otro edificio: el alcance (pisos y recintos) del anterior ya no aplica.
+                  if (alcanceEspacios.pisos.length || alcanceEspacios.recintos.length) guardarAlcance({ pisos: [], recintos: [] });
                 }}
                 disabled={!mainData.campusSigla}
                 className="w-full bg-slate-800 text-slate-300 text-[11px] border border-slate-600 rounded p-1 outline-none focus:ring-1 focus:ring-indigo-500"
@@ -1048,6 +1069,9 @@ Para confirmar, escriba el código del proyecto: ${codigoConfirmacion}`
                   </div>
                 );
               })()}
+              {mainData.edificioSigla && idProyectoMaestro && (
+                <AlcanceEspaciosProyecto edificio={mainData.edificioSigla} alcance={alcanceEspacios} onCambiar={guardarAlcance} />
+              )}
             </div>
             
             <div className="bg-slate-700/50 p-2.5 rounded-xl border border-slate-600/80 space-y-1">

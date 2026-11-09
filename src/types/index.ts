@@ -268,6 +268,8 @@ export interface ProyectoMaestro {
   campusSigla?: string;      // ej: CSF, CJP, CRC
   campusNombre?: string;     // ej: Campus San Francisco
   edificioSigla?: string;    // ej: CSF10, CRC16, CJP08
+  /** Pisos completos y recintos puntuales (ids del Gestor de Espacios) que interviene el proyecto: dan la superficie para el presupuesto. */
+  alcanceEspacios?: { pisos: string[]; recintos: string[] };
   uso?: string;              // ej: DOCENCIA, ESPACIOS COMUNES
   tipoObra?: string;         // ej: REMODELACION, ALHAJAMIENTO
   rubro?: string;            // Rubro del proveedor asociado (ver rubrosData.ts)

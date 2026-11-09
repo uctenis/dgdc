@@ -38,6 +38,22 @@ const nuevaPartida = (indice: number, origen: ItemItemizadoProyecto['origen'] = 
 });
 
 export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresupuesto }: Props) {
+  // Superficies del área a intervenir (pisos y recintos marcados en la ficha), del Gestor de Espacios: van al presupuesto con IA.
+  const [textoAlcance, setTextoAlcance] = useState('');
+  const claveAlcance = `${proyecto.edificioSigla || ''}|${JSON.stringify(proyecto.alcanceEspacios || null)}`;
+  useEffect(() => {
+    const a = proyecto.alcanceEspacios;
+    if (!proyecto.edificioSigla || !a || (!a.pisos.length && !a.recintos.length)) { setTextoAlcance(''); return; }
+    let vigente = true;
+    void (async () => {
+      try {
+        const [{ listarPisos, listarRecintos }, { resumirAlcance, textoAlcanceParaIA }] = await Promise.all([import('../services/recintos'), import('../utils/alcanceProyecto')]);
+        const [pisos, recintos] = await Promise.all([listarPisos(proyecto.edificioSigla!), listarRecintos(proyecto.edificioSigla!)]);
+        if (vigente) setTextoAlcance(textoAlcanceParaIA(proyecto.edificioSigla!, resumirAlcance(a, pisos, recintos)));
+      } catch { if (vigente) setTextoAlcance(''); }
+    })();
+    return () => { vigente = false; };
+  }, [claveAlcance]); // eslint-disable-line react-hooks/exhaustive-deps
   const [items, setItems] = useState<ItemItemizadoProyecto[]>(proyecto.itemizado || []);
   const [guardando, setGuardando] = useState(false);
   const [sugiriendo, setSugiriendo] = useState(false);
@@ -859,6 +875,7 @@ export function ItemizadoProyectoPanel({ proyecto, configFirmas, onUsarComoPresu
             direccion: (proyecto.campusSigla && obtenerCampusPorSigla(proyecto.campusSigla)?.direccion) || undefined,
             plazoDias: proyecto.plazoEjecucionDias || proyecto.duracionEstimadaDias || undefined,
             presupuestoAprox: proyecto.valorAprox || undefined,
+            alcance: textoAlcance || undefined,
           }}
           onClose={() => setMostrarPresupuestoPreciso(false)}
           onAgregarPartidas={agregarPartidasPrecisas}

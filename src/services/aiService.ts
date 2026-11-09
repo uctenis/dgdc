@@ -629,6 +629,8 @@ export interface ContextoPresupuestoPreciso {
   presupuestoAprox?: number;
   /** Notas libres del responsable (lo visto en terreno, restricciones, lo que pidió la unidad). */
   notas?: string;
+  /** Pisos y recintos que interviene, con sus superficies oficiales del Gestor de Espacios (ver alcanceProyecto.ts). */
+  alcance?: string;
   antecedentes?: AntecedentePresupuestoIA[];
 }
 
@@ -648,6 +650,7 @@ function contextoPresupuestoPreciso(c: ContextoPresupuestoPreciso): string {
     c.plazoDias ? `Plazo previsto: ${c.plazoDias} días corridos` : '',
     c.presupuestoAprox ? `Presupuesto aproximado declarado al crear el proyecto (referencia gruesa, puede estar errado): $${Math.round(c.presupuestoAprox).toLocaleString('es-CL')} CLP` : '',
     c.descripcion ? `Descripción: ${c.descripcion}` : '',
+    c.alcance ? `Superficies oficiales del área a intervenir (Gestor de Espacios de la UCT; úselas para cubicar pisos, cielos, pintura, iluminación y demás partidas por m², en vez de suponerlas): ${c.alcance}` : '',
     c.notas?.trim() ? `Notas del responsable del proyecto: ${c.notas.trim()}` : '',
   ].filter(Boolean).join('\n');
 

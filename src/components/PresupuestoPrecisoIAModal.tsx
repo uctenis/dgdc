@@ -213,6 +213,9 @@ export function PresupuestoPrecisoIAModal({ proyecto, onClose, onAgregarPartidas
                 ) : (
                   <p className="text-amber-700">El proyecto no tiene campus ni edificio asignados: la IA no podrá considerar accesos, distancia ni datos del edificio. Asígnelos en la ficha del proyecto para un presupuesto más ajustado.</p>
                 )}
+                {proyecto.alcance
+                  ? <p className="text-teal-800 bg-teal-50 border border-teal-200 rounded px-2 py-1">Superficies del Gestor de Espacios: {proyecto.alcance.split('. Detalle de recintos')[0]}.</p>
+                  : datosUbicacion.length > 0 && <p className="text-amber-700">No se marcaron pisos ni recintos en la ficha del proyecto: la IA no tendrá la superficie del área a intervenir. Márquelos en la ficha (bajo el edificio) para cubicar con las superficies oficiales.</p>}
                 {datosUbicacion.length > 0 && !proyecto.direccion && (
                   <p className="text-amber-700">El campus no tiene dirección registrada (Configuración → Sedes &amp; Campus): no se podrá considerar la distancia a Temuco.</p>
                 )}
