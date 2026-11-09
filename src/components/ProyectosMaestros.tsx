@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import {
   BookOpen, Plus, Trash2, Search,
   X, DollarSign, Calendar, MapPin, Building, User,
-  FileText, Paperclip, FolderPlus, ScrollText, Hammer, ShieldCheck, Clock, Sparkles, Loader2, Upload
+  FileText, Paperclip, FolderPlus, ScrollText, Hammer, ShieldCheck, Clock, Sparkles, Loader2, Upload,
+  ArrowLeft,
 } from 'lucide-react';
 import {
   subscribeToProyectos,
@@ -108,6 +109,16 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   const rubrosDisponibles = getRubrosList().filter(r => r.estado === 'Activo');
   const tiposObraDisponibles = getTiposObraList().filter(t => t.estado === 'Activo');
   const [showModal, setShowModal] = useState(false);
+  /** Responsables con quien inició sesión primero (si no está en la nómina, igual se ofrece con sus datos de sesión). */
+  const responsablesOrdenados = React.useMemo(() => {
+    const correo = (user?.email || '').toLowerCase();
+    const yo = RESPONSABLES_INFRAESTRUCTURA.find(r => r.email.toLowerCase() === correo);
+    const resto = RESPONSABLES_INFRAESTRUCTURA.filter(r => r !== yo).map(r => ({ ...r, esUsted: false }));
+    if (yo) return [{ ...yo, esUsted: true }, ...resto];
+    if (!correo) return resto;
+    const nombre = profile?.displayName || user?.displayName || correo;
+    return [{ codigo: correo, nombre, email: correo, cargo: 'Usuario actual', estado: 'Activo', esUsted: true }, ...resto];
+  }, [user, profile]); // eslint-disable-line react-hooks/exhaustive-deps
   const [verPDFOCProyecto, setVerPDFOCProyecto] = useState<ProyectoMaestro | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -277,10 +288,15 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
 
   const openAdd = () => {
     setEditingId(null);
+    // Quien crea el proyecto queda como responsable por defecto (se puede cambiar).
+    const yo = responsablesOrdenados[0]?.esUsted ? responsablesOrdenados[0] : undefined;
     setForm({
       ...EMPTY_FORM,
       codigoProyecto: '',
+      responsableNombre: yo?.nombre || '',
+      responsableEmail: yo?.email || '',
     });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     setTabActivaModal('datos');
     setShowModal(true);
   };
@@ -495,6 +511,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
 
   return (
     <div className="space-y-2.5">
+      {!showModal && (<>
       {errorCarga && (
         <div className="bg-red-50 border border-red-300 text-red-900 rounded-2xl px-4 py-3 flex items-start justify-between gap-3">
           <p className="text-xs font-semibold">⚠️ {errorCarga}</p>
@@ -1098,10 +1115,16 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
         </>
       )}
 
-      {/* MODAL PROFESIONAL DE PROYECTO (NUEVO / EDITAR) */}
+      </>)}
+
+      {/* PROYECTO NUEVO / EDITAR: vista propia dentro de la Cartera (no ventana flotante), con regreso a la lista. */}
       {showModal && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4">
-          <div className="bg-white rounded-2xl max-w-3xl w-full p-4 sm:p-6 shadow-2xl space-y-5 max-h-[92vh] flex flex-col border border-slate-200">
+        <div className="space-y-3">
+          <button type="button" onClick={() => setShowModal(false)}
+            className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-900">
+            <ArrowLeft className="w-4 h-4" /> Volver a la cartera {anioCartera}
+          </button>
+          <div className="bg-white rounded-2xl w-full p-4 sm:p-6 shadow-sm space-y-5 flex flex-col border border-slate-200">
             
             {/* Header Modal */}
             <div className="flex items-center justify-between border-b pb-4 shrink-0">
@@ -1474,7 +1497,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                       value={form.responsableNombre}
                       onChange={e => {
                         const nombre = e.target.value;
-                        const r = RESPONSABLES_INFRAESTRUCTURA.find(resp => resp.nombre === nombre);
+                        const r = responsablesOrdenados.find(resp => resp.nombre === nombre);
                         setForm(f => ({
                           ...f,
                           responsableNombre: nombre,
@@ -1484,9 +1507,9 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                       className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
                     >
                       <option value="">-- Seleccionar Responsable --</option>
-                      {RESPONSABLES_INFRAESTRUCTURA.map(r => (
+                      {responsablesOrdenados.map(r => (
                         <option key={r.codigo} value={r.nombre}>
-                          {r.nombre} — {r.email} ({r.cargo})
+                          {r.nombre}{r.esUsted ? ' (usted)' : ''} — {r.email} ({r.cargo})
                         </option>
                       ))}
                     </select>
