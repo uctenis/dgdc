@@ -2,7 +2,7 @@
 // oficiales. Lo usa la ficha del proyecto para mostrarlo y el presupuesto con IA para cubicar.
 import type { Piso, Recinto } from '../types/recintos';
 import { vigenteEn, hoyISO } from './vigenciaRecinto';
-import { ALTURA_PISO_DEFECTO, perimetroDe } from './cubicacion';
+import { ALTURA_PISO_DEFECTO, cubicarEdificio, perimetroDe } from './cubicacion';
 
 export interface AlcanceEspacios {
   /** Pisos completos que interviene el proyecto (id del piso). */
@@ -19,6 +19,8 @@ export interface ResumenAlcance {
   pisos: string[];
   /** Muros interiores en bruto (m²): perímetro de cada recinto × altura de su piso. */
   muros: number;
+  /** Cubicación del edificio completo (para obras de cubierta y fachada). */
+  edificio: { cubierta: number; cubiertaPlanta: number; fachadas: number; alturas: string };
 }
 
 /** Recintos vigentes que cubre el alcance (los de los pisos elegidos más los elegidos uno a uno), con sus totales. */
@@ -42,6 +44,13 @@ export function resumirAlcance(alcance: AlcanceEspacios | undefined, pisos: Piso
     porTipo: [...tipos.entries()].map(([tipo, x]) => ({ tipo, ...x })).sort((a, b) => b.util - a.util),
     pisos: nombresPiso,
     muros: lista.reduce((s, r) => s + perimetroDe(r).m * (Number(pisos.find(p => p.id === r.piso_id)?.altura_m) || ALTURA_PISO_DEFECTO), 0),
+    edificio: (() => {
+      const c = cubicarEdificio(pisos, recintos);
+      return {
+        cubierta: c.cubierta.inclinada, cubiertaPlanta: c.cubierta.planta, fachadas: c.fachadas,
+        alturas: c.porPiso.map(x => `${x.piso.nombre || x.piso.codigo} ${x.altura.toLocaleString('es-CL')} m`).join(', '),
+      };
+    })(),
   };
 }
 
@@ -57,5 +66,6 @@ export function textoAlcanceParaIA(edificio: string, r: ResumenAlcance): string 
   const detalle = r.recintos.slice(0, 120).map(x => `${x.codigo} ${x.nombre} ${m2(Number(x.superficie_m2) || 0)}`).join('; ');
   return `Intervención en ${edificio}, ${r.pisos.join(', ') || 'recintos puntuales'}: ${r.recintos.length} recintos, `
     + `${m2(r.util)} útiles (${m2(r.oguc)} OGUC, a eje de muros); muros interiores ${m2(r.muros)} en bruto (perímetro de recintos × altura de piso, sin descontar vanos). Por tipo: ${tipos}. `
+    + `Edificio completo (estimación base): cubierta ${m2(r.edificio.cubierta)} (${m2(r.edificio.cubiertaPlanta)} en planta), fachadas ${m2(r.edificio.fachadas)} en bruto; altura de piso: ${r.edificio.alturas}. `
     + `Detalle de recintos: ${detalle}${r.recintos.length > 120 ? ` y ${r.recintos.length - 120} más` : ''}.`;
 }

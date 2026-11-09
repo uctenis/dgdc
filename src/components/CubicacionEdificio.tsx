@@ -12,7 +12,7 @@ const n = (v: number, d = 1) => v.toLocaleString('es-CL', { maximumFractionDigit
 export function CubicacionEdificio({ pisos, recintos, onGuardarAltura }: {
   pisos: Piso[]; recintos: Recinto[]; onGuardarAltura: (piso: Piso, altura: number | null) => Promise<void>;
 }) {
-  const { porPiso, total } = cubicarEdificio(pisos, recintos);
+  const { porPiso, total, cubierta, fachadas } = cubicarEdificio(pisos, recintos);
   const [editando, setEditando] = useState<{ id: string; valor: string } | null>(null);
   const guardar = async (p: Piso) => {
     if (!editando) return;
@@ -25,7 +25,7 @@ export function CubicacionEdificio({ pisos, recintos, onGuardarAltura }: {
   return (
     <div className="space-y-3">
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-x-auto">
-        <table className="w-full min-w-[820px] text-xs">
+        <table className="w-full min-w-[980px] text-xs">
           <thead className="text-slate-500 text-[10px] uppercase tracking-wide border-b border-slate-100">
             <tr>
               <th className="px-3 py-2 text-left">Piso</th>
@@ -35,6 +35,8 @@ export function CubicacionEdificio({ pisos, recintos, onGuardarAltura }: {
               <th className="px-3 py-2 text-right">OGUC (m²)</th>
               <th className="px-3 py-2 text-right" title="Suma de perímetros de los recintos">Perímetro de muros (m)</th>
               <th className="px-3 py-2 text-right" title="Perímetro × altura, sin descontar puertas ni ventanas">Muros interiores (m²)</th>
+              <th className="px-3 py-2 text-right" title="Unión de los contornos del piso, con los muros cerrados">Huella (m²)</th>
+              <th className="px-3 py-2 text-right" title="Perímetro de la huella × altura, sin descontar ventanas">Fachada (m²)</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -65,6 +67,8 @@ export function CubicacionEdificio({ pisos, recintos, onGuardarAltura }: {
                 <td className="px-3 py-2 text-right tabular-nums text-slate-600">{n(c.oguc)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{n(c.perimetro)}{c.perimetrosEstimados > 0 && <span className="text-amber-700" title={`${c.perimetrosEstimados} recinto(s) sin contorno: perímetro estimado`}> *</span>}</td>
                 <td className="px-3 py-2 text-right tabular-nums font-semibold">{n(c.muros)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{c.huella != null ? <span className={c.huellaConfiable ? '' : 'text-amber-700'} title={c.huellaConfiable ? '' : 'Faltan contornos en este piso: la huella sale menor que la real'}>{n(c.huella)}{!c.huellaConfiable && ' *'}</span> : '—'}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{c.fachada != null ? n(c.fachada) : '—'}</td>
               </tr>
             ))}
             <tr className="bg-slate-50 font-extrabold text-slate-800">
@@ -74,10 +78,26 @@ export function CubicacionEdificio({ pisos, recintos, onGuardarAltura }: {
               <td className="px-3 py-2 text-right tabular-nums">{n(total.oguc)}</td>
               <td className="px-3 py-2 text-right tabular-nums">{n(total.perimetro)}</td>
               <td className="px-3 py-2 text-right tabular-nums">{n(total.muros)}</td>
+              <td className="px-3 py-2" />
+              <td className="px-3 py-2 text-right tabular-nums">{fachadas ? n(fachadas) : '—'}</td>
             </tr>
           </tbody>
         </table>
       </div>
+      {cubierta.planta > 0 && (
+        <div className="grid sm:grid-cols-2 gap-2">
+          <div className="bg-white border border-slate-200 rounded-2xl p-3">
+            <p className="text-[10px] font-bold uppercase text-slate-500">Cubierta estimada</p>
+            <p className="text-lg font-extrabold text-slate-900 tabular-nums">{n(cubierta.inclinada)} m² <span className="text-xs font-semibold text-slate-500">({n(cubierta.planta)} m² en planta)</span></p>
+            <p className="text-[11px] text-slate-500">Desde la {cubierta.origen}, con pendiente típica (+10 %). Base para cambio de cubierta y canaletas.</p>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-2xl p-3">
+            <p className="text-[10px] font-bold uppercase text-slate-500">Fachadas estimadas</p>
+            <p className="text-lg font-extrabold text-slate-900 tabular-nums">{fachadas ? `${n(fachadas)} m²` : '—'}</p>
+            <p className="text-[11px] text-slate-500">Perímetro de la huella de cada piso por su altura, sin descontar ventanas. Base para pintura exterior y revestimientos.</p>
+          </div>
+        </div>
+      )}
       <div className="flex items-start gap-2 text-slate-600 text-[11px]">
         <Ruler className="w-4 h-4 shrink-0 text-teal-700" />
         <p>

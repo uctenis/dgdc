@@ -49,6 +49,9 @@ export interface Piso {
   /** Altura de piso a piso en metros (migración 0009); sin dato se usa la altura por defecto. */
   altura_m?: number | null;
   altura_origen?: string | null;
+  /** Huella del piso (migración 0010): unión de los contornos de sus recintos con los muros cerrados. */
+  huella_m2?: number | null;
+  huella_perimetro_m?: number | null;
 }
 
 /** Persona o unidad que ocupa un recinto, según el catastro (sin RUT ni datos de contrato). */

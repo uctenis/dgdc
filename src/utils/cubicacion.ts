@@ -5,6 +5,8 @@ import type { Piso, Recinto } from '../types/recintos';
 import { hoyISO, vigenteEn } from './vigenciaRecinto';
 
 export const ALTURA_PISO_DEFECTO = 2.6;
+/** Pendiente típica de cubierta: la superficie inclinada es ~10 % mayor que su proyección en planta. */
+export const FACTOR_PENDIENTE = 1.1;
 
 export interface CubicacionPiso {
   piso: Piso;
@@ -19,6 +21,13 @@ export interface CubicacionPiso {
   muros: number;
   /** Recintos cuyo perímetro se estimó (sin contorno en el plano): 4 × √superficie, como si fueran cuadrados. */
   perimetrosEstimados: number;
+  /** Huella del piso (m²) y su perímetro exterior (m), desde los contornos; null si el piso no tiene contornos. */
+  huella: number | null;
+  huellaPerimetro: number | null;
+  /** Fachada en bruto (m²): perímetro de la huella × altura, sin descontar ventanas. */
+  fachada: number | null;
+  /** La huella es confiable si cubre al menos 80 % de la superficie OGUC del piso (si no, faltan contornos). */
+  huellaConfiable: boolean;
 }
 
 /** Perímetro de un recinto: el medido en su contorno o, si no tiene, el de un cuadrado de su misma superficie. */
@@ -41,6 +50,10 @@ export function cubicarPiso(piso: Piso, recintos: Recinto[], alturaDefecto = ALT
     util: lista.reduce((s, r) => s + (Number(r.superficie_m2) || 0), 0),
     oguc: lista.reduce((s, r) => s + (Number(r.superficie_oguc_m2) || 0), 0),
     perimetro, muros: perimetro * altura, perimetrosEstimados: estimados,
+    huella: piso.huella_m2 ? Number(piso.huella_m2) : null,
+    huellaPerimetro: piso.huella_perimetro_m ? Number(piso.huella_perimetro_m) : null,
+    fachada: piso.huella_perimetro_m ? Number(piso.huella_perimetro_m) * altura : null,
+    huellaConfiable: !!piso.huella_m2 && Number(piso.huella_m2) >= 0.8 * lista.reduce((s, r) => s + (Number(r.superficie_oguc_m2) || 0), 0),
   };
 }
 
@@ -50,5 +63,15 @@ export function cubicarEdificio(pisos: Piso[], recintos: Recinto[], alturaDefect
     recintos: t.recintos + c.recintos, util: t.util + c.util, oguc: t.oguc + c.oguc, perimetro: t.perimetro + c.perimetro,
     muros: t.muros + c.muros, perimetrosEstimados: t.perimetrosEstimados + c.perimetrosEstimados,
   }), { recintos: 0, util: 0, oguc: 0, perimetro: 0, muros: 0, perimetrosEstimados: 0 });
-  return { porPiso, total };
+  // Cubierta: la mayor huella del edificio (el piso más extenso define el techo) con la pendiente típica. Si esa huella
+  // no es confiable (faltan contornos), se usa la superficie OGUC de ese piso.
+  const mayor = [...porPiso].sort((a, b) => Math.max(b.huella || 0, b.oguc) - Math.max(a.huella || 0, a.oguc))[0];
+  const planta = mayor ? (mayor.huellaConfiable && mayor.huella ? mayor.huella : mayor.oguc) : 0;
+  const nombre = mayor ? (mayor.piso.nombre || mayor.piso.codigo) : '';
+  const cubierta = {
+    planta, inclinada: planta * FACTOR_PENDIENTE,
+    origen: !mayor ? '' : mayor.huellaConfiable ? `huella de ${nombre}` : `superficie OGUC de ${nombre} (faltan contornos para la huella)`,
+  };
+  const fachadas = porPiso.reduce((s, c) => s + (c.fachada || 0), 0);
+  return { porPiso, total, cubierta, fachadas };
 }
