@@ -5,6 +5,16 @@ import { SYSTEM_ADMIN_EMAIL } from '../lib/adminSistema';
 
 const CLAVE_MIGRACION_STORAGE = 'dgdc:migracion_firestore_supabase_v1';
 
+/**
+ * Fecha en ISO a partir de lo que guarda Firestore (texto, Timestamp o milisegundos). Si no se puede leer, usa la de
+ * hoy: una fecha rara no debe abortar toda la copia (`toISOString` de una fecha inválida lanza un error).
+ */
+function fechaIso(v: unknown): string {
+  const t = v as { toDate?: () => Date } | null;
+  const fecha = typeof t?.toDate === 'function' ? t.toDate() : typeof v === 'number' || typeof v === 'string' ? new Date(v) : null;
+  return fecha && !Number.isNaN(fecha.getTime()) ? fecha.toISOString() : new Date().toISOString();
+}
+
 export interface ResumenMigracionSupabase {
   configuracion: number;
   proveedores: number;
@@ -31,8 +41,9 @@ export async function sincronizarFirestoreASupabase(forzar = false): Promise<Res
       const previo = localStorage.getItem(CLAVE_MIGRACION_STORAGE);
       if (previo) {
         const datos = JSON.parse(previo) as { fecha?: string };
-        // Si ya sincronizó en la última hora, no repetir en cada recarga
-        if (datos.fecha && Date.now() - new Date(datos.fecha).getTime() < 3600_000) {
+        // Una vez al día basta (las escrituras en vivo mantienen la copia entre medio). Cada pasada lee todas las
+        // colecciones y subcolecciones de Firestore, y hacerlo cada hora puede agotar la cuota diaria de lecturas.
+        if (datos.fecha && Date.now() - new Date(datos.fecha).getTime() < 24 * 3600_000) {
           return null;
         }
       }
@@ -82,7 +93,7 @@ export async function sincronizarFirestoreASupabase(forzar = false): Promise<Res
           razon_social: String(data.razonSocial || ''),
           email: data.email ? String(data.email) : null,
           estado: String(data.estado || 'Activo'),
-          fecha_registro: data.fechaRegistro ? new Date(String(data.fechaRegistro)).toISOString() : new Date().toISOString(),
+          fecha_registro: fechaIso(data.fechaRegistro),
           datos: data,
           actualizado_en: new Date().toISOString(),
         };
