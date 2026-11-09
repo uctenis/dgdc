@@ -731,7 +731,7 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
         </div>
       )}
 
-      <div className={`flex gap-2 ${pantallaCompleta ? 'flex-1 min-h-0' : consulta ? 'h-[60vh] sm:h-[calc(100vh-200px)] min-h-[380px] sm:min-h-[520px]' : 'h-[70vh] min-h-[480px]'}`}>
+      <div className={`flex gap-2 ${pantallaCompleta ? 'flex-1 min-h-0' : consulta ? 'h-[65vh] sm:h-[calc(100vh-150px)] min-h-[420px] sm:min-h-[600px]' : 'h-[70vh] min-h-[480px]'}`}>
         {/* Plano */}
         <div ref={marco}
           className={`relative flex-1 min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-[radial-gradient(circle,#e2e8f0_1px,transparent_1px)] [background-size:18px_18px] bg-slate-50 select-none touch-none ${dibujando || modoVarios ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'}`}

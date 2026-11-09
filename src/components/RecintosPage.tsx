@@ -393,6 +393,17 @@ export function RecintosPage() {
 
       {campusSigla && edificio && (
         <>
+          {/* Encabezado del edificio: que siempre quede claro cuál se está viendo. */}
+          <div className="flex flex-wrap items-end gap-x-4 gap-y-1 px-1">
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-teal-700">{campus.find(c => c.sigla === campusSigla)?.nombre || campusSigla}</p>
+              <h1 className="text-xl sm:text-2xl font-black text-slate-900 leading-tight flex items-baseline gap-2 flex-wrap">
+                <span className="font-mono text-teal-800">{edificio}</span>
+                <span>{comoTitulo(nombreEdificio(edificio)) || 'Sin nombre'}</span>
+              </h1>
+            </div>
+            {ficha?.direccion && <p className="text-slate-500 pb-1">{ficha.direccion}</p>}
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             {/* Pestañas con el mismo formato que las de una licitación. El editor de planos no es pestaña: se abre desde
                 «Editar contornos» en la vista general, sobre el piso que se está mirando. */}

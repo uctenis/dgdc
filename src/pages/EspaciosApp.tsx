@@ -42,7 +42,7 @@ export function EspaciosApp() {
         className="sticky top-0 z-50 text-white"
         style={{ background: 'linear-gradient(135deg, #042f2e 0%, #115e59 60%, #0f766e 100%)', boxShadow: '0 4px 24px -4px rgba(4,47,46,0.55)' }}
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-[60px] lg:h-[72px] gap-3">
+        <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between h-[60px] lg:h-[72px] gap-3">
           <div className="min-w-0">
             <span
               className="hidden sm:inline-block text-[10px] font-bold tracking-[0.12em] uppercase px-2 py-0.5 rounded mb-0.5"
@@ -65,7 +65,8 @@ export function EspaciosApp() {
           </div>
         </div>
       </header>
-      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6" data-config={versionConfig}>
+      {/* Más ancho que los demás módulos: los planos necesitan espacio. */}
+      <main className="max-w-[1800px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6" data-config={versionConfig}>
         {enConfiguracion ? <ConfigEspacios onCerrar={() => abrirConfiguracion(false)} />
           : enAnalisis ? <AnalisisEspacios onAbrirRecinto={abrirRecinto} onCerrar={() => abrirSeccion(null)} />
           : <RecintosPage />}
