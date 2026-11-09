@@ -31,8 +31,8 @@ export async function sincronizarFirestoreASupabase(forzar = false): Promise<Res
       const previo = localStorage.getItem(CLAVE_MIGRACION_STORAGE);
       if (previo) {
         const datos = JSON.parse(previo) as { fecha?: string };
-        // Si ya sincronizó en las últimas 12 horas, no repetir en cada recarga
-        if (datos.fecha && Date.now() - new Date(datos.fecha).getTime() < 12 * 3600_000) {
+        // Si ya sincronizó en la última hora, no repetir en cada recarga
+        if (datos.fecha && Date.now() - new Date(datos.fecha).getTime() < 3600_000) {
           return null;
         }
       }
@@ -256,3 +256,4 @@ export async function sincronizarFirestoreASupabase(forzar = false): Promise<Res
     return null;
   }
 }
+

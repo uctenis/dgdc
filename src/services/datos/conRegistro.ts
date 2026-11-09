@@ -1,5 +1,6 @@
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
+import { supabase, SUPABASE_CONFIGURADO } from '../../lib/supabase';
 import { diferencias, registrarCambio } from '../auditoriaService';
 import { type Proveedor, type ProyectoMaestro, type LicitacionProyecto, type InvitadoLicitacion, type Cotizacion, type EstadoPago, type AumentoObra, type EvaluacionDesempeno, type ConsultaLicitacion, type GarantiaLicitacion, type MultaObra, type AclaracionLicitacion } from '../../types';
 import { addAumentoObraSinRegistro, addCotizacionSinRegistro, addEstadoPagoSinRegistro, deleteCotizacionSinRegistro, updateAumentoObraEstadoSinRegistro, updateEstadoPagoSinRegistro } from './cotizacionesYObra';
@@ -31,17 +32,41 @@ const pesos = (v: unknown) => `$${Math.round(Number(v) || 0).toLocaleString('es-
 
 export async function addProveedor(data: Omit<Proveedor, 'id' | 'fechaRegistro'>): Promise<string> {
   const id = await addProveedorSinRegistro(data);
+  if (SUPABASE_CONFIGURADO) {
+    void supabase.from('proveedores').upsert({
+      id,
+      rut: data.rut,
+      razon_social: data.razonSocial,
+      email: data.email || null,
+      estado: data.estado || 'Activo',
+      datos: { ...data, id, fechaRegistro: new Date().toISOString() },
+      actualizado_en: new Date().toISOString(),
+    }, { onConflict: 'id' });
+  }
   registrarCambio({ accion: 'Creó', entidad: 'Proveedor', entidadId: id, nombre: data.razonSocial, detalle: `RUT ${data.rut}` });
   return id;
 }
 export async function updateProveedor(id: string, data: Partial<Proveedor>): Promise<void> {
   const antes = await leerDatos('proveedores', id);
   await updateProveedorSinRegistro(id, data);
+  if (SUPABASE_CONFIGURADO) {
+    const combinado = { ...(antes || {}), ...data, id };
+    void supabase.from('proveedores').upsert({
+      id,
+      rut: String(combinado.rut || ''),
+      razon_social: String(combinado.razonSocial || ''),
+      email: combinado.email ? String(combinado.email) : null,
+      estado: String(combinado.estado || 'Activo'),
+      datos: combinado,
+      actualizado_en: new Date().toISOString(),
+    }, { onConflict: 'id' });
+  }
   registrarCambio({ accion: 'Modificó', entidad: 'Proveedor', entidadId: id, nombre: texto(antes?.razonSocial) || data.razonSocial, cambios: diferencias(antes, data as Record<string, unknown>) });
 }
 export async function deleteProveedor(id: string): Promise<void> {
   const antes = await leerDatos('proveedores', id);
   await deleteProveedorSinRegistro(id);
+  if (SUPABASE_CONFIGURADO) void supabase.from('proveedores').delete().eq('id', id);
   registrarCambio({ accion: 'Eliminó', entidad: 'Proveedor', entidadId: id, nombre: texto(antes?.razonSocial), detalle: texto(antes?.rut) && `RUT ${antes?.rut}` });
 }
 
@@ -62,33 +87,99 @@ export async function deleteEvaluacionDesempeno(proveedorId: string, evaluacionI
 
 export async function addProyectoMaestro(data: Omit<ProyectoMaestro, 'id' | 'correlativo' | 'codigoProyecto'>): Promise<string> {
   const id = await addProyectoMaestroSinRegistro(data);
+  if (SUPABASE_CONFIGURADO) {
+    const nuevo = await leerDatos('proyectos', id);
+    if (nuevo) {
+      void supabase.from('proyectos').upsert({
+        id,
+        correlativo: Number(nuevo.correlativo || 1),
+        codigo_proyecto: String(nuevo.codigoProyecto || id),
+        nombre: String(nuevo.nombre || data.nombre),
+        anio_presupuesto: nuevo.anioPresupuesto ? Number(nuevo.anioPresupuesto) : null,
+        campus_sigla: (nuevo.campusSigla as string) || null,
+        edificio_sigla: (nuevo.edificioSigla as string) || null,
+        estado: (nuevo.estado as string) || null,
+        gasto_efectivo: Number(nuevo.gastoEfectivo || 0),
+        datos: nuevo,
+        actualizado_en: new Date().toISOString(),
+      }, { onConflict: 'id' });
+    }
+  }
   registrarCambio({ accion: 'Creó', entidad: 'Proyecto', entidadId: id, nombre: data.nombre });
   return id;
 }
 export async function updateProyectoMaestro(id: string, data: Partial<ProyectoMaestro>): Promise<void> {
   const antes = await leerDatos('proyectos', id);
   await updateProyectoMaestroSinRegistro(id, data);
+  if (SUPABASE_CONFIGURADO) {
+    const combinado = { ...(antes || {}), ...data, id };
+    void supabase.from('proyectos').upsert({
+      id,
+      correlativo: Number(combinado.correlativo || 1),
+      codigo_proyecto: String(combinado.codigoProyecto || id),
+      nombre: String(combinado.nombre || ''),
+      anio_presupuesto: combinado.anioPresupuesto ? Number(combinado.anioPresupuesto) : null,
+      campus_sigla: (combinado.campusSigla as string) || null,
+      edificio_sigla: (combinado.edificioSigla as string) || null,
+      estado: (combinado.estado as string) || null,
+      gasto_efectivo: Number(combinado.gastoEfectivo || 0),
+      datos: combinado,
+      actualizado_en: new Date().toISOString(),
+    }, { onConflict: 'id' });
+  }
   registrarCambio({ accion: 'Modificó', entidad: 'Proyecto', entidadId: id, nombre: texto(antes?.nombre) || data.nombre, cambios: diferencias(antes, data as Record<string, unknown>) });
 }
 export async function deleteProyectoMaestro(id: string): Promise<void> {
   const antes = await leerDatos('proyectos', id);
   await deleteProyectoMaestroSinRegistro(id);
+  if (SUPABASE_CONFIGURADO) void supabase.from('proyectos').delete().eq('id', id);
   registrarCambio({ accion: 'Eliminó', entidad: 'Proyecto', entidadId: id, nombre: texto(antes?.nombre), detalle: texto(antes?.codigoProyecto) });
 }
 
 export async function addLicitacion(data: Omit<LicitacionProyecto, 'id'>): Promise<string> {
   const id = await addLicitacionSinRegistro(data);
+  if (SUPABASE_CONFIGURADO) {
+    const nueva = await leerDatos('licitaciones', id);
+    if (nueva) {
+      void supabase.from('licitaciones').upsert({
+        id,
+        proyecto_maestro_id: (nueva.proyectoMaestroId as string) || null,
+        codigo_proyecto: (nueva.codigoProyecto as string) || null,
+        nombre_proyecto: String(nueva.nombreProyecto || data.nombreProyecto),
+        estado: String(nueva.estado || 'Borrador'),
+        proveedor_ganador_id: (nueva.proveedorAdjudicadoId as string) || (nueva.proveedorGanadorId as string) || null,
+        limite_ofertas_ms: nueva.limiteOfertasMs ? Number(nueva.limiteOfertasMs) : null,
+        datos: nueva,
+        actualizado_en: new Date().toISOString(),
+      }, { onConflict: 'id' });
+    }
+  }
   registrarCambio({ accion: 'Creó', entidad: 'Licitación', entidadId: id, licitacionId: id, nombre: data.nombreProyecto, detalle: data.codigoProyecto });
   return id;
 }
 export async function updateLicitacion(id: string, data: Partial<LicitacionProyecto>): Promise<void> {
   const antes = await leerDatos('licitaciones', id);
   await updateLicitacionSinRegistro(id, data);
+  if (SUPABASE_CONFIGURADO) {
+    const combinado = { ...(antes || {}), ...data, id };
+    void supabase.from('licitaciones').upsert({
+      id,
+      proyecto_maestro_id: (combinado.proyectoMaestroId as string) || null,
+      codigo_proyecto: (combinado.codigoProyecto as string) || null,
+      nombre_proyecto: String(combinado.nombreProyecto || ''),
+      estado: String(combinado.estado || 'Borrador'),
+      proveedor_ganador_id: (combinado.proveedorAdjudicadoId as string) || (combinado.proveedorGanadorId as string) || null,
+      limite_ofertas_ms: combinado.limiteOfertasMs ? Number(combinado.limiteOfertasMs) : null,
+      datos: combinado,
+      actualizado_en: new Date().toISOString(),
+    }, { onConflict: 'id' });
+  }
   registrarCambio({ accion: 'Modificó', entidad: 'Licitación', entidadId: id, licitacionId: id, nombre: texto(antes?.nombreProyecto) || data.nombreProyecto, cambios: diferencias(antes, data as Record<string, unknown>) });
 }
 export async function deleteLicitacion(id: string): Promise<void> {
   const antes = await leerDatos('licitaciones', id);
   await deleteLicitacionSinRegistro(id);
+  if (SUPABASE_CONFIGURADO) void supabase.from('licitaciones').delete().eq('id', id);
   registrarCambio({ accion: 'Eliminó', entidad: 'Licitación', entidadId: id, licitacionId: id, nombre: texto(antes?.nombreProyecto), detalle: texto(antes?.codigoProyecto) });
 }
 
