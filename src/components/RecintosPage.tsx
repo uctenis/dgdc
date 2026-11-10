@@ -73,6 +73,8 @@ export function RecintosPage() {
     .sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
   const edificios = [...delCampus, ...sinConfigurar];
   const [filtroEdificios, setFiltroEdificios] = useState('');
+  // El campus tiene ilustración: sus edificios se muestran como tarjetas junto a ella (PlanoGeneralCampus).
+  const [conIlustracion, setConIlustracion] = useState(false);
   const [verComunes, setVerComunes] = useState(false);
   const edificio = parametros.get('edificio') || '';
   // Nombre del edificio: el del catastro y, si no tiene, el de la configuración de campus.
@@ -349,9 +351,16 @@ export function RecintosPage() {
               <CargarPlantasVectoriales />
             </div>
             <PlanoGeneralCampus sigla={campusSigla} nombre={campus.find(c => c.sigla === campusSigla)?.nombre || campusSigla}
-              edificios={edificios.map(e => ({ codigo: e, nombre: comoTitulo(nombreEdificio(e)) || '' }))}
+              edificios={edificios.map(e => {
+                const info = obtenerInfoEdificio(e);
+                return {
+                  codigo: e, conDatos: enBase.includes(e), esComun: esEspacioComun(e),
+                  nombre: comoTitulo(nombreEdificio(e)) || (info?.esExterior ? info.nombre || '' : sinConfigurar.includes(e) ? 'Sin configurar (solo en el catastro)' : ''),
+                };
+              })}
+              filtro={filtroEdificios} onFiltro={setFiltroEdificios} onCargado={setConIlustracion}
               onElegir={e => { ir({ edificio: e }); setResaltado(null); }} />
-            {edificios.length > 8 && (
+            {!conIlustracion && edificios.length > 8 && (
               <label className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus-within:ring-2 focus-within:ring-teal-400 max-w-md">
                 <Search className="w-3.5 h-3.5 text-slate-400" />
                 <input value={filtroEdificios} onChange={e => setFiltroEdificios(e.target.value)} placeholder={`Filtrar los ${edificios.length} edificios por código o nombre…`} className="flex-1 min-w-0 outline-none" />
@@ -359,7 +368,8 @@ export function RecintosPage() {
               </label>
             )}
             {[
-              { titulo: 'Edificios y construcciones', lista: edificiosFiltrados.filter(e => !esEspacioComun(e)), plegable: false },
+              // Con ilustración, los edificios van en las tarjetas junto a ella: aquí quedan solo los espacios comunes.
+              { titulo: 'Edificios y construcciones', lista: conIlustracion ? [] : edificiosFiltrados.filter(e => !esEspacioComun(e)), plegable: false },
               { titulo: 'Espacios comunes y exteriores', lista: edificiosFiltrados.filter(esEspacioComun), plegable: true },
             ].filter(g => g.lista.length).map(g => {
               // Los espacios comunes parten plegados (son muchos y se consultan poco), salvo al filtrar.
