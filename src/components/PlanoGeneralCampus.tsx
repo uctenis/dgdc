@@ -117,17 +117,28 @@ export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro,
     }
   };
 
+  // Cada cambio parte de lo último guardado (no de una copia vieja del estado: dos cambios seguidos se pisaban).
+  const ultimos = useRef<MarcadorCampus[]>([]);
+  ultimos.current = marcadores;
   const guardar = async (lista: MarcadorCampus[]) => {
+    ultimos.current = lista;
     setMarcadores(lista);
     setGuardando(true);
     try { await guardarMarcadoresCampus(sigla, lista); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setGuardando(false); }
   };
   const cambiarEdificio = (codigo: string, cambio: Partial<MarcadorCampus> | null) => {
-    const previo = marcadores.find(m => m.edificio === codigo);
-    const lista = cambio === null
-      ? marcadores.filter(m => m.edificio !== codigo)
-      : [...marcadores.filter(m => m.edificio !== codigo), { edificio: codigo, x: previo?.x ?? 0.5, y: previo?.y ?? 0.5, ...previo, ...cambio }];
-    void guardar(lista);
+    const actuales = ultimos.current;
+    const previo = actuales.find(m => m.edificio === codigo);
+    if (cambio === null) { void guardar(actuales.filter(m => m.edificio !== codigo)); return; }
+    // Un edificio sin número (recién agregado con su contorno) lo recibe en el centro de su contorno, nunca en el
+    // centro de la imagen.
+    const contorno = cambio.contorno || previo?.contorno;
+    const centro: Punto = contorno?.length
+      ? [redondear(contorno.reduce((s, p) => s + p[0], 0) / contorno.length), redondear(contorno.reduce((s, p) => s + p[1], 0) / contorno.length)]
+      : [0.5, 0.5];
+    const nuevo: MarcadorCampus = { edificio: codigo, x: previo?.x ?? centro[0], y: previo?.y ?? centro[1], ...(previo?.contorno ? { contorno: previo.contorno } : {}), ...cambio };
+    if (!nuevo.contorno) delete nuevo.contorno;
+    void guardar([...actuales.filter(m => m.edificio !== codigo), nuevo]);
   };
   const puntoEn = (e: { clientX: number; clientY: number }): Punto => {
     const r = capa.current!.getBoundingClientRect();
@@ -165,7 +176,7 @@ export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro,
   };
   /** Borra una esquina del contorno del edificio elegido (siempre quedan al menos 3). */
   const borrarEsquina = (i: number) => {
-    const c = marcadorDe.get(aUbicar)?.contorno;
+    const c = ultimos.current.find(m => m.edificio === aUbicar)?.contorno;
     if (!c || c.length <= 3) return;
     cambiarEdificio(aUbicar, { contorno: c.filter((_, k) => k !== i) });
   };
