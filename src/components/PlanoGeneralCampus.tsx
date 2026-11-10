@@ -95,6 +95,8 @@ export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro,
     const tecla = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setDibujo(null);
       if (e.key === 'Enter') terminarDibujo();
+      // Retroceso deshace el último punto (sin borrar texto de un campo, si lo hubiera con foco).
+      if (e.key === 'Backspace' && !(e.target instanceof HTMLInputElement)) { e.preventDefault(); setDibujo(d => d && d.slice(0, -1)); }
     };
     window.addEventListener('keydown', tecla);
     return () => window.removeEventListener('keydown', tecla);
@@ -160,6 +162,12 @@ export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro,
     if (!arrastre) return;
     cambiarEdificio(aUbicar, { contorno: arrastre.puntos });
     setArrastre(null);
+  };
+  /** Borra una esquina del contorno del edificio elegido (siempre quedan al menos 3). */
+  const borrarEsquina = (i: number) => {
+    const c = marcadorDe.get(aUbicar)?.contorno;
+    if (!c || c.length <= 3) return;
+    cambiarEdificio(aUbicar, { contorno: c.filter((_, k) => k !== i) });
   };
 
   const marcadorDe = useMemo(() => new Map(marcadores.map(m => [m.edificio, m])), [marcadores]);
@@ -249,13 +257,16 @@ export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro,
             <span>Haga clic sobre el edificio para poner (o mover) su número.</span>
           ) : dibujo ? (
             <>
-              <span>Haga clic en cada esquina del edificio ({dibujo.length} puntos). Doble clic o «Terminar» para guardar; Esc cancela.</span>
+              <span>Haga clic en cada esquina del edificio ({dibujo.length} puntos). Doble clic o «Terminar» para guardar; Retroceso quita el último punto; Esc cancela.</span>
               <button type="button" disabled={dibujo.length < 3} onClick={terminarDibujo} className="px-2.5 py-1 rounded-lg bg-amber-600 text-white font-bold disabled:opacity-40">Terminar</button>
+              <button type="button" disabled={!dibujo.length} onClick={() => setDibujo(d => d && d.slice(0, -1))} className="px-2 py-1 rounded-lg hover:bg-amber-100 disabled:opacity-40">Deshacer punto</button>
               <button type="button" onClick={() => setDibujo(null)} className="px-2 py-1 rounded-lg hover:bg-amber-100">Cancelar</button>
             </>
           ) : (
             <>
-              <span>{elegido?.contorno ? 'Arrastre las esquinas para corregirlo, o redibújelo.' : 'Este edificio aún no tiene contorno.'}</span>
+              <span>{elegido?.contorno
+                ? 'Arrastre una esquina para moverla; doble clic o clic derecho la borra; arrastre un punto medio para agregar una.'
+                : 'Este edificio aún no tiene contorno.'}</span>
               <button type="button" onClick={() => setDibujo([])} className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-600 text-white font-bold">
                 <PenLine className="w-3.5 h-3.5" /> {elegido?.contorno ? 'Redibujar' : 'Dibujar contorno'}
               </button>
@@ -316,12 +327,36 @@ export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro,
               )}
             </svg>
 
-            {/* Esquinas del contorno para arrastrarlas. */}
+            {/* Puntos medios de cada lado: al arrastrarlos se agrega una esquina nueva ahí. */}
+            {ubicando && herramienta === 'contorno' && !dibujo && !arrastre && contornoEditable?.map((p, i) => {
+              const q = contornoEditable[(i + 1) % contornoEditable.length];
+              const medio: Punto = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+              return (
+                <span key={`m${i}`} role="presentation" title="Arrastre para agregar una esquina aquí"
+                  onPointerDown={e => {
+                    e.stopPropagation();
+                    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+                    const puntos = [...contornoEditable.slice(0, i + 1), medio, ...contornoEditable.slice(i + 1)];
+                    setArrastre({ indice: i + 1, puntos });
+                  }}
+                  onClick={e => e.stopPropagation()}
+                  className="absolute w-2.5 h-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-500/60 border border-white cursor-copy hover:bg-amber-500"
+                  style={{ left: `${medio[0] * 100}%`, top: `${medio[1] * 100}%` }} />
+              );
+            })}
+            {/* Esquinas del contorno: arrastrar para mover; doble clic o clic derecho para borrar. */}
             {ubicando && herramienta === 'contorno' && !dibujo && contornoEditable?.map((p, i) => (
-              <span key={i} role="presentation"
-                onPointerDown={e => { e.stopPropagation(); (e.target as HTMLElement).setPointerCapture?.(e.pointerId); setArrastre({ indice: i, puntos: contornoEditable }); }}
+              <span key={i} role="presentation" title="Arrastre para moverla · doble clic o clic derecho para borrarla"
+                onPointerDown={e => {
+                  if (e.button !== 0) return;
+                  e.stopPropagation();
+                  (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+                  setArrastre({ indice: i, puntos: contornoEditable });
+                }}
                 onClick={e => e.stopPropagation()}
-                className="absolute w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white border-2 border-amber-600 shadow cursor-move"
+                onDoubleClick={e => { e.stopPropagation(); borrarEsquina(i); }}
+                onContextMenu={e => { e.preventDefault(); e.stopPropagation(); borrarEsquina(i); }}
+                className="absolute w-3.5 h-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white border-2 border-amber-600 shadow cursor-move hover:bg-rose-100 hover:border-rose-600"
                 style={{ left: `${p[0] * 100}%`, top: `${p[1] * 100}%` }} />
             ))}
             {ubicando && dibujo?.map((p, i) => (
