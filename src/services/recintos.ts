@@ -536,7 +536,11 @@ export async function guardarPlantaVectorial(documentoId: string, planta: Planta
 export interface PlanoGeneralCampus { ruta: string; esPdf: boolean; url: string }
 
 /** Ubicación de un edificio sobre la ilustración del campus (x, y de 0 a 1). */
-export interface MarcadorCampus { edificio: string; x: number; y: number }
+export interface MarcadorCampus {
+  edificio: string; x: number; y: number;
+  /** Contorno del edificio en la ilustración (x, y de 0 a 1), para iluminarlo y abrirlo con un clic. */
+  contorno?: [number, number][];
+}
 
 export async function obtenerMarcadoresCampus(sigla: string): Promise<MarcadorCampus[]> {
   const { data, error } = await supabase.from('campus_marcadores').select('marcadores').eq('sigla', sigla).maybeSingle();
