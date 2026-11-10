@@ -42,6 +42,7 @@ export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro,
   const [guardando, setGuardando] = useState(false);
   const [activo, setActivo] = useState<{ codigo: string; desde: 'mapa' | 'lista' } | null>(null);
   const [elegidoTactil, setElegidoTactil] = useState<string | null>(null);
+  const [verOtros, setVerOtros] = useState(false);
   const lienzo = useRef<HTMLCanvasElement>(null);
   const capa = useRef<HTMLDivElement>(null);
   const selector = useRef<HTMLInputElement>(null);
@@ -160,7 +161,7 @@ export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro,
     }
     // Número: se pone (o mueve) y se pasa al siguiente sin ubicar.
     cambiarEdificio(aUbicar, { x: p[0], y: p[1] });
-    const siguiente = edificios.find(ed => ed.codigo !== aUbicar && !marcadores.some(m => m.edificio === ed.codigo));
+    const siguiente = principales.find(ed => ed.codigo !== aUbicar && !ultimos.current.some(m => m.edificio === ed.codigo));
     if (siguiente) setAUbicar(siguiente.codigo);
   };
   // Arrastre de una esquina del contorno del edificio elegido.
@@ -189,6 +190,13 @@ export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro,
       .filter(e => !q || q.split(' ').every(p => sinTildes(`${e.codigo} ${e.nombre}`).includes(p)))
       .sort((a, b) => Number(marcadorDe.has(b.codigo)) - Number(marcadorDe.has(a.codigo)) || a.codigo.localeCompare(b.codigo, 'es', { numeric: true }));
   }, [edificios, marcadorDe, filtro]);
+  // Edificios secundarios (garitas, bodegas…: número de tres dígitos, como CJP101) no suelen estar en la ilustración:
+  // van al final al ubicar y en las tarjetas quedan en «Otros edificios del campus», plegado.
+  const esSecundario = (codigo: string) => numeroDe(codigo, sigla).replace(/\D/g, '').length >= 3;
+  const principales = edificios.filter(e => !e.esComun && !esSecundario(e.codigo));
+  const ordenUbicar = [...principales, ...edificios.filter(e => !e.esComun && esSecundario(e.codigo)), ...edificios.filter(e => e.esComun)];
+  const enMapa = lista.filter(e => marcadorDe.has(e.codigo));
+  const otros = lista.filter(e => !marcadorDe.has(e.codigo));
   const nombreDe = (codigo: string) => edificios.find(e => e.codigo === codigo)?.nombre || '';
   const iluminado = ubicando ? null : (activo?.codigo || elegidoTactil);
   const enfocar = (codigo: string) => !ubicando && setActivo({ codigo, desde: 'mapa' });
@@ -204,7 +212,7 @@ export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro,
       <h3 className="flex items-center gap-1.5 font-extrabold text-slate-800"><IconoMapa className="w-4 h-4 text-teal-700" /> Plano general · {nombre}</h3>
       <div className="ml-auto flex flex-wrap items-center gap-2">
         {plano && edificios.length > 0 && (
-          <button type="button" onClick={() => { setUbicando(u => !u); setDibujo(null); setAUbicar(a => a || edificios.find(ed => !marcadorDe.has(ed.codigo))?.codigo || edificios[0].codigo); }}
+          <button type="button" onClick={() => { setUbicando(u => !u); setDibujo(null); setAUbicar(a => a || principales.find(ed => !marcadorDe.has(ed.codigo))?.codigo || ordenUbicar[0]?.codigo || ''); }}
             title="Ponga el número de cada edificio y dibuje o corrija su contorno sobre la ilustración"
             className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border font-bold ${ubicando ? 'bg-slate-900 border-slate-900 text-white' : 'border-slate-300 text-slate-700 hover:bg-slate-50'}`}>
             {ubicando ? <Check className="w-3.5 h-3.5" /> : <MapPin className="w-3.5 h-3.5" />} {ubicando ? 'Listo' : 'Ubicar edificios'}
@@ -255,7 +263,7 @@ export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro,
       {ubicando && (
         <div className="flex flex-wrap items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-100 text-amber-900">
           <select value={aUbicar} onChange={e => { setAUbicar(e.target.value); setDibujo(null); }} className="px-2 py-1 border border-amber-300 rounded-lg bg-white font-bold">
-            {edificios.map(ed => {
+            {ordenUbicar.map(ed => {
               const m = marcadorDe.get(ed.codigo);
               return <option key={ed.codigo} value={ed.codigo}>{ed.codigo} · {ed.nombre}{m ? (m.contorno ? ' ✓ número y contorno' : ' ✓ número') : ''}</option>;
             })}
@@ -293,7 +301,7 @@ export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro,
               <X className="w-3.5 h-3.5" /> Quitar de la ilustración
             </button>
           )}
-          <span className="ml-auto text-amber-700">{marcadores.length} de {edificios.length} ubicados · {marcadores.filter(m => m.contorno).length} con contorno{guardando ? ' · guardando…' : ''}</span>
+          <span className="ml-auto text-amber-700">{principales.filter(e => marcadorDe.has(e.codigo)).length} de {principales.length} edificios principales ubicados · {marcadores.filter(m => m.contorno).length} con contorno{guardando ? ' · guardando…' : ''}</span>
         </div>
       )}
       {error && <p className="px-4 py-2 bg-rose-50 text-rose-800 border-b border-rose-100">{error}</p>}
@@ -420,7 +428,8 @@ export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro,
               </label>
             </div>
             <div className="flex-1 min-h-0 max-h-[60vh] lg:max-h-none overflow-y-auto p-2 space-y-1">
-              {lista.map(e => {
+              {(() => {
+                const tarjeta = (e: EdificioDelCampus) => {
                 const ubicado = marcadorDe.has(e.codigo);
                 const encendido = iluminado === e.codigo;
                 const Icono = e.esComun ? Trees : Building2;
@@ -438,13 +447,32 @@ export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro,
                       <span className="block font-mono text-[11px] font-bold text-teal-800">{e.codigo}</span>
                       <span className="block font-bold text-slate-800 leading-tight truncate">{e.nombre || 'Sin nombre'}</span>
                       <span className={`block text-[10px] ${e.conDatos ? 'text-emerald-700' : 'text-slate-400'}`}>
-                        {e.conDatos ? 'Con datos del catastro' : 'Sin datos aún'}{!ubicado ? ' · sin ubicar en la ilustración' : ''}
+                        {e.conDatos ? 'Con datos del catastro' : 'Sin datos aún'}
                       </span>
                     </span>
                     <ChevronRight className={`w-4 h-4 shrink-0 transition ${encendido ? 'text-amber-600 translate-x-0.5' : 'text-slate-300 group-hover:text-slate-500'}`} />
                   </button>
                 );
-              })}
+              };
+                return (
+                  <>
+                    {enMapa.map(tarjeta)}
+                    {otros.length > 0 && (
+                      <div className={enMapa.length ? 'pt-2 mt-1 border-t border-slate-100' : ''}>
+                        {enMapa.length > 0 && (
+                          <button type="button" onClick={() => setVerOtros(v => !v)}
+                            className="w-full flex items-center gap-1 px-1.5 py-1 text-[11px] font-extrabold uppercase tracking-wide text-slate-500 hover:text-slate-700">
+                            <ChevronRight className={`w-3.5 h-3.5 transition-transform ${verOtros || filtro ? 'rotate-90' : ''}`} />
+                            Otros edificios del campus ({otros.length})
+                            <span className="ml-auto normal-case font-normal tracking-normal">no están en la ilustración</span>
+                          </button>
+                        )}
+                        {(verOtros || !!filtro || !enMapa.length) && <div className="space-y-1 mt-1">{otros.map(tarjeta)}</div>}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
               {!lista.length && <p className="p-3 text-slate-500">Ningún edificio coincide con «{filtro}».</p>}
             </div>
           </div>
