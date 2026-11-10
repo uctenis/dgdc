@@ -19,7 +19,7 @@ const ASPECTO = 220 / 140;
 
 /**
  * Miniatura de la ilustración del campus centrada en un edificio, con el edificio destacado: da contexto de dónde está
- * y lleva al plano del campus. No aparece si el campus no tiene ilustración o el edificio no está ubicado en ella.
+ * y lleva a la vista del campus. No aparece si el campus no tiene ilustración o el edificio no está ubicado en ella.
  */
 export function MiniaturaCampus({ sigla, edificio, nombreCampus, onAbrir, className = '' }: {
   sigla: string; edificio: string; nombreCampus: string; onAbrir: () => void; className?: string;
@@ -55,7 +55,7 @@ export function MiniaturaCampus({ sigla, edificio, nombreCampus, onAbrir, classN
   const poligono = marcador.contorno?.length ? puntos.map(p => p.join(',')).join(' ') : null;
 
   return (
-    <button type="button" onClick={onAbrir} title={`Ver ${edificio} en el plano de ${nombreCampus}`}
+    <button type="button" onClick={onAbrir} title={`Ver ${edificio} en la vista del campus ${nombreCampus}`}
       className={`group relative block overflow-hidden rounded-xl border border-slate-200 bg-slate-100 shadow-sm hover:shadow-md hover:border-teal-400 transition ${className}`}>
       <svg viewBox={`${x0} ${y0} ${ancho} ${alto}`} preserveAspectRatio="xMidYMid slice" className="block w-full h-full" aria-hidden>
         <defs>
@@ -65,13 +65,13 @@ export function MiniaturaCampus({ sigla, edificio, nombreCampus, onAbrir, classN
           </mask>
         </defs>
         <image href={url} x={0} y={0} width={W} height={H} />
-        {/* El entorno un poco apagado; el edificio, aclarado como en el plano del campus. */}
+        {/* El entorno un poco apagado; el edificio, aclarado como en la vista del campus. */}
         {poligono && <rect x={0} y={0} width={W} height={H} fill="rgba(15, 23, 42, 0.28)" mask={`url(#fuera-${id})`} />}
         {poligono && <polygon points={poligono} fill="rgba(255, 236, 179, 0.5)" stroke="rgba(255, 255, 255, 0.95)" strokeWidth={ancho / 220 * 1.5} style={{ mixBlendMode: 'screen' }} />}
         {!poligono && <circle cx={marcador.x * W} cy={marcador.y * H} r={ancho * 0.06} fill="none" stroke="#fcd34d" strokeWidth={ancho / 220 * 2.5} />}
       </svg>
       <span className="absolute left-1.5 bottom-1.5 flex items-center gap-1 rounded-md bg-slate-900/75 px-1.5 py-0.5 text-[10px] font-semibold text-white backdrop-blur-sm group-hover:bg-teal-800/90">
-        <IconoMapa className="w-3 h-3" /> Ver en el plano de {sigla}
+        <IconoMapa className="w-3 h-3" /> Ver en la vista del campus
       </span>
     </button>
   );

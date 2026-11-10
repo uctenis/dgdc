@@ -304,11 +304,11 @@ export function RecintosPage() {
           </button>
           {campusSigla && <>
             <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-            {/* Dentro de un edificio: volver al plano general del campus (su ilustración y sus edificios). */}
+            {/* Dentro de un edificio: volver a la vista del campus (su ilustración y sus edificios). */}
             {edificio && (
-              <button type="button" onClick={() => { ir({ edificio: '' }); setResaltado(null); }} title="Volver al plano general del campus"
+              <button type="button" onClick={() => { ir({ edificio: '' }); setResaltado(null); }} title="Volver a la vista del campus"
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-teal-300 bg-teal-50 font-bold text-teal-800 hover:bg-teal-100">
-                <MapIcon className="w-4 h-4" /><span className="hidden sm:inline">Plano del campus</span>
+                <MapIcon className="w-4 h-4" /><span className="hidden sm:inline">Vista del campus</span>
               </button>
             )}
             <select value={campusSigla} onChange={e => { ir({ campus: e.target.value }); setResaltado(null); }} aria-label="Campus"
@@ -426,11 +426,11 @@ export function RecintosPage() {
           {/* Encabezado del edificio: que siempre quede claro cuál se está viendo. */}
           <div className="flex flex-wrap items-end gap-x-4 gap-y-1 px-1">
             <div className="min-w-0">
-              {/* Volver al plano general del campus (la ilustración con sus edificios). */}
+              {/* Volver a la vista del campus (la ilustración con sus edificios). */}
               <button type="button" onClick={() => { ir({ edificio: '' }); setResaltado(null); }}
                 className="group flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-teal-700 hover:text-teal-900">
                 <ArrowLeft className="w-3.5 h-3.5 transition group-hover:-translate-x-0.5" />
-                <span>Volver al plano de {campus.find(c => c.sigla === campusSigla)?.nombre || campusSigla}</span>
+                <span>Volver a {campus.find(c => c.sigla === campusSigla)?.nombre || campusSigla}</span>
               </button>
               <h1 className="text-xl sm:text-2xl font-black text-slate-900 leading-tight flex items-baseline gap-2 flex-wrap">
                 <span className="font-mono text-teal-800">{edificio}</span>
@@ -438,7 +438,7 @@ export function RecintosPage() {
               </h1>
             </div>
             {ficha?.direccion && <p className="text-slate-500 pb-1">{ficha.direccion}</p>}
-            {/* Miniatura del edificio en la ilustración del campus: contexto y regreso al plano del campus. */}
+            {/* Miniatura del edificio en la ilustración del campus: contexto y regreso a la vista del campus. */}
             <MiniaturaCampus sigla={campusSigla} edificio={edificio} nombreCampus={campus.find(c => c.sigla === campusSigla)?.nombre || campusSigla}
               onAbrir={() => { setVolverResaltando(edificio); ir({ edificio: '' }); setResaltado(null); }}
               className="w-full h-28 sm:w-[220px] sm:h-[140px] sm:ml-auto order-last sm:order-none" />

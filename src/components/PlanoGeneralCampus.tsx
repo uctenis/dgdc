@@ -17,7 +17,7 @@ const numeroDe = (codigo: string, sigla: string) => codigo.startsWith(sigla) ? c
 const redondear = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 10000) / 10000;
 
 /**
- * Plano general (ilustración) del campus con sus edificios, en vistas coordinadas: la ilustración a un lado y las
+ * Vista del campus (su ilustración) con sus edificios, en vistas coordinadas: la ilustración a un lado y las
  * tarjetas al otro (en el celular, una sobre otra). Pasar el mouse por una tarjeta o por un edificio ilumina su
  * contorno en la ilustración y resalta su tarjeta; un clic en cualquiera de los dos abre el edificio.
  * «Ubicar edificios» permite poner el número de cada uno y dibujar o corregir su contorno.
@@ -220,7 +220,7 @@ export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro,
 
   const cabecera = (
     <div className="flex flex-wrap items-center gap-2 px-3 sm:px-4 py-2.5 border-b border-slate-100">
-      <h3 className="flex items-center gap-1.5 font-extrabold text-slate-800"><IconoMapa className="w-4 h-4 text-teal-700" /> Plano general · {nombre}</h3>
+      <h3 className="flex items-center gap-1.5 font-extrabold text-slate-800"><IconoMapa className="w-4 h-4 text-teal-700" /> Vista del campus · {nombre}</h3>
       <div className="ml-auto flex flex-wrap items-center gap-2">
         {plano && edificios.length > 0 && (
           <button type="button" onClick={() => { setUbicando(u => !u); setDibujo(null); setAUbicar(a => a || principales.find(ed => !marcadorDe.has(ed.codigo))?.codigo || ordenUbicar[0]?.codigo || ''); }}
@@ -236,7 +236,7 @@ export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro,
         )}
         <button type="button" disabled={subiendo} onClick={() => selector.current?.click()}
           className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-teal-300 font-bold text-teal-800 hover:bg-teal-50 disabled:opacity-50">
-          {subiendo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />} {plano ? 'Reemplazar' : 'Subir plano o ilustración'}
+          {subiendo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />} {plano ? 'Reemplazar ilustración' : 'Subir ilustración'}
         </button>
         <input ref={selector} type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" className="hidden" onChange={e => void subir(e.target.files?.[0])} />
       </div>
@@ -244,7 +244,7 @@ export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro,
   );
 
   if (cargando) {
-    return <div className="flex items-center justify-center gap-2 h-40 bg-white border border-slate-200 rounded-2xl text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Cargando plano general…</div>;
+    return <div className="flex items-center justify-center gap-2 h-40 bg-white border border-slate-200 rounded-2xl text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Cargando la vista del campus…</div>;
   }
 
   if (!plano) {
