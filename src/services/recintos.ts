@@ -451,6 +451,37 @@ export async function abrirArchivoDocumento(d: Pick<DocumentoEdificio, 'archivo'
   window.open(data.signedUrl, '_blank', 'noopener');
 }
 
+// ── Planta vectorial por capas de una lámina (migración 0016) ──
+
+export interface CapaVectorial { id: string; nombre: string; d: string; relleno?: string }
+export interface PlantaVectorial {
+  version: number; edificio?: string; lamina?: string; W: number; H: number; calce?: string;
+  capas: CapaVectorial[];
+  textos: { capa: string; x: number; y: number; t: string; h: number; r: number }[];
+}
+
+/** Planta vectorial de la lámina, o null si aún no tiene (o la tabla no existe todavía). */
+export async function obtenerPlantaVectorial(documentoId: string): Promise<PlantaVectorial | null> {
+  const { data, error } = await supabase.from('laminas_vectoriales').select('datos').eq('documento_id', documentoId).maybeSingle();
+  if (error) return null;
+  return (data as { datos: PlantaVectorial } | null)?.datos ?? null;
+}
+
+/** Revisa que un archivo de planta vectorial tenga la forma esperada antes de guardarlo. */
+export function validarPlantaVectorial(v: unknown): PlantaVectorial {
+  const p = v as PlantaVectorial;
+  if (!p || typeof p !== 'object' || !(p.W > 0) || !(p.H > 0) || !Array.isArray(p.capas) || !Array.isArray(p.textos)
+    || p.capas.some(c => typeof c?.id !== 'string' || typeof c?.d !== 'string')) {
+    throw new Error('El archivo no es una planta vectorial válida (debe venir de planta_vectorial.py).');
+  }
+  return p;
+}
+
+export async function guardarPlantaVectorial(documentoId: string, planta: PlantaVectorial): Promise<void> {
+  const { error } = await supabase.from('laminas_vectoriales').upsert({ documento_id: documentoId, datos: planta, generado_en: new Date().toISOString() });
+  if (error) throw errorDe(error, 'No se pudo guardar la planta vectorial (¿falta ejecutar la migración 0016?)');
+}
+
 // ── Plano general (o ilustración) de cada campus ──
 // Un solo archivo vigente por campus en «laminas/campus/<SIGLA>/», PDF o imagen. Cada subida usa un nombre nuevo (por
 // la caché del almacenamiento) y borra las anteriores.

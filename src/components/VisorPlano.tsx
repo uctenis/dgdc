@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import {
-  Loader2, ZoomIn, ZoomOut, Maximize2, Minimize2, Scan, Pencil, Trash2, MapPin, CheckCircle2, Circle, X, Undo2, Check, AlertTriangle, Wand2, Tag, BoxSelect, Square, Save, Plus,
+  Loader2, ZoomIn, ZoomOut, Maximize2, Minimize2, Scan, Pencil, Trash2, MapPin, CheckCircle2, Circle, X, Undo2, Check, AlertTriangle, Wand2, Tag, BoxSelect, Square, Save, Plus, Layers,
 } from 'lucide-react';
 import type { DocumentoEdificio, Piso, Recinto, ZonaRecinto } from '../types/recintos';
-import { descargarLamina, eliminarZona, guardarEscalaDocumento, guardarZona, listarZonas } from '../services/recintos';
+import { descargarLamina, eliminarZona, guardarEscalaDocumento, guardarPlantaVectorial, guardarZona, listarZonas, obtenerPlantaVectorial, validarPlantaVectorial, type PlantaVectorial } from '../services/recintos';
+import { ESTILO_CAPA, PlantaSvg } from './PlantaSvg';
 import { ajustarPuntoOrtogonal, areaPoligono, areaRealM2, centroide, colorDeCategoria, denominadorEscala, estimarEscala, limites, puntoEnPoligono, type Punto } from '../utils/geometriaPlano';
 import { detectarRecintoEnPunto, predibujarRecintos } from '../utils/predibujoPlano';
 import { recortarContraVecinos } from '../utils/sinSuperposicion';
@@ -51,6 +52,15 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
   const [filtroRecinto, setFiltroRecinto] = useState('');
   useEffect(() => { setPisoLista(documento.piso_id || ''); }, [documento.piso_id]);
   const lienzo = useRef<HTMLCanvasElement>(null);
+  const detalle = useRef<HTMLCanvasElement>(null);                          // zona visible en alta resolución
+  // Planta vectorial por capas (si la lámina la tiene): se muestra en vez del PDF; el PDF sigue disponible.
+  const [planta, setPlanta] = useState<PlantaVectorial | null>(null);
+  const [verPlanta, setVerPlanta] = useState(true);
+  const [capasOcultas, setCapasOcultas] = useState<Set<string>>(() => new Set(['textos', 'ejes', 'instalaciones', 'proyecciones']));
+  const [menuCapas, setMenuCapas] = useState(false);
+  const selectorPlanta = useRef<HTMLInputElement>(null);
+  const factorBase = useRef(1);                                             // píxeles por punto de la lámina completa
+  const [zonaDetalle, setZonaDetalle] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const marco = useRef<HTMLDivElement>(null);
   const [pdf, setPdf] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [pagina, setPagina] = useState(1);
@@ -173,6 +183,8 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
       const page = await pdf.getPage(pagina);
       const base = page.getViewport({ scale: 1 });
       const factor = Math.min(4, 5000 / Math.max(base.width, base.height));
+      factorBase.current = factor;
+      setZonaDetalle(null);
       const viewport = page.getViewport({ scale: factor });
       const c = lienzo.current;
       if (!vigente || !c) return;
@@ -184,6 +196,63 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
     })();
     return () => { vigente = false; tarea?.cancel(); };
   }, [pdf, pagina]);
+
+  useEffect(() => {
+    let vigente = true;
+    setPlanta(null);
+    obtenerPlantaVectorial(documento.id).then(p => { if (vigente) setPlanta(p); });
+    return () => { vigente = false; };
+  }, [documento.id]);
+  const vectorial = !!planta && verPlanta && pagina === 1;
+  const subirPlanta = async (archivo?: File) => {
+    if (!archivo) return;
+    try {
+      const p = validarPlantaVectorial(JSON.parse(await archivo.text()));
+      await guardarPlantaVectorial(documento.id, p);
+      setPlanta(p);
+      setVerPlanta(true);
+      setAviso(`Planta vectorial cargada: ${p.capas.length} capas.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (selectorPlanta.current) selectorPlanta.current.value = '';
+    }
+  };
+
+  // Nitidez al acercarse: la página completa queda dibujada con `factorBase` píxeles por punto; cuando el zoom pide
+  // más, se vuelve a dibujar SOLO la zona visible a la resolución de la pantalla (al detenerse el zoom o el
+  // desplazamiento). Esa copia va entre la lámina y los contornos, en las mismas coordenadas, así que todo calza.
+  useEffect(() => {
+    const m = marco.current;
+    if (!pdf || !tam || !m || vectorial) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const escala = vista.k * dpr;
+    if (escala <= factorBase.current * 1.05) { setZonaDetalle(null); return; }
+    let vigente = true;
+    let tarea: { cancel: () => void } | null = null;
+    const espera = setTimeout(async () => {
+      const x0 = Math.max(0, -vista.x / vista.k), y0 = Math.max(0, -vista.y / vista.k);
+      const x1 = Math.min(tam.w, (m.clientWidth - vista.x) / vista.k), y1 = Math.min(tam.h, (m.clientHeight - vista.y) / vista.k);
+      if (x1 <= x0 || y1 <= y0) return;
+      try {
+        const page = await pdf.getPage(pagina);
+        const viewport = page.getViewport({ scale: escala, offsetX: -x0 * escala, offsetY: -y0 * escala });
+        // Se dibuja aparte y se copia al final, para que no parpadee mientras tanto.
+        const aparte = document.createElement('canvas');
+        aparte.width = Math.ceil((x1 - x0) * escala);
+        aparte.height = Math.ceil((y1 - y0) * escala);
+        const render = page.render({ canvasContext: aparte.getContext('2d')!, viewport });
+        tarea = render;
+        await render.promise;
+        const c = detalle.current;
+        if (!vigente || !c) return;
+        c.width = aparte.width; c.height = aparte.height;
+        c.getContext('2d')!.drawImage(aparte, 0, 0);
+        setZonaDetalle({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+      } catch { /* cancelado por un nuevo zoom */ }
+    }, 220);
+    return () => { vigente = false; clearTimeout(espera); tarea?.cancel(); };
+  }, [vista, pdf, pagina, tam, vectorial]);
 
   const ajustar = useCallback(() => {
     const m = marco.current;
@@ -696,6 +765,33 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
             onBlur={() => { if (escala !== (documento.escala || '')) guardarEscalaDocumento(documento.id, escala).then(onEscalaGuardada).catch(err => setError(String(err?.message || err))); }}
             className="w-20 px-2 py-1 border border-slate-300 rounded-lg" />
         </label>}
+        {planta && pagina === 1 && (
+          <div className="relative flex items-center gap-1">
+            <div className="flex rounded-lg border border-slate-300 overflow-hidden font-bold">
+              <button type="button" onClick={() => setVerPlanta(true)} title="Planta vectorial por capas, generada del CAD (nítida a cualquier zoom)"
+                className={`px-2 py-1 ${verPlanta ? 'bg-teal-700 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>Planta</button>
+              <button type="button" onClick={() => setVerPlanta(false)} title="Lámina oficial en PDF, tal como se imprime"
+                className={`px-2 py-1 ${!verPlanta ? 'bg-teal-700 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>PDF</button>
+            </div>
+            {verPlanta && (
+              <button type="button" onClick={() => setMenuCapas(m => !m)} className={`flex items-center gap-1 px-2 py-1 rounded-lg border font-bold ${menuCapas ? 'bg-slate-700 border-slate-700 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+                <Layers className="w-3.5 h-3.5" /> Capas
+              </button>
+            )}
+            {verPlanta && menuCapas && (
+              <div className="absolute left-0 top-full mt-1 z-30 w-56 bg-white border border-slate-200 rounded-xl shadow-xl p-2 space-y-0.5">
+                {planta.capas.map(c => c.id).concat(planta.textos.length && !planta.capas.some(c => c.id === 'textos') ? ['textos'] : []).map(id => (
+                  <label key={id} className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-slate-50 cursor-pointer">
+                    <input type="checkbox" className="accent-teal-600" checked={!capasOcultas.has(id)}
+                      onChange={() => setCapasOcultas(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; })} />
+                    <span className="w-4 h-0.5 rounded" style={{ background: ESTILO_CAPA[id]?.color || '#94a3b8', height: Math.max(2, (ESTILO_CAPA[id]?.px || 0.5) * 2) }} />
+                    <span className="text-slate-700">{planta.capas.find(c => c.id === id)?.nombre || 'Textos'}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <label className="flex items-center gap-1 text-slate-600">Color por
           <select value={modoColor} onChange={e => setModoColor(e.target.value as ModoColor)} className="px-2 py-1 border border-slate-300 rounded-lg">
             <option value="tipo">Tipo</option><option value="uso">Uso</option><option value="estado">Estado</option><option value="unidad">Unidad usuaria</option>
@@ -711,6 +807,12 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
           {predibujando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />} Predibujar recintos
         </button>
         <CopiarContornos documento={documento} pdf={pdf} pagina={pagina} zonas={zonasPagina} recintos={recintos} />
+        <button type="button" onClick={() => selectorPlanta.current?.click()}
+          title="Carga la planta vectorial por capas de esta lámina (archivo .json generado desde el CAD con planta_vectorial.py)"
+          className="flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-300 font-bold text-slate-600 hover:bg-slate-50">
+          <Layers className="w-3.5 h-3.5" /> {planta ? 'Reemplazar planta vectorial' : 'Subir planta vectorial'}
+        </button>
+        <input ref={selectorPlanta} type="file" accept=".json,application/json" className="hidden" onChange={e => void subirPlanta(e.target.files?.[0])} />
         <button type="button" onClick={() => void guardarTodo()} disabled={guardandoTodo || !pdf}
           title="Termina el dibujo o la edición en curso y confirma que todos los contornos de la lámina quedaron guardados (reintenta los que fallaron)"
           className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold text-white disabled:opacity-50 ${estadoGuardado.fallidos ? 'bg-rose-600 hover:bg-rose-700' : 'bg-teal-700 hover:bg-teal-800'}`}>
@@ -778,7 +880,10 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
             </div>
           )}
           <div className="absolute left-0 top-0 origin-top-left" style={{ transform: `translate(${vista.x}px, ${vista.y}px) scale(${vista.k})`, width: tam?.w, height: tam?.h }}>
-            <canvas ref={lienzo} className="block bg-white shadow-xl" style={{ width: tam?.w, height: tam?.h }} />
+            <canvas ref={lienzo} className="block bg-white shadow-xl" style={{ width: tam?.w, height: tam?.h, visibility: vectorial ? 'hidden' : undefined }} />
+            <canvas ref={detalle} aria-hidden className="absolute pointer-events-none"
+              style={zonaDetalle && !vectorial ? { left: zonaDetalle.x, top: zonaDetalle.y, width: zonaDetalle.w, height: zonaDetalle.h } : { display: 'none' }} />
+            {vectorial && planta && tam && <PlantaSvg planta={planta} ancho={tam.w} alto={tam.h} ocultas={capasOcultas} />}
             {tam && (
               <svg className="absolute inset-0 overflow-visible" width={tam.w} height={tam.h} viewBox={`0 0 ${tam.w} ${tam.h}`}>
                 {zonasPagina.map(z => {
