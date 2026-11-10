@@ -348,7 +348,9 @@ export function RecintosPage() {
               <SubirLaminasCampus siglaCampus={campusSigla} />
               <CargarPlantasVectoriales />
             </div>
-            <PlanoGeneralCampus sigla={campusSigla} nombre={campus.find(c => c.sigla === campusSigla)?.nombre || campusSigla} />
+            <PlanoGeneralCampus sigla={campusSigla} nombre={campus.find(c => c.sigla === campusSigla)?.nombre || campusSigla}
+              edificios={edificios.map(e => ({ codigo: e, nombre: comoTitulo(nombreEdificio(e)) || '' }))}
+              onElegir={e => { ir({ edificio: e }); setResaltado(null); }} />
             {edificios.length > 8 && (
               <label className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus-within:ring-2 focus-within:ring-teal-400 max-w-md">
                 <Search className="w-3.5 h-3.5 text-slate-400" />

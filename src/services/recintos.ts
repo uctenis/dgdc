@@ -535,6 +535,20 @@ export async function guardarPlantaVectorial(documentoId: string, planta: Planta
 
 export interface PlanoGeneralCampus { ruta: string; esPdf: boolean; url: string }
 
+/** Ubicación de un edificio sobre la ilustración del campus (x, y de 0 a 1). */
+export interface MarcadorCampus { edificio: string; x: number; y: number }
+
+export async function obtenerMarcadoresCampus(sigla: string): Promise<MarcadorCampus[]> {
+  const { data, error } = await supabase.from('campus_marcadores').select('marcadores').eq('sigla', sigla).maybeSingle();
+  if (error) return [];   // sin la migración 0017 la ilustración se muestra igual, sin enlaces
+  return ((data as { marcadores: MarcadorCampus[] } | null)?.marcadores) || [];
+}
+
+export async function guardarMarcadoresCampus(sigla: string, marcadores: MarcadorCampus[]): Promise<void> {
+  const { error } = await supabase.from('campus_marcadores').upsert({ sigla, marcadores, actualizado_en: new Date().toISOString() });
+  if (error) throw errorDe(error, 'No se pudo guardar la ubicación de los edificios (¿falta ejecutar la migración 0017?)');
+}
+
 const TIPOS_PLANO_CAMPUS: Record<string, string> = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' };
 
 /** Plano general vigente del campus (con un enlace temporal para mostrarlo), o null si aún no tiene. */
