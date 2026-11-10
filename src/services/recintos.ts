@@ -492,6 +492,38 @@ export async function eliminarPlantaVectorial(documentoId: string): Promise<void
   if (error) throw errorDe(error, 'No se pudo quitar la planta vectorial');
 }
 
+/**
+ * Carga varias plantas vectoriales a la vez: cada una trae su edificio y lámina, y se guarda en la lámina vigente con
+ * ese código. Devuelve el resultado de cada archivo (las que no encuentran su lámina se informan, no se guardan).
+ */
+export async function cargarPlantasVectoriales(archivos: File[], onAvance?: (hechos: number, total: number) => void): Promise<{ archivo: string; ok: boolean; detalle: string }[]> {
+  const plantas: { archivo: string; planta?: PlantaVectorial; error?: string }[] = [];
+  for (const f of archivos) {
+    try { plantas.push({ archivo: f.name, planta: validarPlantaVectorial(JSON.parse(await f.text())) }); } catch (e) { plantas.push({ archivo: f.name, error: e instanceof Error ? e.message : String(e) }); }
+  }
+  const edificios = [...new Set(plantas.map(p => p.planta?.edificio).filter((e): e is string => !!e))];
+  const { data, error } = edificios.length
+    ? await supabase.from('documentos').select('id, edificio_codigo, codigo_lamina').eq('tipo', 'Plano').eq('vigente', true).in('edificio_codigo', edificios)
+    : { data: [], error: null };
+  if (error) throw errorDe(error, 'No se pudieron leer las láminas');
+  const lamina = new Map((data as Pick<DocumentoEdificio, 'id' | 'edificio_codigo' | 'codigo_lamina'>[]).filter(d => d.codigo_lamina).map(d => [`${d.edificio_codigo}|${d.codigo_lamina}`, d.id]));
+  const resultados: { archivo: string; ok: boolean; detalle: string }[] = [];
+  for (const [i, p] of plantas.entries()) {
+    onAvance?.(i, plantas.length);
+    if (!p.planta) { resultados.push({ archivo: p.archivo, ok: false, detalle: p.error || 'archivo inválido' }); continue; }
+    const id = lamina.get(`${p.planta.edificio}|${p.planta.lamina}`);
+    if (!id) { resultados.push({ archivo: p.archivo, ok: false, detalle: `no hay lámina ${p.planta.lamina} vigente de ${p.planta.edificio}` }); continue; }
+    try {
+      await guardarPlantaVectorial(id, p.planta);
+      resultados.push({ archivo: p.archivo, ok: true, detalle: `${p.planta.edificio} ${p.planta.lamina}` });
+    } catch (e) {
+      resultados.push({ archivo: p.archivo, ok: false, detalle: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  onAvance?.(plantas.length, plantas.length);
+  return resultados;
+}
+
 export async function guardarPlantaVectorial(documentoId: string, planta: PlantaVectorial): Promise<void> {
   const { error } = await supabase.from('laminas_vectoriales').upsert({ documento_id: documentoId, datos: planta, generado_en: new Date().toISOString() });
   if (error) throw errorDe(error, 'No se pudo guardar la planta vectorial (¿falta ejecutar la migración 0016?)');

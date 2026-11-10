@@ -22,6 +22,7 @@ import { RevisionCampus } from './RevisionCampus';
 import { MoverPersonaModal } from './MoverPersonaModal';
 import { CubicacionEdificio } from './CubicacionEdificio';
 import { PlanoGeneralCampus } from './PlanoGeneralCampus';
+import { CargarPlantasVectoriales } from './CargarPlantasVectoriales';
 import { CampoAutocompletar, type OpcionAutocompletar } from './CampoAutocompletar';
 import { catalogoPersonas, catalogoUnidades, sinTildes, unidadSugerida, unidadesDe } from '../utils/sugerencias';
 import { alertasRecinto, observacionesSinNotas } from '../utils/alertasRecinto';
@@ -345,6 +346,7 @@ export function RecintosPage() {
                 {descargando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />} Descargar Excel del campus
               </button>
               <SubirLaminasCampus siglaCampus={campusSigla} />
+              <CargarPlantasVectoriales />
             </div>
             <PlanoGeneralCampus sigla={campusSigla} nombre={campus.find(c => c.sigla === campusSigla)?.nombre || campusSigla} />
             {edificios.length > 8 && (
