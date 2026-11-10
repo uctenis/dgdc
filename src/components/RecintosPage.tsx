@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Building2, Layers, Plus, Pencil, Trash2, History, FileSpreadsheet, FileText, Loader2, AlertTriangle, X, ExternalLink, Copy, DoorOpen, ChevronRight, ChevronDown, Trees, LayoutGrid, Table2, ArrowRightLeft, Search, Ruler, Sparkles, Download, ClipboardCheck, BarChart3, Home, ArrowLeft, Map as MapIcon,
+  Building2, Layers, Plus, Pencil, Trash2, History, FileSpreadsheet, FileText, Loader2, AlertTriangle, X, ExternalLink, Copy, DoorOpen, ChevronRight, ChevronDown, Trees, LayoutGrid, Table2, Search, Ruler, Sparkles, Download, ClipboardCheck, BarChart3, Home, ArrowLeft, Map as MapIcon,
 } from 'lucide-react';
 import { getCampusList, saveCampusList, obtenerEdificiosDeCampus, etiquetaEdificio, obtenerInfoEdificio } from '../data/campusData';
 import { useAuth } from '../context/AuthContext';
@@ -22,10 +22,11 @@ import { RevisionCampus } from './RevisionCampus';
 import { MoverPersonaModal } from './MoverPersonaModal';
 import { CubicacionEdificio } from './CubicacionEdificio';
 import { PlanoGeneralCampus } from './PlanoGeneralCampus';
+import { FichaRecinto } from './FichaRecinto';
 import { CargarPlantasVectoriales } from './CargarPlantasVectoriales';
 import { CampoAutocompletar, type OpcionAutocompletar } from './CampoAutocompletar';
 import { catalogoPersonas, catalogoUnidades, sinTildes, unidadSugerida, unidadesDe } from '../utils/sugerencias';
-import { alertasRecinto, observacionesSinNotas } from '../utils/alertasRecinto';
+import { alertasRecinto } from '../utils/alertasRecinto';
 import { formatoFecha } from '../utils/fechas';
 import { comoTitulo } from '../utils/texto';
 import { getConfigEspacios } from '../data/espaciosConfig';
@@ -782,6 +783,7 @@ export function RecintosPage() {
 
       {fichaRecinto && (
         <FichaRecinto recinto={fichaRecinto} piso={pisos.find(p => p.id === fichaRecinto.piso_id)} onClose={() => setFichaRecinto(null)}
+          campus={campus.find(c => c.sigla === campusSigla)?.nombre} edificio={comoTitulo(nombreEdificio(fichaRecinto.edificio_codigo)) || undefined}
           onEditar={() => { setRecintoEditando(fichaRecinto); setFichaRecinto(null); }}
           onHistorial={() => void abrirHistorial(fichaRecinto)}
           onVerEnPlano={() => { setResaltado(fichaRecinto.id); setFichaRecinto(null); ir({ vista: 'general' }); }}
@@ -978,102 +980,6 @@ function EditorOcupantes({ ocupantes, onChange, personas = [], unidades = [] }: 
         </div>
       ))}
     </div>
-  );
-}
-
-/** Ficha de un recinto: todos sus datos, ocupantes y lo que trae el catastro, con accesos para editar o verlo en el plano. */
-function FichaRecinto({ recinto: r, piso, onClose, onEditar, onHistorial, onVerEnPlano, onMover }: {
-  recinto: Recinto; piso?: Piso; onClose: () => void; onEditar: () => void; onHistorial: () => void; onVerEnPlano: () => void;
-  onMover: (o: Ocupante) => void;
-}) {
-  const dato = (etiqueta: string, valor: ReactNode) => (
-    <div><dt className="text-[10px] font-bold uppercase text-slate-400">{etiqueta}</dt><dd className="font-semibold text-slate-800">{valor || '—'}</dd></div>
-  );
-  // «Revisar en el catastro» se destaca aparte del resto de las observaciones.
-  const revisar = alertasRecinto(r);
-  const otras = observacionesSinNotas(r.observaciones);
-  const atributos = Object.entries(r.atributos || {}).filter(([, v]) => v !== '' && v != null);
-  return (
-    <Ventana titulo={`${r.codigo} — ${r.nombre}`} onClose={onClose}>
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={`inline-block px-2 py-0.5 rounded-full border text-[10px] font-bold ${COLOR_ESTADO[r.estado] || COLOR_ESTADO.Eliminado}`}>{r.estado}</span>
-          <span className="text-slate-500">{r.edificio_codigo}{piso ? ` · ${piso.nombre}` : ''}</span>
-          <div className="ml-auto flex flex-wrap gap-1.5">
-            <button type="button" onClick={onVerEnPlano} className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-teal-300 font-bold text-teal-800 hover:bg-teal-50"><Layers className="w-3.5 h-3.5" /> Ver en el plano</button>
-            <button type="button" onClick={onHistorial} className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 font-bold text-slate-600 hover:bg-slate-50"><History className="w-3.5 h-3.5" /> Historial</button>
-            <button type="button" onClick={onEditar} className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 font-bold text-white"><Pencil className="w-3.5 h-3.5" /> Editar</button>
-          </div>
-        </div>
-
-        {revisar.length > 0 && (
-          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-amber-900">
-            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold">Por revisar</p>
-              {revisar.map((l, i) => <p key={i}>• {l.charAt(0).toUpperCase() + l.slice(1)}</p>)}
-              <p className="text-amber-700 mt-1">Corríjalo con «Editar». Las notas escritas se borran desde las observaciones.</p>
-            </div>
-          </div>
-        )}
-
-        <dl className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
-          {dato('Superficie útil', m2(r.superficie_m2))}
-          {dato('Superficie OGUC', m2(r.superficie_oguc_m2))}
-          {dato('Capacidad', r.capacidad != null ? `${r.capacidad} personas` : '')}
-          {dato('Uso', r.uso)}
-          <div className="col-span-2 sm:col-span-4">{dato('Unidad usuaria', r.unidad_usuaria)}</div>
-          {(r.tenencia && r.tenencia !== 'Propia') && dato('Tenencia', r.tenencia)}
-          {r.fecha_alta && dato('Opera desde', `${formatoFecha(r.fecha_alta)}${r.motivo_alta ? ` · ${r.motivo_alta}` : ''}`)}
-          {r.fecha_baja && dato('De baja desde', `${formatoFecha(r.fecha_baja)}${r.motivo_baja ? ` · ${r.motivo_baja}` : ''}`)}
-        </dl>
-
-        <div>
-          <p className="text-[10px] font-bold uppercase text-slate-400 mb-1">Ocupantes ({r.ocupantes?.length || 0})</p>
-          {r.ocupantes?.length ? (
-            <ul className="divide-y divide-slate-100 border border-slate-200 rounded-lg">
-              {r.ocupantes.map((o, i) => (
-                <li key={i} className="flex items-center gap-2 px-3 py-1.5">
-                  <span className="flex-1 min-w-0">
-                    <span className="font-semibold text-slate-800">{comoTitulo(o.nombre)}</span>
-                    {(o.cargo || o.unidad) && <span className="text-slate-500"> · {[o.cargo, o.unidad].filter(Boolean).join(' · ')}</span>}
-                  </span>
-                  <button type="button" onClick={() => onMover(o)} title="Cambiar a esta persona a otro recinto (o agregarla a otro sin quitarla de este)"
-                    className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-md border border-teal-300 font-bold text-teal-800 hover:bg-teal-50">
-                    <ArrowRightLeft className="w-3.5 h-3.5" /> Cambiar de recinto
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : <p className="text-slate-400">Sin ocupantes registrados.</p>}
-        </div>
-
-        {otras.length > 0 && (
-          <div>
-            <p className="text-[10px] font-bold uppercase text-slate-400 mb-1">Observaciones</p>
-            {otras.map((l, i) => <p key={i} className="text-slate-700">{l}</p>)}
-          </div>
-        )}
-
-        {r.foto_url && <a href={r.foto_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sky-700 font-bold hover:underline"><ExternalLink className="w-3.5 h-3.5" /> Ver foto</a>}
-
-        {atributos.length > 0 && (
-          <details className="border border-slate-200 rounded-lg">
-            <summary className="px-3 py-1.5 cursor-pointer font-bold text-slate-600">Otros datos del catastro ({atributos.length})</summary>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 px-3 pb-2">
-              {atributos.flatMap(([k, v]) => [
-                <dt key={`k-${k}`} className="text-slate-400">{k}</dt>,
-                <dd key={`v-${k}`} className="text-slate-700">{String(v)}</dd>,
-              ])}
-            </dl>
-          </details>
-        )}
-
-        <p className="text-[11px] text-slate-400">
-          Origen: {r.origen}{r.modificado_en ? ` · última modificación ${formatoFecha(r.modificado_en, { dateStyle: 'medium' })}${r.modificado_por ? ` por ${r.modificado_por}` : ''}` : ''}
-        </p>
-      </div>
-    </Ventana>
   );
 }
 
