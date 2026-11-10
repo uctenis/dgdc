@@ -1,5 +1,4 @@
-import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, setDoc, onSnapshot, serverTimestamp, increment, arrayUnion, arrayRemove, collectionGroup, type Unsubscribe } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, setDoc, onSnapshot, serverTimestamp, increment, arrayUnion, arrayRemove, collectionGroup, type Unsubscribe, db } from '../../lib/almacen';
 import { type LicitacionProyecto, type InvitadoLicitacion, type EnvioInvitacion, type InvitacionAcceso } from '../../types';
 import { getAllLicitaciones } from './licitaciones';
 

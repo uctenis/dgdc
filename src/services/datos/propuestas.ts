@@ -1,5 +1,4 @@
-import { collection, doc, updateDoc, getDocs, getDoc, onSnapshot, serverTimestamp, query, where, runTransaction, type Unsubscribe } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { collection, doc, updateDoc, getDocs, getDoc, onSnapshot, serverTimestamp, query, where, runTransaction, type Unsubscribe, db } from '../../lib/almacen';
 import { type Proveedor, type ProyectoMaestro, type LicitacionProyecto, type Cotizacion, type Propuesta } from '../../types';
 import { addCotizacion } from './conRegistro';
 import { getProveedorPorId } from './proveedores';

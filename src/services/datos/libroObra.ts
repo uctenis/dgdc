@@ -1,5 +1,4 @@
-import { collection, doc, getDocs, onSnapshot, serverTimestamp, writeBatch, type Unsubscribe } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { collection, doc, getDocs, onSnapshot, serverTimestamp, writeBatch, type Unsubscribe, db } from '../../lib/almacen';
 import { type EntradaLibroObra, type FotoLibroObra } from '../../types';
 
 // ═══════════════════════════════════════════════════════════════════

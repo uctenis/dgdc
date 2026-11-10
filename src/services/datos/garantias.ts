@@ -1,5 +1,4 @@
-import { collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, runTransaction, collectionGroup, type Unsubscribe } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, runTransaction, collectionGroup, type Unsubscribe, db } from '../../lib/almacen';
 import { type GarantiaLicitacion, type RegistroAperturaOfertas } from '../../types';
 
 // ═══════════════════════════════════════════════════════════════════

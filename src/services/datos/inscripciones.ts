@@ -1,5 +1,4 @@
-import { collection, doc, updateDoc, getDoc, setDoc, onSnapshot, type Unsubscribe } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { collection, doc, updateDoc, getDoc, setDoc, onSnapshot, type Unsubscribe, db } from '../../lib/almacen';
 import { registrarCambio } from '../auditoriaService';
 import { REQUISITOS_INSCRIPCION } from '../../data/inscripcionProveedores';
 import { type InscripcionProveedor, type DocumentoProveedor } from '../../types';

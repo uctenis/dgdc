@@ -1,5 +1,4 @@
-import { collection, doc, getDocs, getDoc, serverTimestamp, query, where, runTransaction, type DocumentReference } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { collection, doc, getDocs, getDoc, serverTimestamp, query, where, runTransaction, type DocumentReference, db } from '../../lib/almacen';
 import { normalizarNombreProyecto } from '../../utils/spellCorrector';
 import { type HistorialObra, type LicitacionProyecto, type Cotizacion } from '../../types';
 

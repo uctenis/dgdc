@@ -1,5 +1,4 @@
-import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, onSnapshot, serverTimestamp, query, orderBy, type Unsubscribe } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, onSnapshot, serverTimestamp, query, orderBy, type Unsubscribe, db } from '../../lib/almacen';
 import { normalizarNombreProyecto } from '../../utils/spellCorrector';
 import { fechaLimiteOfertas } from '../../utils/plazoOfertas';
 import { type LicitacionProyecto, type EstadoPago } from '../../types';

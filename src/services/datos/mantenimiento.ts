@@ -1,5 +1,4 @@
-import { collection, getDocs, writeBatch, type DocumentReference } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { collection, getDocs, writeBatch, type DocumentReference, db } from '../../lib/almacen';
 import { type ProyectoMaestro } from '../../types';
 
 // ═══════════════════════════════════════════════════════════════════

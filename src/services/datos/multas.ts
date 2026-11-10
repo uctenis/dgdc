@@ -1,5 +1,4 @@
-import { collection, doc, addDoc, updateDoc, getDocs, getDoc, onSnapshot, serverTimestamp, query, where, writeBatch, type Unsubscribe } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { collection, doc, addDoc, updateDoc, getDocs, getDoc, onSnapshot, serverTimestamp, query, where, writeBatch, type Unsubscribe, db } from '../../lib/almacen';
 import { registrarCambio } from '../auditoriaService';
 import { renombrarSiglaEdificio } from '../../data/campusData';
 import { type ProyectoMaestro, type MultaObra } from '../../types';

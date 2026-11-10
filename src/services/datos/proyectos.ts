@@ -1,5 +1,4 @@
-import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, onSnapshot, serverTimestamp, query, orderBy, where, runTransaction, type Unsubscribe } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, onSnapshot, serverTimestamp, query, orderBy, where, runTransaction, type Unsubscribe, db } from '../../lib/almacen';
 import { registrarCambio } from '../auditoriaService';
 import { ANIO_CARTERA_INICIAL, anioDeCartera, compararConBaseAjuste, decisionDeCartera, partidasParaComparar, type DecisionCartera } from '../../utils/carteraAnual';
 import { normalizarNombreProyecto } from '../../utils/spellCorrector';

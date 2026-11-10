@@ -1,5 +1,4 @@
-import { collection, doc, addDoc, updateDoc, onSnapshot, serverTimestamp, query, where, writeBatch, collectionGroup, type Unsubscribe } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { collection, doc, addDoc, updateDoc, onSnapshot, serverTimestamp, query, where, writeBatch, collectionGroup, type Unsubscribe, db } from '../../lib/almacen';
 import { type InvitadoLicitacion, type ConsultaLicitacion, type ConsultaPublicada } from '../../types';
 
 // ═══════════════════════════════════════════════════════════════════
