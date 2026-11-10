@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Building2, Layers, Plus, Pencil, Trash2, History, FileSpreadsheet, FileText, Loader2, AlertTriangle, X, ExternalLink, Copy, DoorOpen, ChevronRight, ChevronDown, Trees, LayoutGrid, Table2, ArrowRightLeft, Search, Ruler, Sparkles, Download, ClipboardCheck, BarChart3, Home,
+  Building2, Layers, Plus, Pencil, Trash2, History, FileSpreadsheet, FileText, Loader2, AlertTriangle, X, ExternalLink, Copy, DoorOpen, ChevronRight, ChevronDown, Trees, LayoutGrid, Table2, ArrowRightLeft, Search, Ruler, Sparkles, Download, ClipboardCheck, BarChart3, Home, ArrowLeft, Map as MapIcon,
 } from 'lucide-react';
 import { getCampusList, saveCampusList, obtenerEdificiosDeCampus, etiquetaEdificio, obtenerInfoEdificio } from '../data/campusData';
 import { useAuth } from '../context/AuthContext';
@@ -300,6 +300,13 @@ export function RecintosPage() {
           </button>
           {campusSigla && <>
             <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+            {/* Dentro de un edificio: volver al plano general del campus (su ilustración y sus edificios). */}
+            {edificio && (
+              <button type="button" onClick={() => { ir({ edificio: '' }); setResaltado(null); }} title="Volver al plano general del campus"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-teal-300 bg-teal-50 font-bold text-teal-800 hover:bg-teal-100">
+                <MapIcon className="w-4 h-4" /><span className="hidden sm:inline">Plano del campus</span>
+              </button>
+            )}
             <select value={campusSigla} onChange={e => { ir({ campus: e.target.value }); setResaltado(null); }} aria-label="Campus"
               className={`max-w-[70vw] sm:max-w-xs px-2.5 py-1.5 rounded-lg border font-bold ${edificio ? 'border-slate-300 bg-white text-teal-800' : 'border-slate-900 bg-slate-900 text-white'}`}>
               {campus.map(c => <option key={c.sigla} value={c.sigla}>{c.sigla} · {c.nombre}</option>)}
@@ -414,7 +421,12 @@ export function RecintosPage() {
           {/* Encabezado del edificio: que siempre quede claro cuál se está viendo. */}
           <div className="flex flex-wrap items-end gap-x-4 gap-y-1 px-1">
             <div className="min-w-0">
-              <p className="text-[11px] font-bold uppercase tracking-wide text-teal-700">{campus.find(c => c.sigla === campusSigla)?.nombre || campusSigla}</p>
+              {/* Volver al plano general del campus (la ilustración con sus edificios). */}
+              <button type="button" onClick={() => { ir({ edificio: '' }); setResaltado(null); }}
+                className="group flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-teal-700 hover:text-teal-900">
+                <ArrowLeft className="w-3.5 h-3.5 transition group-hover:-translate-x-0.5" />
+                <span>Volver al plano de {campus.find(c => c.sigla === campusSigla)?.nombre || campusSigla}</span>
+              </button>
               <h1 className="text-xl sm:text-2xl font-black text-slate-900 leading-tight flex items-baseline gap-2 flex-wrap">
                 <span className="font-mono text-teal-800">{edificio}</span>
                 <span>{comoTitulo(nombreEdificio(edificio)) || 'Sin nombre'}</span>
