@@ -300,20 +300,15 @@ export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro,
 
             {/* Contornos: invisibles hasta que se ilumina el edificio; también se puede entrar haciendo clic en él. */}
             <svg className="absolute inset-0 w-full h-full overflow-visible" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden>
-              <defs>
-                <filter id={`brillo-${sigla}`} x="-20%" y="-20%" width="140%" height="140%">
-                  <feGaussianBlur stdDeviation="0.004" result="difuso" />
-                  <feMerge><feMergeNode in="difuso" /><feMergeNode in="SourceGraphic" /></feMerge>
-                </filter>
-              </defs>
               {!ubicando && marcadores.filter(m => m.contorno && m.contorno.length >= 3).map(m => {
                 const encendido = iluminado === m.edificio;
                 return (
                   <polygon key={m.edificio} points={m.contorno!.map(p => p.join(',')).join(' ')}
-                    className="cursor-pointer transition-all duration-200"
-                    fill={encendido ? 'rgba(252, 211, 77, 0.28)' : 'transparent'}
-                    stroke={encendido ? '#f59e0b' : 'transparent'} strokeWidth={3} vectorEffect="non-scaling-stroke" strokeLinejoin="round"
-                    filter={encendido ? `url(#brillo-${sigla})` : undefined}
+                    // Iluminación sutil: el edificio se aclara (mezcla «screen») con un borde fino y suave.
+                    className="cursor-pointer transition-all duration-300"
+                    style={{ mixBlendMode: 'screen' }}
+                    fill={encendido ? 'rgba(255, 236, 179, 0.55)' : 'transparent'}
+                    stroke={encendido ? 'rgba(255, 244, 214, 0.9)' : 'transparent'} strokeWidth={1.25} vectorEffect="non-scaling-stroke" strokeLinejoin="round"
                     onMouseEnter={() => enfocar(m.edificio)}
                     onClick={e => { e.stopPropagation(); abrir(m.edificio); }} />
                 );
@@ -376,7 +371,7 @@ export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro,
                     abrir(m.edificio);
                   }}
                   className={`absolute -translate-x-1/2 -translate-y-1/2 w-[2.6%] min-w-7 aspect-square rounded-full transition
-                    ${enUbicar ? 'bg-amber-400/70 ring-4 ring-amber-500' : ubicando ? 'bg-teal-500/40 ring-2 ring-white' : encendido ? 'ring-4 ring-amber-300 shadow-[0_0_18px_4px_rgba(252,211,77,0.8)]' : 'hover:ring-4 hover:ring-amber-300/80'}
+                    ${enUbicar ? 'bg-amber-400/70 ring-4 ring-amber-500' : ubicando ? 'bg-teal-500/40 ring-2 ring-white' : ''}
                     ${ubicando && herramienta === 'contorno' ? 'pointer-events-none' : ''}`}
                   style={{ left: `${m.x * 100}%`, top: `${m.y * 100}%` }}>
                   {encendido && !ubicando && (
