@@ -22,9 +22,11 @@ const redondear = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 10000)
  * contorno en la ilustración y resalta su tarjeta; un clic en cualquiera de los dos abre el edificio.
  * «Ubicar edificios» permite poner el número de cada uno y dibujar o corregir su contorno.
  */
-export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro, onFiltro, onCargado }: {
+export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro, onFiltro, onCargado, resaltar, onResaltado }: {
   sigla: string; nombre: string; edificios: EdificioDelCampus[]; onElegir: (edificio: string) => void;
   filtro: string; onFiltro: (texto: string) => void;
+  /** Edificio que se ilumina al abrir (al volver desde su miniatura); `onResaltado` avisa que ya se usó. */
+  resaltar?: string | null; onResaltado?: () => void;
   /** Avisa si el campus tiene ilustración (la página deja de mostrar la grilla de edificios). */
   onCargado?: (tieneIlustracion: boolean) => void;
 }) {
@@ -89,6 +91,15 @@ export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro,
     if (activo?.desde !== 'mapa' || !window.matchMedia('(min-width: 1024px)').matches) return;
     tarjetas.current.get(activo.codigo)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [activo]);
+
+  // Al volver desde la miniatura de un edificio: se ilumina unos segundos y su tarjeta queda a la vista.
+  useEffect(() => {
+    if (!resaltar || cargando || !marcadores.length) return;
+    const codigo = resaltar;
+    setActivo({ codigo, desde: 'mapa' });
+    onResaltado?.();   // vuelve `resaltar` a null: el apagado no se cancela con ese cambio
+    setTimeout(() => setActivo(a => (a?.codigo === codigo ? null : a)), 3500);
+  }, [resaltar, cargando, marcadores.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Esc cancela el contorno en curso; Enter lo termina.
   useEffect(() => {

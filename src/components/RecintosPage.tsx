@@ -23,6 +23,7 @@ import { MoverPersonaModal } from './MoverPersonaModal';
 import { CubicacionEdificio } from './CubicacionEdificio';
 import { PlanoGeneralCampus } from './PlanoGeneralCampus';
 import { FichaRecinto } from './FichaRecinto';
+import { MiniaturaCampus } from './MiniaturaCampus';
 import { CargarPlantasVectoriales } from './CargarPlantasVectoriales';
 import { CampoAutocompletar, type OpcionAutocompletar } from './CampoAutocompletar';
 import { catalogoPersonas, catalogoUnidades, sinTildes, unidadSugerida, unidadesDe } from '../utils/sugerencias';
@@ -76,6 +77,8 @@ export function RecintosPage() {
   const [filtroEdificios, setFiltroEdificios] = useState('');
   // El campus tiene ilustración: sus edificios se muestran como tarjetas junto a ella (PlanoGeneralCampus).
   const [conIlustracion, setConIlustracion] = useState(false);
+  // Al volver al campus desde la miniatura de un edificio, ese edificio queda iluminado en la ilustración.
+  const [volverResaltando, setVolverResaltando] = useState<string | null>(null);
   const [verComunes, setVerComunes] = useState(false);
   const edificio = parametros.get('edificio') || '';
   // Nombre del edificio: el del catastro y, si no tiene, el de la configuración de campus.
@@ -367,6 +370,7 @@ export function RecintosPage() {
                 };
               })}
               filtro={filtroEdificios} onFiltro={setFiltroEdificios} onCargado={setConIlustracion}
+              resaltar={volverResaltando} onResaltado={() => setVolverResaltando(null)}
               onElegir={e => { ir({ edificio: e }); setResaltado(null); }} />
             {!conIlustracion && edificios.length > 8 && (
               <label className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg focus-within:ring-2 focus-within:ring-teal-400 max-w-md">
@@ -434,6 +438,10 @@ export function RecintosPage() {
               </h1>
             </div>
             {ficha?.direccion && <p className="text-slate-500 pb-1">{ficha.direccion}</p>}
+            {/* Miniatura del edificio en la ilustración del campus: contexto y regreso al plano del campus. */}
+            <MiniaturaCampus sigla={campusSigla} edificio={edificio} nombreCampus={campus.find(c => c.sigla === campusSigla)?.nombre || campusSigla}
+              onAbrir={() => { setVolverResaltando(edificio); ir({ edificio: '' }); setResaltado(null); }}
+              className="w-full h-28 sm:w-[220px] sm:h-[140px] sm:ml-auto order-last sm:order-none" />
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {/* Pestañas con el mismo formato que las de una licitación. El editor de planos no es pestaña: se abre desde
