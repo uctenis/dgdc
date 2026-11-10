@@ -477,6 +477,21 @@ export function validarPlantaVectorial(v: unknown): PlantaVectorial {
   return p;
 }
 
+/**
+ * Motivo por el que una planta no corresponde a la lámina (otra lámina u otro edificio), o null si corresponde. Las
+ * plantas vienen con el edificio y la lámina con que se generaron.
+ */
+export function plantaAjena(planta: PlantaVectorial, documento: Pick<DocumentoEdificio, 'edificio_codigo' | 'codigo_lamina'>): string | null {
+  if (planta.edificio && planta.edificio !== documento.edificio_codigo) return `es del edificio ${planta.edificio} y esta lámina es de ${documento.edificio_codigo}`;
+  if (planta.lamina && documento.codigo_lamina && planta.lamina !== documento.codigo_lamina) return `es de la lámina ${planta.lamina} y esta es la ${documento.codigo_lamina}`;
+  return null;
+}
+
+export async function eliminarPlantaVectorial(documentoId: string): Promise<void> {
+  const { error } = await supabase.from('laminas_vectoriales').delete().eq('documento_id', documentoId);
+  if (error) throw errorDe(error, 'No se pudo quitar la planta vectorial');
+}
+
 export async function guardarPlantaVectorial(documentoId: string, planta: PlantaVectorial): Promise<void> {
   const { error } = await supabase.from('laminas_vectoriales').upsert({ documento_id: documentoId, datos: planta, generado_en: new Date().toISOString() });
   if (error) throw errorDe(error, 'No se pudo guardar la planta vectorial (¿falta ejecutar la migración 0016?)');

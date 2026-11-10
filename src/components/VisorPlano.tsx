@@ -4,7 +4,7 @@ import {
   Loader2, ZoomIn, ZoomOut, Maximize2, Minimize2, Scan, Pencil, Trash2, MapPin, CheckCircle2, Circle, X, Undo2, Check, AlertTriangle, Wand2, Tag, BoxSelect, Square, Save, Plus, Layers,
 } from 'lucide-react';
 import type { DocumentoEdificio, Piso, Recinto, ZonaRecinto } from '../types/recintos';
-import { descargarLamina, eliminarZona, guardarEscalaDocumento, guardarPlantaVectorial, guardarZona, listarZonas, obtenerPlantaVectorial, validarPlantaVectorial, type PlantaVectorial } from '../services/recintos';
+import { descargarLamina, eliminarPlantaVectorial, eliminarZona, guardarEscalaDocumento, guardarPlantaVectorial, guardarZona, listarZonas, obtenerPlantaVectorial, plantaAjena, validarPlantaVectorial, type PlantaVectorial } from '../services/recintos';
 import { ESTILO_CAPA, PlantaSvg } from './PlantaSvg';
 import { ajustarPuntoOrtogonal, areaPoligono, areaRealM2, centroide, colorDeCategoria, denominadorEscala, estimarEscala, limites, puntoEnPoligono, type Punto } from '../utils/geometriaPlano';
 import { detectarRecintoEnPunto, predibujarRecintos } from '../utils/predibujoPlano';
@@ -197,18 +197,37 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
     return () => { vigente = false; tarea?.cancel(); };
   }, [pdf, pagina]);
 
+  // Una planta guardada en la lámina equivocada no se muestra (calzaría con otro piso): se avisa y se puede quitar.
+  const [plantaErrada, setPlantaErrada] = useState('');
   useEffect(() => {
     let vigente = true;
     setPlanta(null);
-    obtenerPlantaVectorial(documento.id).then(p => { if (vigente) setPlanta(p); });
+    setPlantaErrada('');
+    obtenerPlantaVectorial(documento.id).then(p => {
+      if (!vigente || !p) return;
+      const motivo = plantaAjena(p, documento);
+      if (motivo) setPlantaErrada(motivo); else setPlanta(p);
+    });
     return () => { vigente = false; };
-  }, [documento.id]);
+  }, [documento.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const vectorial = !!planta && verPlanta && pagina === 1;
+  const quitarPlanta = async () => {
+    try {
+      await eliminarPlantaVectorial(documento.id);
+      setPlanta(null);
+      setPlantaErrada('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
   const subirPlanta = async (archivo?: File) => {
     if (!archivo) return;
     try {
       const p = validarPlantaVectorial(JSON.parse(await archivo.text()));
+      const motivo = plantaAjena(p, documento);
+      if (motivo) throw new Error(`Esta planta ${motivo}. Elija arriba la lámina que corresponde y súbala ahí.`);
       await guardarPlantaVectorial(documento.id, p);
+      setPlantaErrada('');
       setPlanta(p);
       setVerPlanta(true);
       setAviso(`Planta vectorial cargada: ${p.capas.length} capas.`);
@@ -812,6 +831,12 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
           className="flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-300 font-bold text-slate-600 hover:bg-slate-50">
           <Layers className="w-3.5 h-3.5" /> {planta ? 'Reemplazar planta vectorial' : 'Subir planta vectorial'}
         </button>
+        {planta && (
+          <button type="button" onClick={() => { if (confirm('¿Quitar la planta vectorial de esta lámina? Se volverá a ver el PDF.')) void quitarPlanta(); }}
+            title="Quita la planta vectorial de esta lámina (el PDF no se toca)" className="p-1.5 rounded-lg border border-slate-300 text-slate-500 hover:text-rose-700 hover:bg-rose-50">
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
         <input ref={selectorPlanta} type="file" accept=".json,application/json" className="hidden" onChange={e => void subirPlanta(e.target.files?.[0])} />
         <button type="button" onClick={() => void guardarTodo()} disabled={guardandoTodo || !pdf}
           title="Termina el dibujo o la edición en curso y confirma que todos los contornos de la lámina quedaron guardados (reintenta los que fallaron)"
@@ -844,6 +869,14 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
           </button>
         </div>
       </div>
+
+      {plantaErrada && (
+        <div className="flex flex-wrap items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-amber-900">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span className="flex-1">Esta lámina tiene guardada una planta vectorial que no le corresponde ({plantaErrada}); no se muestra.</span>
+          {!consulta && <button type="button" onClick={() => void quitarPlanta()} className="px-2 py-1 rounded-lg bg-amber-700 hover:bg-amber-800 text-white font-bold">Quitarla</button>}
+        </div>
+      )}
 
       {aviso && (
         <div className="flex items-start gap-2 bg-teal-50 border border-teal-200 rounded-lg p-2.5 text-teal-900">
