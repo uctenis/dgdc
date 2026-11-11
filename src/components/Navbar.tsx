@@ -19,7 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { SelectorModulos } from './SelectorModulos';
+import { LogoInicioDGDC, SelectorModulos } from './SelectorModulos';
 
 interface NavbarProps {
   activeTab: string;
@@ -69,20 +69,8 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onBusca
 
           {/* ── Brand ─────────────────────────────────────────────────── */}
           <div className="flex items-center gap-3 lg:gap-4 min-w-0">
-            {/* Logo mark */}
-            <div
-              className="w-9 h-9 lg:w-11 lg:h-11 rounded-xl flex items-center justify-center shrink-0"
-              style={{
-                background: 'linear-gradient(135deg, #38bdf8 0%, #1d4ed8 100%)',
-                boxShadow: '0 0 0 2px rgba(56,189,248,0.25), 0 4px 12px -2px rgba(29,78,216,0.5)',
-              }}
-            >
-              <svg viewBox="0 0 40 40" width="24" height="24" fill="none">
-                <path d="M20 4L36 12V28L20 36L4 28V12L20 4Z" stroke="white" strokeWidth="2.5" strokeLinejoin="round"/>
-                <path d="M20 4V36M4 12L36 12M4 28L36 28" stroke="rgba(255,255,255,0.4)" strokeWidth="1.5"/>
-                <circle cx="20" cy="20" r="4" fill="white" opacity="0.9"/>
-              </svg>
-            </div>
+            {/* Logo: inicio del sistema DGDC (elegir módulo). */}
+            <LogoInicioDGDC />
 
             {/* Title stack */}
             <div className="min-w-0">
@@ -95,7 +83,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onBusca
                 </span>
                 <span className="text-[10px] text-slate-400 hidden sm:inline">DGDC</span>
               </div>
-              <SelectorModulos actual="adjudicaciones" />
+              <SelectorModulos actual="adjudicaciones" onInicioModulo={() => setActiveTab('proyectos-maestros')} />
             </div>
           </div>
 
