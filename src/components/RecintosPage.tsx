@@ -298,7 +298,7 @@ export function RecintosPage() {
           <div className="flex-1 min-w-[240px]"><BuscadorEspacios onElegir={irA} /></div>
         </div>
         <nav className="flex flex-wrap items-center gap-1.5" aria-label="Ubicación">
-          <button type="button" onClick={() => { ir({ campus: '' }); setResaltado(null); }} title="Inicio: elegir campus" aria-label="Inicio: elegir campus"
+          <button type="button" onClick={() => { ir({ campus: '' }); setResaltado(null); }} title="Inicio del Gestor de Espacios: todos los campus" aria-label="Inicio del Gestor de Espacios"
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-bold ${campusSigla ? 'text-teal-800 hover:bg-teal-50' : 'bg-slate-900 text-white'}`}>
             <Home className="w-4 h-4" /><span className={campusSigla ? 'hidden sm:inline' : ''}>Todos los campus</span>
           </button>
