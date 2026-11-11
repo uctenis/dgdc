@@ -147,7 +147,8 @@ export function InternalLoginPage() {
       {/* ── Contenido ─────────────────────────────────────────────── */}
       <section className="flex min-h-[calc(100vh-16rem)] flex-col px-5 py-8 sm:px-10 sm:py-12 lg:min-h-screen xl:px-20">
         {/* Barra superior: sesión */}
-        <div className="inicio-aparecer flex min-h-10 items-center justify-end" style={retraso(100)}>
+        <div className="inicio-aparecer flex min-h-10 flex-wrap items-center justify-between gap-3" style={retraso(100)}>
+          <img src={`${import.meta.env.BASE_URL}logo-uct.png`} alt="Universidad Católica de Temuco" className="h-10 sm:h-12 w-auto object-contain" />
           {conectado ? (
             <div className="flex items-center gap-3 rounded-full border border-slate-200 bg-white py-1 pl-1 pr-1.5 shadow-sm">
               <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">{iniciales || 'U'}</span>
