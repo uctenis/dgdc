@@ -22,8 +22,8 @@ const redondear = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 10000)
  * contorno en la ilustración y resalta su tarjeta; un clic en cualquiera de los dos abre el edificio.
  * «Ubicar edificios» permite poner el número de cada uno y dibujar o corregir su contorno.
  */
-export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro, onFiltro, onCargado, resaltar, onResaltado }: {
-  sigla: string; nombre: string; edificios: EdificioDelCampus[]; onElegir: (edificio: string) => void;
+export function PlanoGeneralCampus({ sigla, nombre, direccion, edificios, onElegir, filtro, onFiltro, onCargado, resaltar, onResaltado }: {
+  sigla: string; nombre: string; direccion?: string; edificios: EdificioDelCampus[]; onElegir: (edificio: string) => void;
   filtro: string; onFiltro: (texto: string) => void;
   /** Edificio que se ilumina al abrir (al volver desde su miniatura); `onResaltado` avisa que ya se usó. */
   resaltar?: string | null; onResaltado?: () => void;
@@ -221,6 +221,12 @@ export function PlanoGeneralCampus({ sigla, nombre, edificios, onElegir, filtro,
   const cabecera = (
     <div className="flex flex-wrap items-center gap-2 px-3 sm:px-4 py-2.5 border-b border-slate-100">
       <h3 className="flex items-center gap-1.5 font-extrabold text-slate-800"><IconoMapa className="w-4 h-4 text-teal-700" /> Vista del campus · {nombre}</h3>
+      {direccion && (
+        <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(direccion)}`} target="_blank" rel="noreferrer"
+          title="Ver en Google Maps" className="flex items-center gap-1 text-xs text-slate-500 hover:text-teal-700 hover:underline">
+          <MapPin className="w-3.5 h-3.5" /> {direccion}
+        </a>
+      )}
       <div className="ml-auto flex flex-wrap items-center gap-2">
         {plano && edificios.length > 0 && (
           <button type="button" onClick={() => { setUbicando(u => !u); setDibujo(null); setAUbicar(a => a || principales.find(ed => !marcadorDe.has(ed.codigo))?.codigo || ordenUbicar[0]?.codigo || ''); }}

@@ -60,9 +60,9 @@ export function RecintosPage() {
   const configurados = getCampusList();
   const siglasConfiguradas = new Set(configurados.map(c => c.sigla));
   const campus = [
-    ...configurados.map(c => ({ sigla: c.sigla, nombre: c.nombre })),
+    ...configurados.map(c => ({ sigla: c.sigla, nombre: c.nombre, direccion: [c.direccion, c.ciudad].filter(Boolean).join(', ') })),
     ...[...new Set(enBase.map(e => e.slice(0, 3)))].filter(s => !siglasConfiguradas.has(s)).sort()
-      .map(s => ({ sigla: s, nombre: 'sin configurar (solo en el catastro)' })),
+      .map(s => ({ sigla: s, nombre: 'sin configurar (solo en el catastro)', direccion: '' })),
   ];
   // Se navega por niveles: primero el campus (tarjetas), luego el edificio (tarjetas) y recién ahí su contenido.
   // Campus, edificio y pestaña viven en la dirección (?campus=CSN&edificio=CSN11&vista=plano): así el botón «atrás» del
@@ -334,6 +334,7 @@ export function RecintosPage() {
                 className="text-left bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 shadow-sm hover:border-teal-400 hover:shadow-md transition">
                 <span className="font-mono font-extrabold text-teal-800">{c.sigla}</span>
                 <span className="block font-bold text-slate-800 leading-tight mt-0.5">{c.nombre}</span>
+                {c.direccion && <span className="block text-[11px] text-slate-500 leading-snug mt-0.5">{c.direccion}</span>}
                 <span className="block text-slate-500 mt-1">{conDatos ? `${conDatos} edificio(s) con datos` : 'Sin datos aún'}</span>
               </button>
             );
@@ -361,7 +362,7 @@ export function RecintosPage() {
               <SubirLaminasCampus siglaCampus={campusSigla} />
               <CargarPlantasVectoriales />
             </div>
-            <PlanoGeneralCampus sigla={campusSigla} nombre={campus.find(c => c.sigla === campusSigla)?.nombre || campusSigla}
+            <PlanoGeneralCampus sigla={campusSigla} nombre={campus.find(c => c.sigla === campusSigla)?.nombre || campusSigla} direccion={campus.find(c => c.sigla === campusSigla)?.direccion}
               edificios={edificios.map(e => {
                 const info = obtenerInfoEdificio(e);
                 return {

@@ -415,22 +415,48 @@ export function ordenarCampus<T extends { sigla: string }>(lista: T[]): T[] {
     || a.sigla.localeCompare(b.sigla, 'es'));
 }
 
+// ─── DIRECCIONES DE LOS CAMPUS ──────────────────────────────────────────────
+// Según campus.uct.cl (cada campus y «Otras dependencias») y, donde el sitio no la publica, según el catastro de
+// edificios. Solo completan los campus que no tienen dirección escrita: lo editado en Configuración manda.
+const DIRECCIONES_CAMPUS: Record<string, string> = {
+  CML: 'Av. Alemania 0422',
+  CSF: 'Manuel Montt 056',
+  CJP: 'Av. Rudecindo Ortega 02950',
+  CRC: 'Av. Rudecindo Ortega 03690',
+  CSC: 'Av. Alemania 0211',
+  CSL: 'Av. Prieto Norte 371',
+  CEC: 'Av. Rudecindo Ortega 02351',
+  CPL: 'Fundo La Estrella, Lotes 1 y 2, Pillanlelbún, Lautaro',
+  CSN: 'Reserva del Fundo San Nicolás s/n',
+  CDS: 'Dieciocho de Septiembre 555',
+  CPH: 'Phillippi 622',
+  CTH: 'Thiers 541',
+  CBQ: 'El Bosque 541 al 620',
+  CSD: 'Providencia 309, depto. 34',
+  CLE: 'Zonobio Gutiérrez, Lote A-9',
+};
+
+/** Completa la dirección de los campus que no la tienen escrita. */
+export function completarDireccionesCampus<T extends { sigla: string; direccion?: string }>(lista: T[]): T[] {
+  return lista.map(c => (c.direccion?.trim() || !DIRECCIONES_CAMPUS[c.sigla]) ? c : { ...c, direccion: DIRECCIONES_CAMPUS[c.sigla] });
+}
+
 export function getCampusList(): CampusInfo[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_CAMPUS_UCT));
-      return ordenarCampus(INITIAL_CAMPUS_UCT);
+      return ordenarCampus(completarDireccionesCampus(INITIAL_CAMPUS_UCT));
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
       // Los nombres de campus se muestran siempre como título, aunque se hayan escrito en mayúsculas.
-      return ordenarCampus((parsed as CampusInfo[]).map(c => ({ ...c, nombre: comoTitulo(c.nombre) })));
+      return ordenarCampus(completarDireccionesCampus((parsed as CampusInfo[]).map(c => ({ ...c, nombre: comoTitulo(c.nombre) }))));
     }
-    return ordenarCampus(INITIAL_CAMPUS_UCT);
+    return ordenarCampus(completarDireccionesCampus(INITIAL_CAMPUS_UCT));
   } catch (e) {
     console.error('Error leyendo catálogo de campus:', e);
-    return ordenarCampus(INITIAL_CAMPUS_UCT);
+    return ordenarCampus(completarDireccionesCampus(INITIAL_CAMPUS_UCT));
   }
 }
 

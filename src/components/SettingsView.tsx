@@ -159,6 +159,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [responsables, setResponsables] = useState<ResponsableInfraestructura[]>([]);
   const [busquedaResponsable, setBusquedaResponsable] = useState('');
   const [isEditingResponsable, setIsEditingResponsable] = useState(false);
+  /** Código del responsable que se edita en su fila (el correo puede cambiarlo al guardar). */
+  const [respOriginal, setRespOriginal] = useState<string | null>(null);
   const [respEditando, setRespEditando] = useState<ResponsableInfraestructura>({
     codigo: '',
     nombre: '',
@@ -711,11 +713,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
 
     const index = responsables.findIndex(
-      r => r.codigo.toLowerCase() === respEditando.codigo.toLowerCase()
+      r => r.codigo.toLowerCase() === (isEditingResponsable && respOriginal ? respOriginal : respEditando.codigo).toLowerCase()
     );
 
     let actualizada: ResponsableInfraestructura[];
     if (index >= 0 && isEditingResponsable) {
+      if (responsables.some((r, i) => i !== index && r.codigo.toLowerCase() === respEditando.codigo.toLowerCase())) {
+        alert('Ya existe otro responsable con ese código (usuario del correo).');
+        return;
+      }
       actualizada = [...responsables];
       actualizada[index] = respEditando;
     } else {
@@ -730,6 +736,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     saveResponsablesList(actualizada);
     setRespEditando({ codigo: '', nombre: '', email: '', cargo: '', telefono: '', estado: 'Activo' });
     setIsEditingResponsable(false);
+    setRespOriginal(null);
+  };
+
+  const cancelarEdicionResponsable = () => {
+    setRespEditando({ codigo: '', nombre: '', email: '', cargo: '', telefono: '', estado: 'Activo' });
+    setIsEditingResponsable(false);
+    setRespOriginal(null);
   };
 
   const handleEliminarResponsable = (codigo: string) => {
@@ -2054,6 +2067,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         estado: 'Activo',
                       });
                       setIsEditingResponsable(false);
+                      setRespOriginal(null);
                     }}
                     className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-xl shadow-sm transition flex items-center gap-1.5 shrink-0"
                   >
@@ -2063,7 +2077,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
 
                 {/* Formulario Inline Responsables */}
-                {(respEditando.codigo !== '' || !isEditingResponsable) && (
+                {!isEditingResponsable && (
                   <div className="bg-sky-50/60 p-4 rounded-2xl border border-sky-200 space-y-3">
                     <div className="flex items-center justify-between">
                       <h5 className="font-bold text-sky-950 text-xs flex items-center gap-2">
@@ -2165,7 +2179,42 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                           </td>
                         </tr>
                       ) : (
-                        responsablesFiltrados.map(r => (
+                        responsablesFiltrados.map(r => isEditingResponsable && respOriginal === r.codigo ? (
+                          <tr key={r.codigo} className="bg-sky-50">
+                            <td className="p-2 font-mono font-bold text-slate-900">{respEditando.codigo}</td>
+                            <td className="p-2">
+                              <input autoFocus value={respEditando.nombre} onChange={e => setRespEditando({ ...respEditando, nombre: e.target.value })}
+                                onKeyDown={e => { if (e.key === 'Enter') handleGuardarResponsable(); if (e.key === 'Escape') cancelarEdicionResponsable(); }}
+                                className="w-full px-2 py-1.5 bg-white border border-sky-300 rounded-lg outline-none focus:ring-2 focus:ring-sky-400 font-bold" />
+                            </td>
+                            <td className="p-2">
+                              <input type="email" value={respEditando.email} onChange={e => {
+                                  const email = e.target.value;
+                                  const codigo = email.includes('@') ? email.split('@')[0].trim().toLowerCase() : '';
+                                  setRespEditando(x => ({ ...x, email, codigo: codigo || x.codigo }));
+                                }}
+                                onKeyDown={e => { if (e.key === 'Enter') handleGuardarResponsable(); if (e.key === 'Escape') cancelarEdicionResponsable(); }}
+                                className="w-full px-2 py-1.5 bg-white border border-sky-300 rounded-lg outline-none focus:ring-2 focus:ring-sky-400 font-mono" />
+                            </td>
+                            <td className="p-2">
+                              <input value={respEditando.cargo} onChange={e => setRespEditando({ ...respEditando, cargo: e.target.value })} placeholder="ITO, Ingeniero de Proyectos…"
+                                onKeyDown={e => { if (e.key === 'Enter') handleGuardarResponsable(); if (e.key === 'Escape') cancelarEdicionResponsable(); }}
+                                className="w-full px-2 py-1.5 bg-white border border-sky-300 rounded-lg outline-none focus:ring-2 focus:ring-sky-400" />
+                            </td>
+                            <td className="p-2 text-center">
+                              <select value={respEditando.estado || 'Activo'} onChange={e => setRespEditando({ ...respEditando, estado: e.target.value as 'Activo' | 'Inactivo' })}
+                                className="px-2 py-1.5 bg-white border border-sky-300 rounded-lg text-[11px] font-bold">
+                                <option>Activo</option><option>Inactivo</option>
+                              </select>
+                            </td>
+                            <td className="p-2 text-right whitespace-nowrap space-x-1">
+                              <button type="button" title="Guardar (Enter)" onClick={() => handleGuardarResponsable()}
+                                className="p-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition"><Check className="w-3.5 h-3.5" /></button>
+                              <button type="button" title="Cancelar (Esc)" onClick={cancelarEdicionResponsable}
+                                className="p-1.5 text-slate-600 hover:bg-slate-200 rounded-lg transition"><X className="w-3.5 h-3.5" /></button>
+                            </td>
+                          </tr>
+                        ) : (
                           <tr key={r.codigo} className="hover:bg-slate-50 transition">
                             <td className="p-3 font-mono font-bold text-slate-900">{r.codigo}</td>
                             <td className="p-3 font-bold text-slate-800">{r.nombre}</td>
@@ -2189,8 +2238,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                 type="button"
                                 title="Editar"
                                 onClick={() => {
-                                  setRespEditando(r);
+                                  setRespEditando({ ...r, email: r.email || '', cargo: r.cargo || '' });
                                   setIsEditingResponsable(true);
+                                  setRespOriginal(r.codigo);
                                 }}
                                 className="p-1.5 text-sky-700 hover:bg-sky-100 rounded-lg transition"
                               >
