@@ -1,7 +1,8 @@
 // Acceso a datos del módulo de recintos y planos (Postgres en Supabase). Las pantallas no hablan con la base
 // directamente: todo pasa por aquí.
 import { fechaDeNombre } from '../utils/emparejarLaminas';
-import { supabase } from '../lib/supabase';
+import { supabase, SUPABASE_CONFIGURADO } from '../lib/supabase';
+import { guardarSuperficieCampus } from '../data/campusData';
 import type { CambioRecinto, DocumentoEdificio, FichaEdificio, Ocupante, Piso, Recinto, ZonaRecinto } from '../types/recintos';
 import { datosDePiso } from '../utils/importacionRecintos';
 import { comoTitulo } from '../utils/texto';
@@ -449,6 +450,19 @@ export async function abrirArchivoDocumento(d: Pick<DocumentoEdificio, 'archivo'
   const { data, error } = await supabase.storage.from(cad ? 'cad' : 'laminas').createSignedUrl(ruta, 120, cad ? { download: nombre } : undefined);
   if (error || !data) throw errorDe({ message: error?.message }, 'No se pudo abrir el archivo');
   window.open(data.signedUrl, '_blank', 'noopener');
+}
+
+// ── Orden de los campus ──
+
+/**
+ * Lee la superficie construida de cada campus (función de la migración 0018) y la guarda: con ella se ordenan los
+ * campus en todo el sistema (Rectoría primero, luego de mayor a menor). Si falla, queda el orden de respaldo.
+ */
+export async function actualizarSuperficieCampus(): Promise<void> {
+  if (!SUPABASE_CONFIGURADO) return;
+  const { data, error } = await supabase.rpc('superficie_por_campus');
+  if (error || !Array.isArray(data) || !data.length) return;
+  guardarSuperficieCampus(Object.fromEntries((data as { campus: string; m2: number }[]).map(f => [f.campus, Number(f.m2) || 0])));
 }
 
 // ── Planta vectorial por capas de una lámina (migración 0016) ──

@@ -381,22 +381,56 @@ const INITIAL_CAMPUS_UCT: CampusInfo[] = [
 
 // Catálogo editable desde Configuración → Sedes y Campus. Persiste en localStorage,
 // mismo patrón que rubrosData.ts/centrosCostoData.ts/tiposObraData.ts.
+// ─── ORDEN DE LOS CAMPUS ────────────────────────────────────────────────────
+// En todo el sistema (menús, tarjetas, selectores, informes) los campus van con Menchaca Lira primero, por ser la
+// Rectoría, y luego de mayor a menor superficie construida. La superficie se actualiza desde la base al entrar
+// (actualizarSuperficieCampus en services/recintos.ts); estos valores (noviembre de 2026) son solo el respaldo.
+export const CAMPUS_RECTORIA = 'CML';
+const CLAVE_SUPERFICIE_CAMPUS = 'dgdc:superficie-campus';
+const SUPERFICIE_CAMPUS_RESPALDO: Record<string, number> = {
+  CJP: 36224, CSF: 32258, CRC: 16129, CSL: 4087, CML: 3115, CEC: 1506, CSC: 1357, CPL: 1164,
+  CSN: 436, CPH: 424, CTH: 400, CDS: 311, CBQ: 302, CSD: 78,
+};
+
+function superficieCampus(): Record<string, number> {
+  try {
+    const guardada = JSON.parse(localStorage.getItem(CLAVE_SUPERFICIE_CAMPUS) || 'null') as Record<string, number> | null;
+    return guardada && Object.keys(guardada).length ? guardada : SUPERFICIE_CAMPUS_RESPALDO;
+  } catch {
+    return SUPERFICIE_CAMPUS_RESPALDO;
+  }
+}
+
+/** Guarda la superficie construida de cada campus (m²), que define su orden. */
+export function guardarSuperficieCampus(m2: Record<string, number>): void {
+  try { localStorage.setItem(CLAVE_SUPERFICIE_CAMPUS, JSON.stringify(m2)); } catch { /* sin almacenamiento: queda el respaldo */ }
+}
+
+/** Rectoría primero; luego de mayor a menor superficie construida; los que no tienen superficie, por sigla. */
+export function ordenarCampus<T extends { sigla: string }>(lista: T[]): T[] {
+  const m2 = superficieCampus();
+  return [...lista].sort((a, b) =>
+    Number(b.sigla === CAMPUS_RECTORIA) - Number(a.sigla === CAMPUS_RECTORIA)
+    || (m2[b.sigla] ?? -1) - (m2[a.sigla] ?? -1)
+    || a.sigla.localeCompare(b.sigla, 'es'));
+}
+
 export function getCampusList(): CampusInfo[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_CAMPUS_UCT));
-      return INITIAL_CAMPUS_UCT;
+      return ordenarCampus(INITIAL_CAMPUS_UCT);
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
       // Los nombres de campus se muestran siempre como título, aunque se hayan escrito en mayúsculas.
-      return (parsed as CampusInfo[]).map(c => ({ ...c, nombre: comoTitulo(c.nombre) }));
+      return ordenarCampus((parsed as CampusInfo[]).map(c => ({ ...c, nombre: comoTitulo(c.nombre) })));
     }
-    return INITIAL_CAMPUS_UCT;
+    return ordenarCampus(INITIAL_CAMPUS_UCT);
   } catch (e) {
     console.error('Error leyendo catálogo de campus:', e);
-    return INITIAL_CAMPUS_UCT;
+    return ordenarCampus(INITIAL_CAMPUS_UCT);
   }
 }
 

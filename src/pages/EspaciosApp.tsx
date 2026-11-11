@@ -8,6 +8,7 @@ import { AnalisisEspacios } from '../components/AnalisisEspacios';
 import { getCampusList } from '../data/campusData';
 import { useEffect, useState } from 'react';
 import { EVENTO_CONFIG_ACTUALIZADA } from '../services/configCompartida';
+import { actualizarSuperficieCampus } from '../services/recintos';
 
 /** Gestor de Espacios: módulo propio (campus, edificios, recintos y planos), con su entrada y su menú. */
 export function EspaciosApp() {
@@ -20,6 +21,8 @@ export function EspaciosApp() {
     window.addEventListener(EVENTO_CONFIG_ACTUALIZADA, alActualizar);
     return () => window.removeEventListener(EVENTO_CONFIG_ACTUALIZADA, alActualizar);
   }, []);
+  // Superficie construida de cada campus: define su orden en todo el sistema (Rectoría primero).
+  useEffect(() => { void actualizarSuperficieCampus().then(() => setVersionConfig(v => v + 1)); }, []);
   // Configuración y análisis se abren con ?seccion=…: el botón «atrás» del navegador vuelve al Gestor.
   const [parametros, setParametros] = useSearchParams();
   const seccion = parametros.get('seccion');

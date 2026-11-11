@@ -77,6 +77,10 @@ function AdminApp() {
   // Cuando llega configuración nueva desde Firebase (ej. el administrador editó campus o la nómina en
   // otro equipo) se vuelve a dibujar todo para que los catálogos se lean de nuevo.
   const [, setVersionConfig] = useState(0);
+  // Superficie construida de cada campus: define su orden en todo el sistema (Rectoría primero).
+  useEffect(() => {
+    void import('./services/recintos').then(m => m.actualizarSuperficieCampus()).then(() => setVersionConfig(v => v + 1)).catch(() => {});
+  }, []);
   useEffect(() => {
     const alActualizar = () => {
       reloadResponsables();
