@@ -8,10 +8,11 @@ import { getCampusList } from '../data/campusData';
 import { DIMENSIONES, MEDIDAS, formatoMedida, type Filtros, type Dimension, type Medida } from '../utils/analisisEspacios';
 import { armarPrompt, catalogo, ejecutarPlan, leerPlan, type PlanConsulta, type ResultadoConsulta } from '../utils/consultaIA';
 import { comoTitulo } from '../utils/texto';
+import { interpretarLocal } from '../utils/interpreteLocal';
 
 type Mensaje =
   | { rol: 'usuario'; texto: string }
-  | { rol: 'asistente'; pregunta: string; resultado?: ResultadoConsulta; error?: string };
+  | { rol: 'asistente'; pregunta: string; resultado?: ResultadoConsulta; error?: string; instantanea?: boolean };
 
 const EJEMPLOS = [
   '¿Cuántos m² tienen las oficinas 301, 302 y 303 del CSF16?',
@@ -54,8 +55,15 @@ export function AsistenteEspacios({ onAbrirRecinto, onAbrirAnalisis }: {
     try {
       setEtapa('Leyendo los recintos…');
       const datos = await cargarDatosAnalisis();
-      setEtapa('Interpretando la pregunta…');
       const nombresCampus = Object.fromEntries(getCampusList().map(c => [c.sigla, comoTitulo(c.nombre)]));
+      // Primero el intérprete propio: resuelve al instante y sin costo las preguntas típicas. Solo si no entiende
+      // toda la pregunta, se consulta a la IA.
+      const local = interpretarLocal(q, datos.filas, nombresCampus);
+      if (local) {
+        setMensajes(m => [...m, { rol: 'asistente', pregunta: q, resultado: ejecutarPlan(datos.filas, local), instantanea: true }]);
+        return;
+      }
+      setEtapa('Interpretando la pregunta con IA…');
       // Las últimas consultas, para entender preguntas encadenadas («¿y en el piso 2?»).
       const previas = mensajes.filter((m): m is Extract<Mensaje, { rol: 'asistente' }> => m.rol === 'asistente' && !!m.resultado)
         .slice(-3).map(m => ({ pregunta: m.pregunta, plan: m.resultado!.plan }));
@@ -105,6 +113,7 @@ export function AsistenteEspacios({ onAbrirRecinto, onAbrirAnalisis }: {
         ) : (
           <div key={i} className="max-w-[95%] rounded-2xl rounded-bl-sm bg-white border border-slate-200 px-3 py-2.5 shadow-sm">
             {m.error ? <p className="text-rose-700">{m.error}</p> : m.resultado && <Respuesta r={m.resultado} onAbrirRecinto={onAbrirRecinto} onAbrirAnalisis={onAbrirAnalisis} />}
+            {m.resultado && <p className="mt-1.5 text-[10px] text-slate-400">{m.instantanea ? '⚡ Respondida al instante (sin IA)' : 'Interpretada con IA'}</p>}
           </div>
         ))}
         {pensando && (
