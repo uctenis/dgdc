@@ -344,8 +344,8 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
     }
   }, [pdf, recintos, zonaDe, zonas, escala, documento.id, persistirZona]);
 
-  // Al cambiar de recinto, sus vértices vuelven a quedar ocultos.
-  useEffect(() => { setEditandoContorno(false); }, [seleccion]);
+  // Al cambiar a un recinto sin contorno ubicado, se desactiva la edición de vértices (si tiene contorno, se mantiene para editar varios seguidos).
+  useEffect(() => { if (!seleccion || !zonaDe.has(seleccion)) setEditandoContorno(false); }, [seleccion, zonaDe]);
   useEffect(() => { setVerticeMarcado(null); }, [seleccion, editandoContorno]);
 
   // Si la lámina no tiene escala o su escala produce diferencias grandes frente a los m² registrados, la calibra sola.
@@ -372,11 +372,10 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
     void predibujar(true);
   }, [pdf, cargando, zonas.length, predibujar]);
 
-  // El plano «se activa» con un clic o un toque (como los mapas incrustados): mientras no esté activo, la rueda y el
-  // dedo desplazan la página. Ctrl + rueda (o pellizcar en el trackpad) hace zoom siempre. En pantalla completa el
-  // plano está siempre activo.
-  const [planoActivo, setPlanoActivo] = useState(false);
-  const activoEfectivo = planoActivo || pantallaCompleta;
+  // El plano «se activa» con un clic o un toque en modo consulta; en modo edición, en pantalla completa o al dibujar/editar
+  // contornos está siempre activo para acercarse directamente con la rueda.
+  const [planoActivo, setPlanoActivo] = useState(!consulta);
+  const activoEfectivo = planoActivo || pantallaCompleta || !consulta || !!dibujando || editandoContorno;
   const activoRef = useRef(activoEfectivo);
   activoRef.current = activoEfectivo;
   const [pistaZoom, setPistaZoom] = useState(false);
@@ -678,13 +677,26 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
         void detectarYGuardarEnPunto(dibujando.recintoId, p);
         return;
       }
+      if (formaDibujo === 'poligono' && dibujando.puntos.length >= 3 && tam) {
+        const [x0, y0] = dibujando.puntos[0];
+        const distPrimeroPx = Math.hypot((p[0] - x0) * tam.w * vista.k, (p[1] - y0) * tam.h * vista.k);
+        if (distPrimeroPx <= 12) {
+          void terminarDibujo();
+          return;
+        }
+      }
       const puntoFinal = (formaDibujo === 'poligono' && dibujando.puntos.length > 0 && tam && !e.shiftKey)
         ? ajustarPuntoOrtogonal(p, dibujando.puntos[dibujando.puntos.length - 1], dibujando.puntos, tam.w * vista.k, tam.h * vista.k).punto
         : p;
       setDibujando(d => d && { ...d, puntos: [...d.puntos, puntoFinal] });
       return;
     }
-    if (editandoContorno) { setVerticeMarcado(null); return; }   // mientras se edita, un clic no cambia de recinto
+    if (editandoContorno) {
+      setVerticeMarcado(null);
+      const z = zonaEn(p);
+      if (z && z.recinto_id !== seleccion) setSeleccion(z.recinto_id);
+      return;
+    }
     setSeleccion(zonaEn(p)?.recinto_id || null);
   };
 
@@ -1147,12 +1159,16 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
               <div className="flex flex-wrap gap-1.5 pt-1">
                 <button type="button" onClick={() => onEditarRecinto(sel)} className="flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-300 font-bold text-slate-700 hover:bg-slate-50"><Pencil className="w-3.5 h-3.5" /> Ficha</button>
                 {zonaDe.has(sel.id) && (
-                  <button type="button" onClick={() => setEditandoContorno(e => !e)}
+                  <button type="button" onClick={() => {
+                    const nuevo = !editandoContorno;
+                    setEditandoContorno(nuevo);
+                    if (nuevo) enfocar(sel.id);
+                  }}
                     className={`flex items-center gap-1 px-2 py-1 rounded-lg border font-bold ${editandoContorno ? 'bg-amber-500 border-amber-500 text-white' : 'border-amber-300 text-amber-800 hover:bg-amber-50'}`}>
                     {editandoContorno ? <><Check className="w-3.5 h-3.5" /> Listo</> : <><Pencil className="w-3.5 h-3.5" /> Editar contorno</>}
                   </button>
                 )}
-                <button type="button" onClick={() => { setFormaDibujo('detectar'); setDibujando({ recintoId: sel.id, puntos: [] }); }} className="flex items-center gap-1 px-2 py-1 rounded-lg border border-teal-300 font-bold text-teal-800 hover:bg-teal-50">
+                <button type="button" onClick={() => { if (zonaDe.has(sel.id)) enfocar(sel.id); setFormaDibujo('detectar'); setDibujando({ recintoId: sel.id, puntos: [] }); }} className="flex items-center gap-1 px-2 py-1 rounded-lg border border-teal-300 font-bold text-teal-800 hover:bg-teal-50">
                   <Wand2 className="w-3.5 h-3.5" /> {zonaDe.has(sel.id) ? 'Redetectar' : 'Ubicar (1 clic)'}
                 </button>
                 {zonaDe.has(sel.id) && <button type="button" title="Quitar del plano" onClick={() => void quitarDelPlano(sel.id)} className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50"><Trash2 className="w-4 h-4" /></button>}
