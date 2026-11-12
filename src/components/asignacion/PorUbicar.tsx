@@ -158,7 +158,7 @@ export function PorUbicar({ nomina, propuestas, onIrAPropuesta }: {
               {seleccion.length > 12 && <span className="text-xs text-slate-500 self-center">y {seleccion.length - 12} más</span>}
             </div>
             {destino ? <RecintoElegido r={destino} agregar={seleccion.length} onCambiar={() => setDestino(null)} />
-              : <BuscadorRecinto onElegir={setDestino} agregar={seleccion.length} sugeridos={sugeridos} />}
+              : <BuscadorRecinto onElegir={setDestino} agregar={seleccion.length} sugeridos={sugeridos} edificioPlano={seleccion.find(f => f.edificio_codigo)?.edificio_codigo} />}
             {destino && (
               <>
                 <label className="block text-xs font-bold text-slate-700">Cómo

@@ -1,6 +1,8 @@
 // Piezas compartidas del módulo de Asignación de Espacios: contexto de datos, buscador de recintos y tarjetas.
-import { createContext, useContext, useMemo, useState } from 'react';
-import { ExternalLink, Search, Users } from 'lucide-react';
+import { createContext, lazy, Suspense, useContext, useMemo, useState } from 'react';
+import { ExternalLink, Map as IconoPlano, Search, Users } from 'lucide-react';
+
+const PlanoUbicacion = lazy(() => import('./PlanoUbicacion').then(m => ({ default: m.PlanoUbicacion })));
 import type { Ocupante } from '../../types/recintos';
 import type { RecintoAsignable } from '../../utils/asignacion';
 import { avisoOcupacion, m2PorPersona } from '../../utils/asignacion';
@@ -50,15 +52,18 @@ export function Ocupacion({ r, personas, compacto }: { r: RecintoAsignable; pers
 }
 
 /** Buscador de recintos por código, tipo, edificio, unidad u ocupante. */
-export function BuscadorRecinto({ onElegir, excluir, placeholder = 'Buscar recinto: código, tipo, edificio, unidad o persona…', agregar = 0, sugeridos }: {
+export function BuscadorRecinto({ onElegir, excluir, placeholder = 'Buscar recinto: código, tipo, edificio, unidad o persona…', agregar = 0, sugeridos, edificioPlano }: {
   onElegir: (r: RecintoAsignable) => void; excluir?: Set<string>; placeholder?: string;
   /** Personas que se agregarían: muestra cómo quedaría cada recinto. */
   agregar?: number;
   /** Recintos sugeridos (con su motivo), que se muestran cuando no se ha escrito nada. */
   sugeridos?: { recinto: RecintoAsignable; motivo: string }[];
+  /** Edificio con que se abre el plano (si no, el del primer sugerido). */
+  edificioPlano?: string | null;
 }) {
   const { recintos, nombresEdificio } = useAsignacion();
   const [texto, setTexto] = useState('');
+  const [enPlano, setEnPlano] = useState(false);
   const resultados = useMemo(() => {
     const q = normalizar(texto).split(/\s+/).filter(Boolean);
     if (!q.length) return [];
@@ -75,6 +80,16 @@ export function BuscadorRecinto({ onElegir, excluir, placeholder = 'Buscar recin
         <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
         <input value={texto} onChange={e => setTexto(e.target.value)} placeholder={placeholder} className={`${campoClase} pl-9`} />
       </div>
+      <button type="button" onClick={() => setEnPlano(true)}
+        className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl border-2 border-dashed border-violet-300 text-violet-800 font-bold text-sm hover:bg-violet-50 hover:border-violet-400">
+        <IconoPlano className="w-4 h-4" /> Elegir en el plano del edificio
+      </button>
+      {enPlano && (
+        <Suspense fallback={null}>
+          <PlanoUbicacion edificioInicial={edificioPlano || sugeridos?.[0]?.recinto.edificio_codigo} agregar={agregar}
+            onElegir={r => { onElegir(r); setTexto(''); }} onCerrar={() => setEnPlano(false)} />
+        </Suspense>
+      )}
       {!texto.trim() && !!sugeridos?.length && <p className="text-[10px] font-extrabold uppercase tracking-wide text-slate-400">Sugeridos</p>}
       {texto.trim() && !resultados.length && <p className="text-xs text-slate-400 px-1">Sin resultados.</p>}
       <ul className="max-h-80 overflow-y-auto space-y-1 pr-1">
