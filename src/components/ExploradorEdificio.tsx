@@ -6,7 +6,7 @@ import {
 import type { DocumentoEdificio, Piso, Recinto } from '../types/recintos';
 import { colorDeCategoria } from '../utils/geometriaPlano';
 import { tipoConfigurado } from '../data/espaciosConfig';
-import { alertasRecinto } from '../utils/alertasRecinto';
+import { alertasRecinto, codigoAnteriorRecinto } from '../utils/alertasRecinto';
 import { formatoFecha } from '../utils/fechas';
 import { comoTitulo } from '../utils/texto';
 import { resumenSuperficie, textoVigencia, vigenteEn } from '../utils/vigenciaRecinto';
@@ -112,7 +112,7 @@ export function ExploradorEdificio({
     const q = filtro.trim().toLowerCase();
     const mapa = new Map<string, Recinto[]>();
     recintos
-      .filter(r => !q || r.codigo.toLowerCase().includes(q) || r.nombre.toLowerCase().includes(q) || (r.unidad_usuaria || '').toLowerCase().includes(q)
+      .filter(r => !q || r.codigo.toLowerCase().includes(q) || (codigoAnteriorRecinto(r) || '').toLowerCase().includes(q) || r.nombre.toLowerCase().includes(q) || (r.unidad_usuaria || '').toLowerCase().includes(q)
         || (r.ocupantes || []).some(o => o.nombre.toLowerCase().includes(q)))
       .forEach(r => mapa.set(r.piso_id, [...(mapa.get(r.piso_id) || []), r]));
     mapa.forEach(l => l.sort((a, b) => a.codigo.localeCompare(b.codigo, 'es', { numeric: true })));
@@ -128,8 +128,9 @@ export function ExploradorEdificio({
   // Indicadores del edificio.
   const hoy = resumenSuperficie(recintos);
   const pisosConPlano = pisos.filter(p => laminasDe(p.id, true).length).length;
-  const listaPorRevisar = useMemo(() => recintos.filter(r => alertasRecinto(r).length)
-    .sort((a, b) => a.codigo.localeCompare(b.codigo, 'es', { numeric: true })), [recintos]);
+  const alertasDe = (r: Recinto) => alertasRecinto({ ...r, piso_codigo: pisos.find(p => p.id === r.piso_id)?.codigo });
+  const listaPorRevisar = useMemo(() => recintos.filter(r => alertasDe(r).length)
+    .sort((a, b) => a.codigo.localeCompare(b.codigo, 'es', { numeric: true })), [recintos, pisos]); // eslint-disable-line react-hooks/exhaustive-deps
   const porRevisar = listaPorRevisar.length;
   const [verPorRevisar, setVerPorRevisar] = useState(false);
 
@@ -199,7 +200,7 @@ export function ExploradorEdificio({
                   <span className="font-mono font-bold text-slate-900">{sinPrefijo(r)}</span>
                   <span className="text-slate-600"> · {comoTitulo(r.nombre)}</span>
                   <span className="text-slate-400"> · {pisos.find(p => p.id === r.piso_id)?.nombre || ''}</span>
-                  {alertasRecinto(r).map(a => <span key={a} className="block text-amber-800">• {a}</span>)}
+                  {alertasDe(r).map(a => <span key={a} className="block text-amber-800">• {a}</span>)}
                 </button>
               </li>
             ))}
@@ -371,6 +372,7 @@ export function ExploradorEdificio({
                 </div>
                 <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 border-t border-slate-100 pt-2">
                   <Dato nombre="Código" valor={<span className="font-mono">{sel.codigo}</span>} />
+                  {codigoAnteriorRecinto(sel) && <Dato nombre="Código anterior" valor={<span className="font-mono text-slate-600">{codigoAnteriorRecinto(sel)}</span>} />}
                   <Dato nombre="Superficie útil" valor={<strong>{m2(sel.superficie_m2)}</strong>} />
                   <Dato nombre="Superficie OGUC" valor={m2(sel.superficie_oguc_m2)} />
                   <Dato nombre="Uso" valor={sel.uso || '—'} />
@@ -390,9 +392,9 @@ export function ExploradorEdificio({
                   )}
                   {sel.modificado_en && <Dato nombre="Actualizado" valor={<span>{formatoFecha(sel.modificado_en)}{sel.modificado_por && <span className="block text-slate-500">{sel.modificado_por}</span>}</span>} />}
                 </dl>
-                {alertasRecinto(sel).length > 0 && (
+                {alertasDe(sel).length > 0 && (
                   <ul className="bg-amber-50 border border-amber-200 rounded-lg p-2 text-amber-900 text-[11px] space-y-0.5">
-                    {alertasRecinto(sel).map(a => <li key={a} className="flex gap-1"><AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />{a}</li>)}
+                    {alertasDe(sel).map(a => <li key={a} className="flex gap-1"><AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />{a}</li>)}
                   </ul>
                 )}
                 <div className="flex flex-wrap gap-1.5">

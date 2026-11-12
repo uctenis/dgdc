@@ -39,4 +39,17 @@ describe('personas', () => {
     expect(p.map(x => [x.nombre, x.recintos.length, x.edificios])).toEqual([['Ana Rojas', 1, ['CJP01']], ['Pérez Soto, Juan', 2, ['CJP01', 'CJP08']]]);
     expect(p[1].cargos).toEqual(['Director']);
   });
+
+  it('filtra duplicados solo en oficinas y detecta nombres incompletos o similares', () => {
+    const mixtas = [
+      fila('CJP08_101', { tipo: 'SALA CATEDRA', ocupantes: [{ nombre: 'Molina Valenzuela, Brigida del Pilar' }] }),
+      fila('CJP08_201', { tipo: 'OFICINA', ocupantes: [{ nombre: 'Molina Valenzuela, Brigida del Pilar' }, { nombre: 'Luis Caro' }] }),
+      fila('CJP08_202', { tipo: 'OFICINA', ocupantes: [{ nombre: 'Caro Saldivia, Luis Alberto' }] }),
+    ];
+    expect(buscarRepetidos(mixtas, 'oficina')).toEqual([]);
+    expect(buscarRepetidos(mixtas, 'persona').map(x => x.clave)).toEqual(['Molina Valenzuela, Brigida del Pilar']);
+    expect(buscarRepetidos(mixtas, 'similar').map(x => [x.clave, x.recintos.map(r => r.codigo)])).toEqual([
+      ['Luis Caro ↔ Caro Saldivia, Luis Alberto', ['CJP08_201', 'CJP08_202']],
+    ]);
+  });
 });

@@ -8,6 +8,7 @@ import { datosDePiso } from '../utils/importacionRecintos';
 import { comoTitulo } from '../utils/texto';
 import { corregirTildes } from '../utils/formatoNombres';
 import { clavePersona } from '../utils/analisisEspacios';
+import { codigoAnteriorRecinto } from '../utils/alertasRecinto';
 
 /** Convierte el error de la base en un mensaje entendible. */
 function errorDe(error: { message?: string; code?: string } | null, accion: string): Error {
@@ -89,7 +90,7 @@ export async function buscarEspacios(texto: string): Promise<ResultadoBusqueda[]
   if (t.length < 2) return [];
   const p = `"%${t}%"`;
   const palabras = normalizarBusqueda(t).split(' ').filter(Boolean);
-  const columnas = 'id, edificio_codigo, codigo, nombre, uso, unidad_usuaria, superficie_m2, estado, ocupantes';
+  const columnas = 'id, edificio_codigo, codigo, nombre, uso, unidad_usuaria, superficie_m2, estado, ocupantes, atributos';
   let consultaRecintos = supabase.from('recintos').select(columnas);
   for (const palabra of palabras) consultaRecintos = consultaRecintos.ilike('busqueda', `%${palabra}%`);
   // Los edificios son pocos: se leen una vez y se filtran aquí, sin tildes y con las palabras en cualquier orden
@@ -107,7 +108,7 @@ export async function buscarEspacios(texto: string): Promise<ResultadoBusqueda[]
   }
   if (e.error || r.error) throw errorDe(e.error || r.error, 'No se pudo buscar');
   type FilaEdificio = { codigo: string; nombre: string | null; direccion: string | null; uso_principal: string | null };
-  type FilaRecinto = Pick<Recinto, 'id' | 'edificio_codigo' | 'codigo' | 'nombre' | 'uso' | 'unidad_usuaria' | 'superficie_m2' | 'estado' | 'ocupantes'>;
+  type FilaRecinto = Pick<Recinto, 'id' | 'edificio_codigo' | 'codigo' | 'nombre' | 'uso' | 'unidad_usuaria' | 'superficie_m2' | 'estado' | 'ocupantes' | 'atributos'>;
   const coincide = (texto: string) => palabras.every(w => normalizarBusqueda(texto).includes(w));
   return [
     ...(e.data as FilaEdificio[]).map(x => ({
@@ -115,13 +116,15 @@ export async function buscarEspacios(texto: string): Promise<ResultadoBusqueda[]
       detalle: [x.uso_principal, x.direccion].filter(Boolean).join(' · '),
     })),
     ...(r.data as FilaRecinto[]).map(x => {
+      const codAnt = codigoAnteriorRecinto(x);
+      const porCodigoAntiguo = Boolean(codAnt && !coincide(x.codigo) && coincide(codAnt));
       // Si no calza por los datos del recinto, es por uno de sus ocupantes: se muestra cuál.
-      const porRecinto = coincide([x.codigo, x.nombre, x.uso, x.unidad_usuaria].filter(Boolean).join(' '));
+      const porRecinto = coincide([x.codigo, codAnt, x.nombre, x.uso, x.unidad_usuaria].filter(Boolean).join(' '));
       const ocupante = porRecinto ? undefined : (x.ocupantes || []).find(o => coincide([o.nombre, o.cargo, o.unidad].filter(Boolean).join(' ')));
       return {
         tipo: 'recinto' as const, edificio_codigo: x.edificio_codigo, codigo: x.codigo, nombre: x.nombre, recintoId: x.id,
         ocupante: ocupante ? [ocupante.nombre, ocupante.cargo].filter(Boolean).join(' · ') : undefined,
-        detalle: [x.uso, x.unidad_usuaria, x.superficie_m2 ? `${x.superficie_m2} m²` : '', x.estado !== 'Operativo' ? x.estado : ''].filter(Boolean).join(' · '),
+        detalle: [porCodigoAntiguo ? `antes ${codAnt}` : '', x.uso, x.unidad_usuaria, x.superficie_m2 ? `${x.superficie_m2} m²` : '', x.estado !== 'Operativo' ? x.estado : ''].filter(Boolean).join(' · '),
       };
     }),
   ];
@@ -178,10 +181,22 @@ export function datosParaGuardar(recinto: Partial<Recinto>): Partial<Recinto> {
   // Las tildes que faltan se corrigen siempre («Rectoria» → «Rectoría»), sin tocar las mayúsculas.
   for (const c of ['nombre', 'uso', 'unidad_usuaria'] as const) if (typeof datos[c] === 'string') datos[c] = corregirTildes(datos[c] as string);
   if (Array.isArray(recinto.ocupantes)) {
+    const vistos = new Set<string>();
+    const normalizarCargo = (c?: string | null) => c?.trim().replace(/\s+\(\s*([aA])\s*\)/g, '($1)') || null;
+    const esFalsoOcupante = (n: string) => /^(disponible|vacante|sin\s+ocupante|sin\s+uso|\?+|-+)$/i.test(n.trim());
     datos.ocupantes = recinto.ocupantes
-      // Los nombres de personas se guardan siempre en formato título («María de la Luz Pérez»).
-      .map(o => ({ nombre: comoTitulo(o.nombre || ''), cargo: o.cargo?.trim() || null, unidad: o.unidad?.trim() || null }))
-      .filter(o => o.nombre);
+      .flatMap(o => (o.nombre || '').split(/\s*\/\s*/).map(parte => ({
+        nombre: comoTitulo(parte),
+        cargo: normalizarCargo(o.cargo),
+        unidad: o.unidad?.trim() ? corregirTildes(o.unidad.trim()) : null,
+      })))
+      .filter(o => {
+        if (!o.nombre || esFalsoOcupante(o.nombre)) return false;
+        const clave = clavePersona(o.nombre);
+        if (!clave || vistos.has(clave)) return false;
+        vistos.add(clave);
+        return true;
+      });
   }
   return datos as Partial<Recinto>;
 }

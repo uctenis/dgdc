@@ -19,7 +19,21 @@ export function observacionesSinNotas(observaciones?: string | null): string[] {
   return (observaciones || '').split('\n').map(l => l.trim()).filter(l => l && !l.startsWith(PREFIJO_POR_REVISAR));
 }
 
-type DatosAlerta = Pick<Recinto, 'codigo' | 'edificio_codigo' | 'nombre' | 'estado' | 'superficie_m2' | 'superficie_oguc_m2' | 'observaciones'>;
+type DatosAlerta = Pick<Recinto, 'codigo' | 'edificio_codigo' | 'nombre' | 'estado' | 'superficie_m2' | 'superficie_oguc_m2' | 'observaciones'> & {
+  piso_codigo?: string | null;
+};
+
+/** Código histórico del recinto (en planos o catastros anteriores), si existe y es distinto del código actual. */
+export function codigoAnteriorRecinto(r: Pick<Recinto, 'codigo' | 'edificio_codigo' | 'atributos'>): string | null {
+  const atr = r.atributos || {};
+  const raw = String(atr['CÓDIGO ANTIGUO'] ?? atr['Código anterior'] ?? atr['codigo_antiguo'] ?? '').trim();
+  if (!raw || raw === '-' || raw === '—' || /^s\/i$/i.test(raw)) return null;
+  const actual = (r.codigo || '').trim().toUpperCase();
+  const corto = actual.replace(`${(r.edificio_codigo || '').trim().toUpperCase()}_`, '');
+  const cand = raw.toUpperCase();
+  if (cand === actual || cand === corto) return null;
+  return raw;
+}
 
 /**
  * Problemas del recinto que conviene revisar. Los recintos eliminados no se revisan. Los umbrales salen de la
@@ -35,5 +49,11 @@ export function alertasRecinto(r: DatosAlerta, p: Pick<ParametrosEspacios, 'fact
   else if (oguc && util > oguc + 0.01) alertas.push(`la superficie útil (${m2(util)}) es mayor que la OGUC (${m2(oguc)})`);
   else if (oguc > util * p.factorOguc && oguc - util > p.diferenciaOgucM2) alertas.push(`la OGUC (${m2(oguc)}) es muy superior a la útil (${m2(util)})`);
   if (!r.nombre?.trim() || /^(\?|sin tipo)/i.test(r.nombre.trim())) alertas.push('sin tipo de recinto');
+  const sufijo = r.codigo?.includes('_') ? r.codigo.split('_')[1] : '';
+  const mPiso = /^([1-9])\d{2}[A-Za-z]?$/.exec(sufijo);
+  const pisoCod = (r.piso_codigo || '').trim().toUpperCase();
+  if (mPiso && /^[1-9]$/.test(pisoCod) && mPiso[1] !== pisoCod) {
+    alertas.push(`el código (${sufijo}) sugiere piso ${mPiso[1]}, pero está en el piso ${pisoCod}`);
+  }
   return [...alertas, ...notasPorRevisar(r.observaciones)];
 }

@@ -24,7 +24,7 @@ const AZUL = '#2a78d6';
 const ESCALA = ['#cde2fb', '#b7d3f6', '#9ec5f4', '#86b6ef', '#6da7ec', '#5598e7', '#3987e5', '#2a78d6', '#256abf', '#1c5cab', '#184f95', '#104281', '#0d366b'];
 
 interface Consulta { f: Filtros; g: Dimension; m: Medida; cf: Dimension; cc: Dimension; r: CriterioRepetido; h?: boolean; vp?: boolean }
-const CONSULTA_INICIAL: Consulta = { f: {}, g: 'tipo', m: 'util', cf: 'piso', cc: 'tipo', r: 'persona' };
+const CONSULTA_INICIAL: Consulta = { f: {}, g: 'tipo', m: 'util', cf: 'piso', cc: 'tipo', r: 'oficina' };
 
 const leerConsulta = (texto: string | null): Consulta => {
   try { return texto ? { ...CONSULTA_INICIAL, ...JSON.parse(texto) } : CONSULTA_INICIAL; } catch { return CONSULTA_INICIAL; }
@@ -323,7 +323,7 @@ function PreguntasFrecuentes({ filas, filtros, nombreEdificio, nombreCampus, onE
     { texto: `¿Cómo se reparten oficinas y salas en ${nombreEdificio(edificio)}?`, consulta: { f: { edificio: [edificio], tipo: [...oficinas, ...salas] }, g: 'tipo', m: 'util' } },
     { texto: `¿Cuántos m² ocupa cada unidad en ${nombreCampus(campus)}?`, consulta: { f: { campus: [campus] }, g: 'unidad', m: 'util' } },
     { texto: `¿Cuánta superficie tiene cada piso de ${nombreEdificio(edificio)}?`, consulta: { f: { edificio: [edificio] }, g: 'piso', m: 'util', cf: 'piso', cc: 'tipo' } },
-    { texto: '¿Qué personas tienen más de una oficina?', consulta: { f: { tipo: oficinas }, r: 'persona' } },
+    { texto: '¿Qué personas tienen más de una oficina?', consulta: { f: { tipo: oficinas }, r: 'oficina' } },
     { texto: '¿Qué campus tiene más superficie?', consulta: { f: {}, g: 'campus', m: 'util' } },
   ];
   const preguntas = todas.filter(p => !p.texto.includes('undefined'));
@@ -684,18 +684,26 @@ function Repetidos({ filas, criterio, nombreEdificio, onAbrir, onFiltrarTexto }:
   const [abierto, setAbierto] = useState<string | null>(null);
   const [limite, setLimite] = useState(20);
   useEffect(() => { setAbierto(null); setLimite(20); }, [criterio, filas]);
-  const persona = criterio === 'persona';
+  const persona = criterio !== 'codigo';
   if (!repetidos.length) {
-    return <p className="text-slate-500">{persona
-      ? 'Ninguna persona aparece como ocupante de más de un recinto en esta consulta.'
-      : 'No hay códigos de recinto repetidos en esta consulta.'}</p>;
+    return <p className="text-slate-500">{criterio === 'oficina'
+      ? 'Ninguna persona aparece en más de una oficina en esta consulta.'
+      : criterio === 'persona'
+        ? 'Ninguna persona aparece como ocupante de más de un recinto en esta consulta.'
+        : criterio === 'similar'
+          ? 'No se detectaron nombres de personas incompletos o similares por unificar en esta consulta.'
+          : 'No hay códigos de recinto repetidos en esta consulta.'}</p>;
   }
   return (
     <div className="space-y-2">
       <p className="text-slate-600">
-        {persona
-          ? <><strong>{repetidos.length}</strong> persona(s) aparecen en más de un recinto de esta consulta. Para ver quién tiene más de una oficina, filtre el tipo por oficinas. Los nombres se comparan sin tildes y sin importar el orden de las palabras.</>
-          : <><strong>{repetidos.length}</strong> código(s) están en más de un recinto: conviene corregirlos en la ficha.</>}
+        {criterio === 'oficina'
+          ? <><strong>{repetidos.length}</strong> persona(s) aparecen registradas en más de una oficina en esta consulta.</>
+          : criterio === 'persona'
+            ? <><strong>{repetidos.length}</strong> persona(s) aparecen en más de un recinto de esta consulta (incluyendo salas o laboratorios). Los nombres se comparan sin tildes y sin importar el orden de las palabras.</>
+            : criterio === 'similar'
+              ? <><strong>{repetidos.length}</strong> par(es) de nombres comparten nombre y apellido (uno abreviado y otro completo): conviene unificarlos en la ficha.</>
+              : <><strong>{repetidos.length}</strong> código(s) están en más de un recinto: conviene corregirlos en la ficha.</>}
       </p>
       <ul className="divide-y divide-slate-100 border border-slate-100 rounded-xl">
         {repetidos.slice(0, limite).map(r => (

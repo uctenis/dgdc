@@ -18,8 +18,18 @@ describe('guardar un recinto', () => {
 });
 
 describe('nombres de ocupantes', () => {
-  it('se guardan en formato título', () => {
-    const datos = datosParaGuardar({ ocupantes: [{ nombre: 'MOLINA VALENZUELA, BRÍGIDA DEL PILAR', cargo: 'SECRETARIA' }] });
-    expect(datos.ocupantes?.[0].nombre).toBe('Molina Valenzuela, Brígida del Pilar');
+  it('se guardan en formato título, separan múltiples por «/» y descartan falsos ocupantes o repetidos', () => {
+    const datos = datosParaGuardar({
+      ocupantes: [
+        { nombre: 'MOLINA VALENZUELA, BRÍGIDA DEL PILAR', cargo: 'DIRECTOR (A) GENERAL' },
+        { nombre: 'Romina Neira / Carla Arias / Disponible', cargo: 'Académico' },
+        { nombre: 'neira, romina', cargo: 'Académico' },
+      ],
+    });
+    expect(datos.ocupantes).toEqual([
+      { nombre: 'Molina Valenzuela, Brígida del Pilar', cargo: 'DIRECTOR(A) GENERAL', unidad: null },
+      { nombre: 'Romina Neira', cargo: 'Académico', unidad: null },
+      { nombre: 'Carla Arias', cargo: 'Académico', unidad: null },
+    ]);
   });
 });

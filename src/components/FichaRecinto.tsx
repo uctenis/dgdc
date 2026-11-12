@@ -4,7 +4,7 @@ import {
   ShieldCheck, Users, X, Zap,
 } from 'lucide-react';
 import type { Ocupante, Piso, Recinto } from '../types/recintos';
-import { alertasRecinto, observacionesSinNotas } from '../utils/alertasRecinto';
+import { alertasRecinto, codigoAnteriorRecinto, observacionesSinNotas } from '../utils/alertasRecinto';
 import { formatoFecha } from '../utils/fechas';
 import { comoTitulo } from '../utils/texto';
 import { colorDeCategoria } from '../utils/geometriaPlano';
@@ -54,11 +54,12 @@ export function FichaRecinto({ recinto: r, piso, campus, edificio, onClose, onEd
   }, [onClose]);
 
   const color = tipoConfigurado(r.nombre)?.color || colorDeCategoria(r.nombre);
-  const revisar = alertasRecinto(r);
+  const revisar = alertasRecinto({ ...r, piso_codigo: piso?.codigo });
   const observaciones = observacionesSinNotas(r.observaciones);
   const atributos = Object.entries(r.atributos || {}).filter(([, v]) => v !== '' && v != null);
   const ocupantes = r.ocupantes || [];
   const codigoCorto = r.codigo.replace(`${r.edificio_codigo}_`, '');
+  const codigoAnterior = codigoAnteriorRecinto(r);
   const cuenta: Partial<Record<IdSeccion, number>> = { ocupantes: ocupantes.length, catastro: atributos.length };
 
   const indicador = (Icono: ComponentType<{ className?: string }>, etiqueta: string, valor: ReactNode, detalle?: string) => (
@@ -91,6 +92,7 @@ export function FichaRecinto({ recinto: r, piso, campus, edificio, onClose, onEd
       <div className="grid gap-4 md:grid-cols-2">
         {grupo('Identificación', [
           ['Código', <span className="font-mono">{r.codigo}</span>],
+          ['Código anterior', codigoAnterior ? <span className="font-mono text-slate-600">{codigoAnterior}</span> : null],
           ['Nombre', comoTitulo(r.nombre)],
           ['Uso', r.uso || '—'],
           ['Unidad usuaria', r.unidad_usuaria || '—'],
@@ -173,6 +175,7 @@ export function FichaRecinto({ recinto: r, piso, campus, edificio, onClose, onEd
               </h2>
               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                 <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${COLOR_ESTADO[r.estado] || COLOR_ESTADO.Eliminado}`}>{r.estado}</span>
+                {codigoAnterior && <span className="px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-600 font-mono text-[10px] font-semibold" title="Código en planos o catastros anteriores">antes {codigoAnterior}</span>}
                 {r.uso && <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold">{r.uso}</span>}
                 {r.unidad_usuaria && <span className="px-2 py-0.5 rounded-full bg-teal-50 text-teal-800 text-[10px] font-bold truncate max-w-[260px]">{r.unidad_usuaria}</span>}
                 {r.tenencia && r.tenencia !== 'Propia' && <span className="px-2 py-0.5 rounded-full bg-violet-50 text-violet-800 text-[10px] font-bold">{r.tenencia}</span>}

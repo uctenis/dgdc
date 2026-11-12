@@ -150,9 +150,11 @@ export function cruzar(filas: FilaAnalisis[], df: Dimension, dc: Dimension, m: M
 
 // ── Duplicados ──
 
-export type CriterioRepetido = 'persona' | 'codigo';
+export type CriterioRepetido = 'oficina' | 'persona' | 'similar' | 'codigo';
 export const CRITERIOS_REPETIDO: { id: CriterioRepetido; nombre: string }[] = [
-  { id: 'persona', nombre: 'Personas en más de un recinto' },
+  { id: 'oficina', nombre: 'Personas en más de una oficina' },
+  { id: 'persona', nombre: 'Personas en más de un recinto (todos)' },
+  { id: 'similar', nombre: 'Nombres incompletos o similares' },
   { id: 'codigo', nombre: 'Códigos de recinto repetidos' },
 ];
 
@@ -174,7 +176,8 @@ export const clavePersona = (nombre: string) =>
 
 /**
  * Lo que aparece más de una vez en las filas: personas registradas como ocupantes de varios recintos (por ejemplo, con
- * dos oficinas) o códigos de recinto repetidos (un error de registro). De más a menos recintos.
+ * dos oficinas), nombres parcialmente escritos («Luis Caro» vs «Caro Saldivia, Luis Alberto») o códigos de recinto
+ * repetidos (un error de registro). De más a menos recintos.
  */
 export function buscarRepetidos(filas: FilaAnalisis[], criterio: CriterioRepetido): Repetido[] {
   const grupos = new Map<string, { nombres: Map<string, number>; recintos: Map<string, FilaAnalisis>; detalles: Set<string> }>();
@@ -186,9 +189,41 @@ export function buscarRepetidos(filas: FilaAnalisis[], criterio: CriterioRepetid
     if (detalle) g.detalles.add(detalle);
     grupos.set(clave, g);
   };
-  for (const f of filas) {
-    if (criterio === 'persona') for (const o of f.ocupantes) sumar(clavePersona(o.nombre || ''), o.nombre.trim(), f, [o.cargo, o.unidad].filter(Boolean).join(' · '));
-    else sumar(f.codigo.trim().toUpperCase(), f.codigo.trim(), f);
+  const filasBase = criterio === 'oficina' ? filas.filter(f => /^OFICINA/i.test(f.tipo.trim())) : filas;
+  for (const f of filasBase) {
+    if (criterio === 'persona' || criterio === 'oficina' || criterio === 'similar') {
+      for (const o of f.ocupantes) sumar(clavePersona(o.nombre || ''), o.nombre.trim(), f, [o.cargo, o.unidad].filter(Boolean).join(' · '));
+    } else {
+      sumar(f.codigo.trim().toUpperCase(), f.codigo.trim(), f);
+    }
+  }
+  if (criterio === 'similar') {
+    const entradas = [...grupos.entries()].map(([k, g]) => ({
+      clave: k,
+      palabras: k.split(' ').filter(w => w.length >= 3),
+      nombre: [...g.nombres.entries()].sort((a, b) => b[1] - a[1])[0][0],
+      recintos: g.recintos,
+      detalles: g.detalles,
+    })).filter(e => e.palabras.length >= 2);
+    const pares: Repetido[] = [];
+    for (let i = 0; i < entradas.length; i++) {
+      for (let j = i + 1; j < entradas.length; j++) {
+        const [corto, largo] = entradas[i].palabras.length <= entradas[j].palabras.length
+          ? [entradas[i], entradas[j]]
+          : [entradas[j], entradas[i]];
+        if (corto.palabras.length === largo.palabras.length) continue;
+        if (!corto.palabras.every(w => largo.palabras.includes(w))) continue;
+        const unidos = new Map<string, FilaAnalisis>([...corto.recintos, ...largo.recintos]);
+        const recintos = [...unidos.values()].sort((a, b) => a.codigo.localeCompare(b.codigo, 'es', { numeric: true }));
+        pares.push({
+          clave: `${corto.nombre} ↔ ${largo.nombre}`,
+          recintos,
+          util: recintos.reduce((s, f) => s + f.util, 0),
+          detalles: [...new Set([...corto.detalles, ...largo.detalles])],
+        });
+      }
+    }
+    return pares.sort((a, b) => b.recintos.length - a.recintos.length || a.clave.localeCompare(b.clave, 'es'));
   }
   return [...grupos.values()]
     .filter(g => g.recintos.size > 1)
