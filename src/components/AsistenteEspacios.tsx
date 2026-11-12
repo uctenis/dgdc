@@ -29,6 +29,19 @@ export function AsistenteEspacios({ onAbrirRecinto, onAbrirAnalisis }: {
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
   const [texto, setTexto] = useState('');
   const [pensando, setPensando] = useState(false);
+  const [etapa, setEtapa] = useState('');
+  const [segundos, setSegundos] = useState(0);
+  // Los recintos se leen de antemano (al entrar al Gestor), para no esperar al preguntar.
+  useEffect(() => {
+    const t = window.setTimeout(() => { void cargarDatosAnalisis().catch(() => {}); }, 1500);
+    return () => window.clearTimeout(t);
+  }, []);
+  useEffect(() => {
+    if (!pensando) return;
+    setSegundos(0);
+    const t = window.setInterval(() => setSegundos(x => x + 1), 1000);
+    return () => window.clearInterval(t);
+  }, [pensando]);
   const fin = useRef<HTMLDivElement>(null);
   useEffect(() => { fin.current?.scrollIntoView({ behavior: 'smooth' }); }, [mensajes, pensando]);
 
@@ -39,12 +52,14 @@ export function AsistenteEspacios({ onAbrirRecinto, onAbrirAnalisis }: {
     setMensajes(m => [...m, { rol: 'usuario', texto: q }]);
     setPensando(true);
     try {
+      setEtapa('Leyendo los recintos…');
       const datos = await cargarDatosAnalisis();
+      setEtapa('Interpretando la pregunta…');
       const nombresCampus = Object.fromEntries(getCampusList().map(c => [c.sigla, comoTitulo(c.nombre)]));
       // Las últimas consultas, para entender preguntas encadenadas («¿y en el piso 2?»).
       const previas = mensajes.filter((m): m is Extract<Mensaje, { rol: 'asistente' }> => m.rol === 'asistente' && !!m.resultado)
         .slice(-3).map(m => ({ pregunta: m.pregunta, plan: m.resultado!.plan }));
-      const respuesta = await preguntarIA(armarPrompt(q, catalogo(datos.filas, nombresCampus), previas), 1200);
+      const respuesta = await preguntarIA(armarPrompt(q, catalogo(datos.filas, nombresCampus, [q, ...previas.map(p => p.pregunta)].join(' ')), previas), 700);
       let plan: PlanConsulta;
       try { plan = leerPlan(respuesta); } catch { throw new Error('AI_INVALID_JSON'); }
       setMensajes(m => [...m, { rol: 'asistente', pregunta: q, resultado: ejecutarPlan(datos.filas, plan) }]);
@@ -92,7 +107,10 @@ export function AsistenteEspacios({ onAbrirRecinto, onAbrirAnalisis }: {
             {m.error ? <p className="text-rose-700">{m.error}</p> : m.resultado && <Respuesta r={m.resultado} onAbrirRecinto={onAbrirRecinto} onAbrirAnalisis={onAbrirAnalisis} />}
           </div>
         ))}
-        {pensando && <p className="flex items-center gap-2 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Consultando…</p>}
+        {pensando && (
+          <p className="flex items-center gap-2 text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> {etapa || 'Consultando…'} <span className="text-slate-400">{segundos} s</span>
+            {segundos >= 20 && <span className="text-[11px] text-amber-700">· la IA está lenta; el sistema reintenta solo</span>}</p>
+        )}
         <div ref={fin} />
       </div>
 

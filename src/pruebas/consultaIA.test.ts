@@ -38,4 +38,11 @@ describe('asistente de consultas', () => {
     expect(texto).toContain('Conversación previa');
     expect(texto).toContain('¿y en el piso 2?');
   });
+  it('con la pregunta, el catálogo se recorta a lo mencionado (instrucción más corta, respuesta más rápida)', () => {
+    const muchas = Array.from({ length: 80 }, (_, i) => fila(`CSF16_${400 + i}`, `Tipo ${i}`, 10, { unidades: [`Unidad ${i}`] }));
+    const cat = catalogo([...filas, ...muchas], { CSF: 'San Francisco' }, 'recintos de la Dirección de Gestión y Desarrollo de Campus');
+    expect(cat.unidades).toContain('Dirección de Gestión y Desarrollo de Campus');
+    expect(cat.unidades.length).toBeLessThan(40);
+    expect(cat.tipos.length).toBeLessThan(60);
+  });
 });

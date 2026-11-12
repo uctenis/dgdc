@@ -29,8 +29,14 @@ export interface ResultadoConsulta {
 
 const norm = (s: string) => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
-/** Catálogo de valores existentes (para que la IA use nombres reales). */
-export function catalogo(filas: FilaAnalisis[], nombresCampus: Record<string, string>) {
+/**
+ * Catálogo de valores existentes (para que la IA use nombres reales). Con `pregunta`, se recorta a lo que la pregunta
+ * menciona más los valores frecuentes: una instrucción más corta hace que la IA responda bastante más rápido.
+ */
+export function catalogo(filas: FilaAnalisis[], nombresCampus: Record<string, string>, pregunta?: string) {
+  const palabras = pregunta ? norm(pregunta).split(/[^a-z0-9_]+/).filter(p => p.length >= 4 || /\d/.test(p)) : [];
+  const menciona = (v: string) => { const n = norm(v); return palabras.some(p => n.includes(p) || (p.length >= 5 && p.includes(n) && n.length >= 4)); };
+  const recortar = (valores: string[], frecuentes: number) => (pregunta ? valores.filter((v, i) => i < frecuentes || menciona(v)) : valores);
   const contar = (valores: string[]) => {
     const m = new Map<string, number>();
     for (const v of valores) if (v) m.set(v, (m.get(v) || 0) + 1);
@@ -40,11 +46,13 @@ export function catalogo(filas: FilaAnalisis[], nombresCampus: Record<string, st
   for (const f of filas) if (!edificios.has(f.edificio)) edificios.set(f.edificio, f.edificioNombre);
   return {
     campus: Object.entries(nombresCampus),
-    edificios: [...edificios.entries()].sort((a, b) => a[0].localeCompare(b[0], 'es', { numeric: true })),
+    // Todos los edificios van con su código; el nombre, solo los que la pregunta menciona (o todos, sin pregunta).
+    edificios: [...edificios.entries()].sort((a, b) => a[0].localeCompare(b[0], 'es', { numeric: true }))
+      .map(([c, n]): [string, string] => [c, !pregunta || menciona(`${c} ${n}`) ? n : '']),
     pisos: contar(filas.map(f => f.piso)).map(([v]) => v),
-    tipos: contar(filas.map(f => f.tipo)).slice(0, 200).map(([v]) => v),
-    usos: contar(filas.map(f => f.uso)).slice(0, 80).map(([v]) => v),
-    unidades: contar(filas.flatMap(f => f.unidades)).slice(0, 400).map(([v]) => v),
+    tipos: recortar(contar(filas.map(f => f.tipo)).slice(0, 200).map(([v]) => v), 45),
+    usos: recortar(contar(filas.map(f => f.uso)).slice(0, 80).map(([v]) => v), 30),
+    unidades: recortar(contar(filas.flatMap(f => f.unidades)).slice(0, 400).map(([v]) => v), 25),
     clases: contar(filas.map(f => f.clase)).map(([v]) => v),
     ejemplosCodigo: filas.slice(0, 2000).filter((_, i) => i % 400 === 0).map(f => f.codigo),
   };
@@ -66,7 +74,7 @@ Responde SOLO un objeto JSON, sin texto alrededor, con esta forma:
  "agrupar": null, "medida": "util", "listar": true, "noAplica": null}
 
 Reglas:
-- Usa SOLO valores que existan en el catálogo de abajo (copia el texto exacto). Omite los filtros que no se piden.
+- Usa valores del catálogo de abajo (copia el texto exacto); el catálogo puede estar resumido: si el usuario nombra una unidad o tipo que no aparece, escríbelo tal como lo dijo. Omite los filtros que no se piden.
 - "campus": siglas (CJP, CSF…). "edificio": códigos (CSF16, CJP01…). Si nombran un edificio por su nombre, usa su código.
 - "codigos": códigos de recintos puntuales que el usuario nombre (ej. "CSF16_301"). Si da solo el número y el edificio, escribe el número ("301") y pon el edificio en "edificio".
 - "texto": palabras para buscar en código, tipo, uso, unidad u ocupantes (ej. el nombre de una persona). Úsalo solo si nada más sirve.
