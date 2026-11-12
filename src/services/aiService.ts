@@ -920,3 +920,8 @@ Para cada fase entrega el día corrido en que PARTE (contado desde el inicio de 
     }))
     .filter(x => x.fase.length > 0);
 }
+
+/** Consulta libre a la IA (texto de entrada, texto de salida), con los mismos reintentos y proveedor que el resto. */
+export async function preguntarIA(prompt: string, maxTokens = 1500): Promise<string> {
+  return llamarIA(prompt, maxTokens);
+}
