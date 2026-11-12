@@ -119,7 +119,7 @@ export function ExploradorEdificio({
     return mapa;
   }, [recintos, filtro]);
 
-  const elegirRecinto = (r: Recinto) => { setPisoId(r.piso_id); setSeleccion(r.id); };
+  const elegirRecinto = (r: Recinto) => { setPisoId(r.piso_id); setSeleccion(r.id); onVerFicha(r); };
   const elegirPiso = (id: string) => {
     setPisoId(id); setSeleccion(null); setLaminaElegida('');
     setAbiertos(a => { const n = new Set(a); if (n.has(id) && id === pisoId) n.delete(id); else n.add(id); return n; });
@@ -340,7 +340,7 @@ export function ExploradorEdificio({
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
                 {delPiso.map(r => (
-                  <button key={r.id} type="button" onClick={() => setSeleccion(r.id)}
+                  <button key={r.id} type="button" onClick={() => { setSeleccion(r.id); onVerFicha(r); }}
                     className={`text-left rounded-xl border p-2 ${r.id === seleccion ? 'border-amber-400 bg-amber-50' : 'border-slate-200 hover:border-teal-400'}`}
                     style={{ borderLeft: `4px solid ${colorTipo(r)}` }}>
                     <span className="block font-mono font-bold text-[11px]">{sinPrefijo(r)}</span>

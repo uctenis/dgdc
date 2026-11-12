@@ -2,12 +2,15 @@
 // leen una vez por sesión (unos miles de filas) y los cruces se calculan en el navegador.
 import { getCampusList } from '../data/campusData';
 import { getConfigEspacios } from '../data/espaciosConfig';
+import type { Piso, Recinto } from '../types/recintos';
 import { comoTitulo } from '../utils/texto';
 import { hoyISO, vigenteEn } from '../utils/vigenciaRecinto';
 import type { FilaAnalisis } from '../utils/analisisEspacios';
 import { listarEdificiosConDatos, listarRecintosDeCampus, separarUnidades } from './recintos';
 
-let cache: { filas: FilaAnalisis[]; nombresEdificio: Record<string, string>; leidoEn: Date } | null = null;
+export type RecintoConPiso = Recinto & { piso?: Pick<Piso, 'codigo' | 'nombre'> | null };
+
+let cache: { filas: FilaAnalisis[]; nombresEdificio: Record<string, string>; recintosPorId?: Map<string, RecintoConPiso>; leidoEn: Date } | null = null;
 
 export async function cargarDatosAnalisis(forzar = false): Promise<NonNullable<typeof cache>> {
   if (cache && !forzar) return cache;
@@ -42,6 +45,7 @@ export async function cargarDatosAnalisis(forzar = false): Promise<NonNullable<t
       ocupantes: r.ocupantes || [],
     };
   });
-  cache = { filas, nombresEdificio, leidoEn: new Date() };
+  const recintosPorId = new Map<string, RecintoConPiso>(recintos.map(r => [r.id, r]));
+  cache = { filas, nombresEdificio, recintosPorId, leidoEn: new Date() };
   return cache;
 }

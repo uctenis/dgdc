@@ -1,15 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  BarChart3, Loader2, X, Link2, Download, RefreshCw, Search, ChevronDown, Check, Sparkles, LayoutGrid, Table2, ExternalLink, AlertTriangle, PieChart, Copy, Users,
+  BarChart3, Loader2, X, Link2, Download, RefreshCw, Search, ChevronDown, Check, Sparkles, LayoutGrid, Table2, ExternalLink, AlertTriangle, PieChart, Copy, Users, DoorOpen,
 } from 'lucide-react';
-import { cargarDatosAnalisis } from '../services/analisisEspacios';
+import { cargarDatosAnalisis, type RecintoConPiso } from '../services/analisisEspacios';
+import { historialRecinto } from '../services/recintos';
 import { ordenarCampus } from '../data/campusData';
+import type { CambioRecinto, Ocupante, Piso, Recinto } from '../types/recintos';
 import {
   agrupar, valoresDe, buscarRepetidos, CRITERIOS_REPETIDO, listarPersonas, cruzar, DIMENSIONES, filtrar, formatoM2, formatoMedida, fraseRespuesta, MEDIDAS, SIN_DATO, totales, valorMedida,
   type CriterioRepetido, type Dimension, type FilaAnalisis, type Filtros, type Grupo, type Medida,
 } from '../utils/analisisEspacios';
+import { formatoFecha } from '../utils/fechas';
 import { comoTitulo } from '../utils/texto';
+import { FichaRecinto } from './FichaRecinto';
+import { MoverPersonaModal } from './MoverPersonaModal';
 
 // Paleta categórica en orden fijo (validada para daltonismo); «Otros» en gris. Un solo azul para barras y la escala del
 // cruce. Los textos van siempre en tinta (slate), nunca en el color de la serie.
@@ -27,7 +32,7 @@ const leerConsulta = (texto: string | null): Consulta => {
 const pct = (parte: number, total: number) => (total ? `${(parte / total * 100).toLocaleString('es-CL', { maximumFractionDigits: parte / total < 0.1 ? 1 : 0 })} %` : '—');
 
 interface Props {
-  onAbrirRecinto: (edificio: string, recintoId: string) => void;
+  onAbrirRecinto: (edificio: string, recintoId: string, modo?: 'ficha' | 'plano' | 'editar') => void;
   onCerrar: () => void;
 }
 
@@ -50,12 +55,46 @@ export function AnalisisEspacios({ onAbrirRecinto, onCerrar }: Props) {
   const [error, setError] = useState('');
   const [copiado, setCopiado] = useState(false);
   const [descargando, setDescargando] = useState(false);
+  const [fichaRecinto, setFichaRecinto] = useState<RecintoConPiso | null>(null);
+  const [historial, setHistorial] = useState<{ recinto: Recinto; cambios: CambioRecinto[] } | null>(null);
+  const [moviendo, setMoviendo] = useState<{ origen: Recinto; ocupante: Ocupante } | null>(null);
+  const [avisoCambio, setAvisoCambio] = useState('');
   const cargar = (forzar = false) => {
     setError('');
     if (forzar) setDatos(null);
     cargarDatosAnalisis(forzar).then(setDatos).catch(e => setError(e instanceof Error ? e.message : String(e)));
   };
   useEffect(() => { cargar(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const abrirFicha = (edificio: string, recintoId: string) => {
+    const guardado = datos?.recintosPorId?.get(recintoId);
+    if (guardado) { setFichaRecinto(guardado); return; }
+    const f = datos?.filas.find(x => x.id === recintoId && x.edificio === edificio) || datos?.filas.find(x => x.id === recintoId);
+    if (!f) return;
+    setFichaRecinto({
+      id: f.id,
+      edificio_codigo: f.edificio,
+      piso_id: '',
+      codigo: f.codigo,
+      nombre: f.tipo,
+      uso: f.uso || null,
+      superficie_m2: f.util || null,
+      superficie_oguc_m2: f.oguc || null,
+      capacidad: f.capacidad || null,
+      estado: f.estado as Recinto['estado'],
+      tenencia: (f.tenencia as Recinto['tenencia']) || 'Propia',
+      unidad_usuaria: f.unidades.join(' / ') || null,
+      ocupantes: f.ocupantes,
+      foto_url: null,
+      observaciones: null,
+      atributos: {},
+      origen: 'Planilla',
+      piso: { codigo: String(f.pisoOrden), nombre: f.piso },
+    });
+  };
+  const abrirHistorial = async (r: Recinto) => {
+    try { setHistorial({ recinto: r, cambios: await historialRecinto(r.id) }); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
 
   // Cuenta lo vigente hoy: los recintos dados de baja y las obras por entregar (p. ej. «En obra» con fecha futura)
   // no suman, salvo que se pidan con el filtro de estado.
@@ -194,20 +233,74 @@ export function AnalisisEspacios({ onAbrirRecinto, onCerrar }: Props) {
         </Tarjeta>
 
         <Tarjeta icono={<Users className="w-4 h-4 text-teal-700" />} titulo="Personas">
-          <Personas filas={resultado} nombreEdificio={nombreEdificio} onAbrir={onAbrirRecinto} irAqui={!!consulta.vp}
+          <Personas filas={resultado} nombreEdificio={nombreEdificio} onAbrir={abrirFicha} irAqui={!!consulta.vp}
             tituloExcel={consulta.f.edificio?.length === 1 ? consulta.f.edificio[0] : consulta.f.campus?.length === 1 ? consulta.f.campus[0] : 'consulta'} />
         </Tarjeta>
 
         <Tarjeta icono={<Copy className="w-4 h-4 text-teal-700" />} titulo="Duplicados"
           acciones={<Selector valor={consulta.r} opciones={CRITERIOS_REPETIDO.map(c => ({ valor: c.id, nombre: c.nombre }))} onCambiar={v => cambiar({ r: v as CriterioRepetido })} />}>
-          <Repetidos filas={resultado} criterio={consulta.r} nombreEdificio={nombreEdificio} onAbrir={onAbrirRecinto}
+          <Repetidos filas={resultado} criterio={consulta.r} nombreEdificio={nombreEdificio} onAbrir={abrirFicha}
             onFiltrarTexto={texto => ponerFiltros({ ...consulta.f, texto })} />
         </Tarjeta>
 
         <Tarjeta icono={<Table2 className="w-4 h-4 text-teal-700" />} titulo={`Recintos (${resultado.length.toLocaleString('es-CL')})`}>
-          <Detalle filas={resultado} nombreEdificio={nombreEdificio} onAbrir={onAbrirRecinto} />
+          <Detalle filas={resultado} nombreEdificio={nombreEdificio} onAbrir={abrirFicha} />
         </Tarjeta>
       </>)}
+
+      {fichaRecinto && (
+        <FichaRecinto
+          recinto={fichaRecinto}
+          piso={fichaRecinto.piso ? { id: fichaRecinto.piso_id, edificio_codigo: fichaRecinto.edificio_codigo, codigo: fichaRecinto.piso.codigo, nombre: fichaRecinto.piso.nombre, orden: 0 } as Piso : undefined}
+          campus={nombreCampus(datos.filas.find(f => f.id === fichaRecinto.id)?.campus || fichaRecinto.edificio_codigo.slice(0, 3))}
+          edificio={datos.nombresEdificio[fichaRecinto.edificio_codigo] ? comoTitulo(datos.nombresEdificio[fichaRecinto.edificio_codigo]) : undefined}
+          onClose={() => setFichaRecinto(null)}
+          onEditar={() => { const r = fichaRecinto; setFichaRecinto(null); onAbrirRecinto(r.edificio_codigo, r.id, 'editar'); }}
+          onVerEnPlano={() => { const r = fichaRecinto; setFichaRecinto(null); onAbrirRecinto(r.edificio_codigo, r.id, 'plano'); }}
+          onHistorial={() => void abrirHistorial(fichaRecinto)}
+          onMover={ocupante => setMoviendo({ origen: fichaRecinto, ocupante })}
+        />
+      )}
+
+      {moviendo && (
+        <MoverPersonaModal origen={moviendo.origen} ocupante={moviendo.ocupante} onClose={() => setMoviendo(null)}
+          onListo={destino => {
+            setAvisoCambio(`${comoTitulo(moviendo.ocupante.nombre)} quedó en ${destino}. El cambio está en el historial de ambos recintos.`);
+            setMoviendo(null); setFichaRecinto(null); cargar(true);
+          }} />
+      )}
+
+      {avisoCambio && (
+        <div className="fixed bottom-4 right-4 z-[95] flex items-start gap-2 max-w-sm bg-emerald-700 text-white rounded-xl px-4 py-3 shadow-2xl">
+          <span className="flex-1">{avisoCambio}</span>
+          <button type="button" onClick={() => setAvisoCambio('')}><X className="w-4 h-4" /></button>
+        </div>
+      )}
+
+      {historial && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[85] flex items-center justify-center p-2 sm:p-4" onClick={() => setHistorial(null)}>
+          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl flex flex-col max-h-[92vh] overflow-hidden border border-slate-200 text-xs" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3 border-b">
+              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2"><DoorOpen className="w-4 h-4 text-teal-600" /> Historial de {historial.recinto.codigo} — {historial.recinto.nombre}</h3>
+              <button type="button" onClick={() => setHistorial(null)} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 text-slate-700">
+              {!historial.cambios.length ? <p className="text-slate-500">Sin cambios registrados.</p> : (
+                <ul className="space-y-2">
+                  {historial.cambios.map(c => (
+                    <li key={c.id} className="border border-slate-200 rounded-lg p-2.5">
+                      <p className="font-bold text-slate-700">{c.accion} · {formatoFecha(c.fecha, { dateStyle: 'medium' })} · {c.usuario}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-3 border-t">
+              <button type="button" onClick={() => setHistorial(null)} className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg font-medium">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -622,14 +715,14 @@ function Repetidos({ filas, criterio, nombreEdificio, onAbrir, onFiltrarTexto }:
                 <table className="w-full">
                   <tbody className="divide-y divide-slate-50">
                     {r.recintos.map(f => (
-                      <tr key={f.id}>
+                      <tr key={f.id} onClick={() => onAbrir(f.edificio, f.id)} title="Ver la ficha del recinto" className="hover:bg-teal-50/60 cursor-pointer">
                         <td className="py-1 pr-3 font-mono font-bold text-slate-900">{f.codigo}</td>
                         <td className="py-1 pr-3 text-slate-600 truncate max-w-[16rem]" title={nombreEdificio(f.edificio)}>{nombreEdificio(f.edificio)} · {f.piso}</td>
                         <td className="py-1 pr-3 text-slate-800">{f.tipo}</td>
                         <td className="py-1 pr-3 text-slate-500" title={f.ocupantes.map(o => comoTitulo(o.nombre)).join(', ')}>{f.ocupantes.length > 1 ? `compartido con ${f.ocupantes.length - 1}` : persona ? 'individual' : ''}</td>
                         <td className="py-1 pr-3 text-right tabular-nums">{formatoM2(f.util)}</td>
                         <td className="py-1 text-right">
-                          <button type="button" onClick={() => onAbrir(f.edificio, f.id)} title="Abrir la ficha del recinto" className="p-1 rounded text-teal-800 hover:bg-teal-50"><ExternalLink className="w-3.5 h-3.5" /></button>
+                          <button type="button" onClick={e => { e.stopPropagation(); onAbrir(f.edificio, f.id); }} title="Abrir la ficha del recinto" className="p-1 rounded text-teal-800 hover:bg-teal-50"><ExternalLink className="w-3.5 h-3.5" /></button>
                         </td>
                       </tr>
                     ))}
@@ -674,7 +767,7 @@ function Detalle({ filas, nombreEdificio, onAbrir }: { filas: FilaAnalisis[]; no
         </thead>
         <tbody className="divide-y divide-slate-100">
           {ordenadas.slice(0, limite).map(f => (
-            <tr key={f.id} className="hover:bg-slate-50">
+            <tr key={f.id} onClick={() => onAbrir(f.edificio, f.id)} title="Ver la ficha del recinto" className="hover:bg-teal-50/60 cursor-pointer">
               <td className="px-3 py-1.5 font-mono font-bold text-slate-900 truncate">{f.codigo}</td>
               <td className="px-3 py-1.5 truncate text-slate-600" title={nombreEdificio(f.edificio)}>{nombreEdificio(f.edificio)}</td>
               <td className="px-3 py-1.5 text-slate-600">{f.piso}</td>
@@ -686,7 +779,7 @@ function Detalle({ filas, nombreEdificio, onAbrir }: { filas: FilaAnalisis[]; no
                 {f.ocupantes.length ? comoTitulo(f.ocupantes[0].nombre) + (f.ocupantes.length > 1 ? ` +${f.ocupantes.length - 1}` : '') : f.unidades.join(' / ') || '—'}
               </td>
               <td className="px-3 py-1.5 text-right">
-                <button type="button" onClick={() => onAbrir(f.edificio, f.id)} title="Abrir la ficha del recinto" className="p-1 rounded text-teal-800 hover:bg-teal-50"><ExternalLink className="w-3.5 h-3.5" /></button>
+                <button type="button" onClick={e => { e.stopPropagation(); onAbrir(f.edificio, f.id); }} title="Abrir la ficha del recinto" className="p-1 rounded text-teal-800 hover:bg-teal-50"><ExternalLink className="w-3.5 h-3.5" /></button>
               </td>
             </tr>
           ))}

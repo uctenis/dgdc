@@ -34,10 +34,15 @@ export function EspaciosApp() {
     setParametros(nuevo);
   };
   const abrirConfiguracion = (abrir: boolean) => abrirSeccion(abrir ? 'configuracion' : null);
-  /** Desde el análisis: abre el edificio del recinto y su ficha. */
-  const abrirRecinto = (edificio: string, recintoId: string) => {
+  /** Desde el análisis: abre el edificio del recinto (su ficha, su plano o su edición). */
+  const abrirRecinto = (edificio: string, recintoId: string, modo?: 'ficha' | 'plano' | 'editar') => {
     const campus = getCampusList().find(c => c.edificios.includes(edificio))?.sigla || edificio.slice(0, 3);
-    setParametros(new URLSearchParams({ campus, edificio, recinto: recintoId }));
+    setParametros(new URLSearchParams({
+      campus,
+      edificio,
+      recinto: recintoId,
+      ...(modo === 'plano' ? { plano: '1' } : modo === 'editar' ? { editar: '1' } : {}),
+    }));
   };
   return (
     <div className="min-h-screen bg-slate-50">

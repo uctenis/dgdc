@@ -73,7 +73,7 @@ export function RecintosPage() {
   // navegador vuelve un paso (del edificio al campus, del campus a la lista) en vez de salir del módulo.
   const [parametros, setParametros] = useSearchParams();
   const campusSigla = parametros.get('campus') || '';
-  const [resaltado, setResaltado] = useState<string | null>(null);
+  const [resaltado, setResaltado] = useState<string | null>(() => parametros.get('recinto'));
   const delCampus = obtenerEdificiosDeCampus(campusSigla);
   const sinConfigurar = enBase.filter(e => e.startsWith(campusSigla) && !delCampus.includes(e) && !configurados.some(c => c.edificios.includes(e)))
     .sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
@@ -126,7 +126,8 @@ export function RecintosPage() {
   const [fichaRecinto, setFichaRecinto] = useState<Recinto | null>(null);
   const [revisando, setRevisando] = useState(false);
   const [descargando, setDescargando] = useState(false);
-  const [fichaPorAbrir, setFichaPorAbrir] = useState<string | null>(null);   // recinto cuya ficha se abre al cargar su edificio
+  const [fichaPorAbrir, setFichaPorAbrir] = useState<string | null>(() => (parametros.get('plano') || parametros.get('editar')) ? null : parametros.get('recinto'));   // recinto cuya ficha se abre al cargar su edificio
+  const [editarPorAbrir, setEditarPorAbrir] = useState<string | null>(() => parametros.get('editar') ? parametros.get('recinto') : null);
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set());   // recintos marcados para sumar sus superficies
   const [documentoNuevo, setDocumentoNuevo] = useState<DocumentoNuevo | null>(null);
   const [verAnteriores, setVerAnteriores] = useState(false);
@@ -164,10 +165,11 @@ export function RecintosPage() {
     listarUsos().then(setUsos).catch(() => {});
   }, []);
 
-  // Abre el edificio de un resultado del buscador y marca el recinto encontrado.
+  // Abre el edificio de un resultado del buscador, marca el recinto encontrado y abre su ficha emergente.
   const irA = (codigoEdificio: string, recintoId?: string) => {
     ir({ campus: configurados.find(c => c.edificios.includes(codigoEdificio))?.sigla || codigoEdificio.slice(0, 3), edificio: codigoEdificio, vista: 'general' });
     setResaltado(recintoId || null);
+    setFichaPorAbrir(recintoId || null);
   };
   /** Nombre de cada edificio para los reportes: el del catastro o el de la configuración. */
   const nombresEdificios = () => Object.fromEntries([...new Set([...enBase, ...edificios])].map(e => [e, nombreEdificio(e)]));
@@ -233,17 +235,26 @@ export function RecintosPage() {
   useEffect(() => {
     const recinto = parametros.get('recinto');
     if (!recinto) return;
-    setResaltado(recinto); setFichaPorAbrir(recinto);
-    const nuevo = new URLSearchParams(parametros); nuevo.delete('recinto');
+    const soloPlano = parametros.get('plano') === '1';
+    const abrirEdicion = parametros.get('editar') === '1';
+    setResaltado(recinto);
+    if (abrirEdicion) setEditarPorAbrir(recinto);
+    else if (!soloPlano) setFichaPorAbrir(recinto);
+    const nuevo = new URLSearchParams(parametros);
+    nuevo.delete('recinto'); nuevo.delete('plano'); nuevo.delete('editar');
     setParametros(nuevo, { replace: true });
   }, [parametros]); // eslint-disable-line react-hooks/exhaustive-deps
   /** Abre «Consultas y análisis» con filtros ya puestos (el campus o el edificio en que se está). */
   const analizar = (consulta: object) => setParametros(new URLSearchParams({ seccion: 'analisis', consulta: JSON.stringify(consulta) }));
   useEffect(() => {
-    if (!fichaPorAbrir || cargando) return;
-    const r = recintos.find(x => x.id === fichaPorAbrir);
-    if (r) { setFichaRecinto(r); setFichaPorAbrir(null); }
-  }, [fichaPorAbrir, cargando, recintos]);
+    if ((!fichaPorAbrir && !editarPorAbrir) || cargando) return;
+    const id = editarPorAbrir || fichaPorAbrir;
+    const r = recintos.find(x => x.id === id && (!edificio || x.edificio_codigo === edificio));
+    if (r) {
+      if (editarPorAbrir) { setRecintoEditando(r); setEditarPorAbrir(null); }
+      else { setFichaRecinto(r); setFichaPorAbrir(null); }
+    }
+  }, [fichaPorAbrir, editarPorAbrir, cargando, recintos, edificio]);
   const marcar = (ids: string[], marcado: boolean) => setSeleccion(prev => {
     const nuevo = new Set(prev);
     ids.forEach(id => (marcado ? nuevo.add(id) : nuevo.delete(id)));

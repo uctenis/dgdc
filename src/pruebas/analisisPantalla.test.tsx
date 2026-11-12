@@ -73,4 +73,14 @@ describe('pantalla de consultas y análisis', () => {
     expect(contenedor.textContent).toContain('de tipo OFICINA, SALA CATEDRA');
     await desmontar();
   });
+
+  it('al pinchar una fila de recinto en el análisis se abre su ficha emergente', async () => {
+    const { contenedor, desmontar } = await montar({ f: { edificio: ['CJP08'], piso: ['Piso 3'], tipo: ['SALA CATEDRA'] } });
+    const filaRecinto = [...contenedor.querySelectorAll('tbody tr')].find(tr => tr.textContent?.includes('CJP08_301')) as HTMLElement;
+    expect(filaRecinto).toBeTruthy();
+    await act(async () => { filaRecinto.click(); });
+    expect(contenedor.textContent).toContain('Ver en el plano');
+    expect(contenedor.textContent).toContain('Superficies y capacidad');
+    await desmontar();
+  });
 });
