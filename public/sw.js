@@ -1,6 +1,6 @@
 // Service worker del sistema DGDC: deja la aplicación guardada en el equipo para abrirla sin señal (libro de obra
 // en terreno). Los datos NO pasan por aquí: los maneja la copia local de Firebase. Solo se guarda el código.
-const CACHE = 'dgdc-app-v1';
+const CACHE = 'dgdc-app-v2';   // al cambiar de versión se borra la copia anterior (p. ej. el ícono viejo)
 const BASE = new URL('./', self.location).pathname;
 
 self.addEventListener('install', event => {
