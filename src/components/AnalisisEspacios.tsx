@@ -4,6 +4,7 @@ import {
   BarChart3, Loader2, X, Link2, Download, RefreshCw, Search, ChevronDown, Check, Sparkles, LayoutGrid, Table2, ExternalLink, AlertTriangle, PieChart, Copy, Users,
 } from 'lucide-react';
 import { cargarDatosAnalisis } from '../services/analisisEspacios';
+import { ordenarCampus } from '../data/campusData';
 import {
   agrupar, valoresDe, buscarRepetidos, CRITERIOS_REPETIDO, listarPersonas, cruzar, DIMENSIONES, filtrar, formatoM2, formatoMedida, fraseRespuesta, MEDIDAS, SIN_DATO, totales, valorMedida,
   type CriterioRepetido, type Dimension, type FilaAnalisis, type Filtros, type Grupo, type Medida,
@@ -133,7 +134,9 @@ export function AnalisisEspacios({ onAbrirRecinto, onCerrar }: Props) {
           if (!consulta.f[d.id]?.length && (opciones.length <= 1 || opciones.every(o => o.valor === SIN_DATO))) return null;
           return (
             <FiltroMultiple key={d.id} titulo={d.nombre} elegidos={consulta.f[d.id] || []} opciones={opciones}
-              ordenAlfabetico={d.id !== 'piso'}
+              ordenAlfabetico={d.id !== 'piso' && d.id !== 'campus'}
+              ordenCampus={d.id === 'campus'}
+              etiquetaDe={v => etiqueta(d.id, v)}
               onCambiar={v => ponerFiltros({ ...consulta.f, [d.id]: v })} />
           );
         })}
@@ -292,8 +295,8 @@ function Selector({ valor, opciones, onCambiar }: { valor: string; opciones: { v
 }
 
 /** Filtro de varios valores con buscador y, junto a cada opción, cuántos recintos quedarían. */
-function FiltroMultiple({ titulo, opciones, elegidos, onCambiar, ordenAlfabetico }: {
-  titulo: string; opciones: { valor: string; etiqueta: string; n: number }[]; elegidos: string[]; onCambiar: (v: string[]) => void; ordenAlfabetico: boolean;
+function FiltroMultiple({ titulo, opciones, elegidos, onCambiar, ordenAlfabetico, ordenCampus, etiquetaDe }: {
+  titulo: string; opciones: { valor: string; etiqueta: string; n: number }[]; elegidos: string[]; onCambiar: (v: string[]) => void; ordenAlfabetico: boolean; ordenCampus?: boolean; etiquetaDe?: (v: string) => string;
 }) {
   const [abierto, setAbierto] = useState(false);
   const [buscar, setBuscar] = useState('');
@@ -306,10 +309,11 @@ function FiltroMultiple({ titulo, opciones, elegidos, onCambiar, ordenAlfabetico
   }, [abierto]);
   const lista = useMemo(() => {
     const b = buscar.trim().toLowerCase();
-    const todas = [...opciones, ...elegidos.filter(e => !opciones.some(o => o.valor === e)).map(valor => ({ valor, etiqueta: valor, n: 0 }))];
+    const todas = [...opciones, ...elegidos.filter(e => !opciones.some(o => o.valor === e)).map(valor => ({ valor, etiqueta: etiquetaDe ? etiquetaDe(valor) : valor, n: 0 }))];
     const filtradas = b ? todas.filter(o => o.etiqueta.toLowerCase().includes(b)) : todas;
+    if (ordenCampus) return ordenarCampus(filtradas.map(o => ({ ...o, sigla: o.valor })));
     return ordenAlfabetico ? [...filtradas].sort((a, x) => a.etiqueta.localeCompare(x.etiqueta, 'es', { numeric: true })) : filtradas;
-  }, [opciones, elegidos, buscar, ordenAlfabetico]);
+  }, [opciones, elegidos, buscar, ordenAlfabetico, ordenCampus, etiquetaDe]);
   const alternar = (v: string) => onCambiar(elegidos.includes(v) ? elegidos.filter(x => x !== v) : [...elegidos, v]);
   const resumen = elegidos.length === 0 ? titulo : elegidos.length === 1 ? (opciones.find(o => o.valor === elegidos[0])?.etiqueta || elegidos[0]) : `${titulo} (${elegidos.length})`;
   return (

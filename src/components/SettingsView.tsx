@@ -28,7 +28,7 @@ import {
   type RubroProveedor,
 } from '../data/rubrosData';
 import { obtenerEstadoConfigCompartida } from '../services/configCompartida';
-import { getCampusList, saveCampusList, ordenarSiglasEdificio, importarCarpetasDrive, renombrarSiglaCampus, zonasExterioresDeCampus, zonaExteriorDeCodigo, urlGoogleMaps, type CampusInfo, type EdificioInfo, type CarpetasDriveArchivo } from '../data/campusData';
+import { getCampusList, saveCampusList, ordenarCampus, ordenarSiglasEdificio, importarCarpetasDrive, renombrarSiglaCampus, zonasExterioresDeCampus, zonaExteriorDeCodigo, urlGoogleMaps, type CampusInfo, type EdificioInfo, type CarpetasDriveArchivo } from '../data/campusData';
 import { UbicacionEdificioInput } from './UbicacionEdificioInput';
 import {
   Settings,
@@ -397,8 +397,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         .catch(e => alert(e instanceof Error ? e.message : String(e)));
     }
 
-    setCampusList(actualizada);
-    saveCampusList(actualizada);
+    const ordenada = ordenarCampus(actualizada);
+    setCampusList(ordenada);
+    saveCampusList(ordenada);
     setCampusEditando(CAMPUS_VACIO);
     setNuevoEdificioInput('');
     setIsEditingCampus(false);
@@ -468,7 +469,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     if (!confirm(`${cambio} ¿Continuar?`)) return;
     try {
       const r = await migrarSiglaCampus(antigua, nueva, nombre);
-      const actualizada = renombrarSiglaCampus(campusList, antigua, nueva, nombre);
+      const actualizada = ordenarCampus(renombrarSiglaCampus(campusList, antigua, nueva, nombre));
       setCampusList(actualizada);
       saveCampusList(actualizada);
       setCampusEditando(CAMPUS_VACIO);
@@ -496,8 +497,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         ...(r.campusDesconocidos.length ? [`Campus del archivo que no existen en el catálogo (se omiten): ${r.campusDesconocidos.join(', ')}`] : []),
       ].join('\n');
       if (!confirm(`${resumen}\n\nNo se modifica ningún enlace, nombre ni dirección ya escritos. ¿Guardar?`)) return;
-      setCampusList(r.lista);
-      saveCampusList(r.lista);
+      const ordenada = ordenarCampus(r.lista);
+      setCampusList(ordenada);
+      saveCampusList(ordenada);
       if (!isAdmin) alert('Guardado solo en este navegador: para que llegue a todo el equipo debe importarlo el administrador del sistema.');
     } catch (err) {
       console.error('Error importando carpetas de Drive:', err);

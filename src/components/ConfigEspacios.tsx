@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   getConfigEspacios, saveConfigEspacios, PARAMETROS_POR_DEFECTO, type ConfigEspacios, type TipoRecintoConfig, type ClaseSuperficie,
 } from '../data/espaciosConfig';
-import { getCampusList, saveCampusList, obtenerEdificiosDeCampus } from '../data/campusData';
+import { getCampusList, saveCampusList, ordenarCampus, obtenerEdificiosDeCampus } from '../data/campusData';
 import { EVENTO_CONFIG_ACTUALIZADA } from '../services/configCompartida';
 import {
   resumenValores, renombrarEnRecintos, renombrarUnidad, listarFichasDeCampus, guardarDatosEdificio, type ValorEnUso,
@@ -350,8 +350,9 @@ function CampusYEdificios({ editable, onAviso, onError }: { editable: boolean; o
           ...Object.entries(cambios).map(([codigo, d]) => [codigo, { ...(c.edificiosInfo?.[codigo] || {}), nombre: d.nombre.trim() }]),
         ]),
       });
-      saveCampusList(nueva);
-      setLista(nueva);
+      const ordenada = ordenarCampus(nueva);
+      saveCampusList(ordenada);
+      setLista(ordenada);
       setFichas(prev => ({ ...prev, ...cambios }));
       setEditados({});
       onAviso(`Campus ${sigla} guardado${Object.keys(cambios).length ? ` (${Object.keys(cambios).length} edificio(s))` : ''}.`);

@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Building2, Layers, Plus, Pencil, Trash2, History, FileSpreadsheet, FileText, Loader2, AlertTriangle, X, ExternalLink, Copy, DoorOpen, ChevronRight, ChevronDown, Trees, LayoutGrid, Table2, Search, Ruler, Sparkles, Download, ClipboardCheck, BarChart3, Home, ArrowLeft, Map as MapIcon, Check,
 } from 'lucide-react';
-import { getCampusList, saveCampusList, obtenerEdificiosDeCampus, etiquetaEdificio, obtenerInfoEdificio } from '../data/campusData';
+import { getCampusList, saveCampusList, ordenarCampus, obtenerEdificiosDeCampus, etiquetaEdificio, obtenerInfoEdificio } from '../data/campusData';
 import { useAuth } from '../context/AuthContext';
 import { SUPABASE_CONFIGURADO } from '../lib/supabase';
 import {
@@ -63,11 +63,11 @@ export function RecintosPage() {
   // Campus y edificios de la configuración, más los que solo existen en la base (códigos del catastro aún no configurados).
   const configurados = getCampusList();
   const siglasConfiguradas = new Set(configurados.map(c => c.sigla));
-  const campus = [
+  const campus = ordenarCampus([
     ...configurados.map(c => ({ sigla: c.sigla, nombre: c.nombre, direccion: [c.direccion, c.ciudad].filter(Boolean).join(', ') })),
-    ...[...new Set(enBase.map(e => e.slice(0, 3)))].filter(s => !siglasConfiguradas.has(s)).sort()
+    ...[...new Set(enBase.map(e => e.slice(0, 3)))].filter(s => !siglasConfiguradas.has(s))
       .map(s => ({ sigla: s, nombre: 'sin configurar (solo en el catastro)', direccion: '' })),
-  ];
+  ]);
   // Se navega por niveles: primero el campus (tarjetas), luego el edificio (tarjetas) y recién ahí su contenido.
   // Campus, edificio y pestaña viven en la dirección (?campus=CSN&edificio=CSN11&vista=plano): así el botón «atrás» del
   // navegador vuelve un paso (del edificio al campus, del campus a la lista) en vez de salir del módulo.

@@ -1,7 +1,7 @@
 import { motivoNoHabil, proponerCalendario, PLAZOS_CALENDARIO } from '../utils/diasHabiles';
 import React, { useState, useMemo } from 'react';
 import type { LicitacionProyecto, Proveedor, ProyectoMaestro, Cotizacion, ConfiguracionFirmas } from '../types';
-import { etiquetaEdificio } from '../data/campusData';
+import { etiquetaEdificio, ordenarSiglasCampus, obtenerCampusPorSigla } from '../data/campusData';
 import type { TabId as LicitacionTabId } from './LicitacionWorkspacePage';
 import {
   FolderKanban, Plus, Calendar, ArrowRight, ArrowLeft, Edit3, Trash2,
@@ -142,7 +142,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
   }, [licitaciones, search, filtroEstado, filtroCampus, sortCol, sortDir]);
 
   const campusOpciones = useMemo(() =>
-    [...new Set(licitaciones.map(l => l.campusSigla).filter(Boolean))].sort() as string[],
+    ordenarSiglasCampus([...new Set(licitaciones.map(l => l.campusSigla).filter(Boolean))] as string[]),
     [licitaciones]
   );
 
@@ -404,7 +404,10 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
             className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold outline-none focus:ring-2 focus:ring-sky-500"
           >
             <option value="">Todos los campus</option>
-            {campusOpciones.map(c => <option key={c} value={c}>{c}</option>)}
+            {campusOpciones.map(c => {
+              const info = obtenerCampusPorSigla(c);
+              return <option key={c} value={c}>{info ? `${c} — ${info.nombre}` : c}</option>;
+            })}
           </select>
         )}
         <div className="flex items-center gap-1.5">

@@ -415,6 +415,11 @@ export function ordenarCampus<T extends { sigla: string }>(lista: T[]): T[] {
     || a.sigla.localeCompare(b.sigla, 'es'));
 }
 
+/** Siglas de campus con Rectoría (CML) primero y luego de mayor a menor superficie construida. */
+export function ordenarSiglasCampus(siglas: string[]): string[] {
+  return ordenarCampus(siglas.map(sigla => ({ sigla }))).map(c => c.sigla);
+}
+
 // ─── DIRECCIONES DE LOS CAMPUS ──────────────────────────────────────────────
 // Según campus.uct.cl (cada campus y «Otras dependencias») y, donde el sitio no la publica, según el catastro de
 // edificios. Solo completan los campus que no tienen dirección escrita: lo editado en Configuración manda.
@@ -445,8 +450,9 @@ export function getCampusList(): CampusInfo[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_CAMPUS_UCT));
-      return ordenarCampus(completarDireccionesCampus(INITIAL_CAMPUS_UCT));
+      const inicial = ordenarCampus(completarDireccionesCampus(INITIAL_CAMPUS_UCT));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(inicial));
+      return inicial;
     }
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
@@ -462,7 +468,7 @@ export function getCampusList(): CampusInfo[] {
 
 export function saveCampusList(list: CampusInfo[]): void {
   try {
-    guardarConfigCompartida(STORAGE_KEY, list);
+    guardarConfigCompartida(STORAGE_KEY, ordenarCampus(list));
   } catch (e) {
     console.error('Error guardando catálogo de campus:', e);
   }
