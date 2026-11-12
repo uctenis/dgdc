@@ -699,6 +699,12 @@ export async function listarFichasDeCampus(siglaCampus: string): Promise<Pick<Fi
   return data as Pick<FichaEdificio, 'codigo' | 'nombre' | 'categoria'>[];
 }
 
+/** Cambia solo el nombre de un edificio en su ficha (si el edificio no está en la base, no hace nada). */
+export async function renombrarEdificio(codigo: string, nombre: string): Promise<void> {
+  const { error } = await supabase.from('edificios').update({ nombre: nombre.trim() }).eq('codigo', codigo);
+  if (error) throw errorDe(error, `No se pudo cambiar el nombre del edificio ${codigo}`);
+}
+
 /** Crea o actualiza el nombre y la categoría de un edificio (el resto de su ficha no cambia). */
 export async function guardarDatosEdificio(codigo: string, datos: { nombre: string; categoria: string | null; campus_nombre?: string }): Promise<void> {
   const { error } = await supabase.from('edificios').upsert({ codigo, ...datos }, { onConflict: 'codigo' });

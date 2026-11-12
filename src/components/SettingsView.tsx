@@ -386,6 +386,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       actualizada = [...campusList, { ...campusEditando, sigla }];
     }
 
+    // El nombre de cada edificio también vive en su ficha (Gestor de Espacios), que es la que manda: se cambia ahí
+    // también, o el Gestor lo volvería a dejar como estaba.
+    const anterior = index >= 0 ? campusList[index] : undefined;
+    const renombrados = Object.entries(campusEditando.edificiosInfo || {})
+      .filter(([ed, info]) => info?.nombre?.trim() && info.nombre.trim() !== (anterior?.edificiosInfo?.[ed]?.nombre || '').trim());
+    if (renombrados.length) {
+      void import('../services/recintos').then(({ renombrarEdificio }) =>
+        Promise.all(renombrados.map(([ed, info]) => renombrarEdificio(ed, info.nombre!))))
+        .catch(e => alert(e instanceof Error ? e.message : String(e)));
+    }
+
     setCampusList(actualizada);
     saveCampusList(actualizada);
     setCampusEditando(CAMPUS_VACIO);

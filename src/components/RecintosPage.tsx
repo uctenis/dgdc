@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Building2, Layers, Plus, Pencil, Trash2, History, FileSpreadsheet, FileText, Loader2, AlertTriangle, X, ExternalLink, Copy, DoorOpen, ChevronRight, ChevronDown, Trees, LayoutGrid, Table2, Search, Ruler, Sparkles, Download, ClipboardCheck, BarChart3, Home, ArrowLeft, Map as MapIcon,
+  Building2, Layers, Plus, Pencil, Trash2, History, FileSpreadsheet, FileText, Loader2, AlertTriangle, X, ExternalLink, Copy, DoorOpen, ChevronRight, ChevronDown, Trees, LayoutGrid, Table2, Search, Ruler, Sparkles, Download, ClipboardCheck, BarChart3, Home, ArrowLeft, Map as MapIcon, Check,
 } from 'lucide-react';
 import { getCampusList, saveCampusList, obtenerEdificiosDeCampus, etiquetaEdificio, obtenerInfoEdificio } from '../data/campusData';
 import { useAuth } from '../context/AuthContext';
@@ -9,6 +9,7 @@ import { SUPABASE_CONFIGURADO } from '../lib/supabase';
 import {
   listarPisos, listarEdificiosConDatos, obtenerFichaEdificio, listarUsos, guardarPiso, eliminarPiso, listarRecintos, guardarRecinto, eliminarRecinto, historialRecinto,
   listarDocumentos, registrarDocumento, listarRecintosDeCampus, separarUnidades, abrirArchivoDocumento, valoresParaAutocompletar,
+  renombrarEdificio,
 } from '../services/recintos';
 import {
   ESTADOS_RECINTO, TENENCIAS, MOTIVOS_ALTA, MOTIVOS_BAJA, TIPOS_DOCUMENTO, ESPECIALIDADES, FORMATOS_DOCUMENTO,
@@ -53,6 +54,9 @@ type DocumentoNuevo = Omit<DocumentoEdificio, 'id' | 'vigente' | 'creado_en' | '
 export function RecintosPage() {
   const [enBase, setEnBase] = useState<string[]>([]);
   const [nombresCatastro, setNombresCatastro] = useState<Record<string, string>>({});
+  /** Nombre del edificio mientras se cambia en su encabezado (null: no se está cambiando). */
+  const [nombreNuevo, setNombreNuevo] = useState<string | null>(null);
+  const [guardandoNombre, setGuardandoNombre] = useState(false);
   const [categorias, setCategorias] = useState<Record<string, string>>({});
   const [pisosContraidos, setPisosContraidos] = useState<Set<string>>(new Set());
   const [usos, setUsos] = useState<string[]>([]);
@@ -81,6 +85,7 @@ export function RecintosPage() {
   const [volverResaltando, setVolverResaltando] = useState<string | null>(null);
   const [verComunes, setVerComunes] = useState(false);
   const edificio = parametros.get('edificio') || '';
+  useEffect(() => { setNombreNuevo(null); }, [edificio]);
   // Nombre del edificio: el del catastro y, si no tiene, el de la configuración de campus.
   // Un solo nombre para cada edificio en todo el sistema: el de la ficha del Gestor (fuente oficial, «Cabaña 1»), y si
   // no tiene, el de la configuración compartida. La configuración se pone al día con la ficha (ver más abajo), así las
@@ -435,7 +440,32 @@ export function RecintosPage() {
               </button>
               <h1 className="text-xl sm:text-2xl font-black text-slate-900 leading-tight flex items-baseline gap-2 flex-wrap">
                 <span className="font-mono text-teal-800">{edificio}</span>
-                <span>{comoTitulo(nombreEdificio(edificio)) || 'Sin nombre'}</span>
+                {nombreNuevo === null ? (
+                  <>
+                    <span>{comoTitulo(nombreEdificio(edificio)) || 'Sin nombre'}</span>
+                    <button type="button" title="Cambiar el nombre del edificio" onClick={() => setNombreNuevo(comoTitulo(nombreEdificio(edificio)))}
+                      className="self-center p-1.5 rounded-lg text-slate-400 hover:text-teal-700 hover:bg-teal-50 transition"><Pencil className="w-4 h-4" /></button>
+                  </>
+                ) : (
+                  <form className="flex items-center gap-1.5 self-center" onSubmit={async e => {
+                    e.preventDefault();
+                    const nombre = (nombreNuevo || '').trim();
+                    if (!nombre) return;
+                    setGuardandoNombre(true);
+                    try {
+                      await renombrarEdificio(edificio, nombre);
+                      setNombresCatastro(prev => ({ ...prev, [edificio]: nombre }));
+                      setNombreNuevo(null);
+                    } catch (err) { alert(err instanceof Error ? err.message : String(err)); }
+                    finally { setGuardandoNombre(false); }
+                  }}>
+                    <input autoFocus value={nombreNuevo} onChange={e => setNombreNuevo(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') setNombreNuevo(null); }}
+                      className="w-[min(28rem,70vw)] px-2.5 py-1 text-lg font-bold border border-teal-400 rounded-lg outline-none focus:ring-2 focus:ring-teal-300" />
+                    <button type="submit" disabled={guardandoNombre || !nombreNuevo.trim()} title="Guardar (Enter)"
+                      className="p-1.5 rounded-lg bg-teal-700 hover:bg-teal-800 text-white disabled:opacity-50">{guardandoNombre ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}</button>
+                    <button type="button" onClick={() => setNombreNuevo(null)} title="Cancelar (Esc)" className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100"><X className="w-4 h-4" /></button>
+                  </form>
+                )}
               </h1>
             </div>
             {ficha?.direccion && <p className="text-slate-500 pb-1">{ficha.direccion}</p>}
