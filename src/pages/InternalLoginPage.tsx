@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { AlertCircle, ArrowUpRight, DoorOpen, FolderKanban, Loader2, LogOut, Lock } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, DoorOpen, FolderKanban, Loader2, LogOut, Lock, Users } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import fotoCampus from '../assets/inicio-campus.jpg';
 
@@ -27,6 +27,17 @@ const MODULOS = [
     icono: DoorOpen,
     color: '#0f766e',
     suave: '#f0fdfa',
+  },
+  {
+    id: 'asignacion',
+    nombre: 'Asignación',
+    titulo: 'Asignación de Espacios',
+    detalle: 'Ubicar a los funcionarios en sus recintos, plantear cambios con su antes y después, y el historial de movimientos.',
+    temas: ['Por ubicar', 'Propuestas', 'Antes y después', 'Historial'],
+    ruta: '/asignacion',
+    icono: Users,
+    color: '#6d28d9',
+    suave: '#f5f3ff',
   },
 ] as const;
 

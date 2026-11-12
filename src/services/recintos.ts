@@ -219,23 +219,14 @@ export async function guardarRecinto(recinto: Omit<Recinto, 'id'> & { id?: strin
  */
 export async function moverOcupante(origenId: string, ocupante: Ocupante, destinoId: string, conservarEnOrigen = false): Promise<void> {
   if (origenId === destinoId) throw new Error('El recinto de destino es el mismo de origen.');
-  const leer = async (id: string) => {
-    const { data, error } = await supabase.from('recintos').select('id, codigo, ocupantes').eq('id', id).single();
-    if (error) throw errorDe(error, 'No se pudo leer el recinto');
-    return data as Pick<Recinto, 'id' | 'codigo' | 'ocupantes'>;
-  };
-  const [origen, destino] = await Promise.all([leer(origenId), leer(destinoId)]);
-  const clave = clavePersona(ocupante.nombre);
-  const enDestino = (destino.ocupantes || []).some(o => clavePersona(o.nombre) === clave);
-  if (!enDestino) {
-    const { error } = await supabase.from('recintos').update(datosParaGuardar({ ocupantes: [...(destino.ocupantes || []), ocupante] })).eq('id', destinoId);
-    if (error) throw errorDe(error, `No se pudo agregar a la persona en ${destino.codigo}`);
-  }
-  if (!conservarEnOrigen) {
-    const restantes = (origen.ocupantes || []).filter(o => clavePersona(o.nombre) !== clave);
-    const { error } = await supabase.from('recintos').update(datosParaGuardar({ ocupantes: restantes })).eq('id', origenId);
-    if (error) throw errorDe(error, `Se agregó en ${destino.codigo}, pero no se pudo quitar de ${origen.codigo}`);
-  }
+  // Se hace con la función de la base del módulo de Asignación (todo o nada) y queda en su historial.
+  const { data, error } = await supabase.from('recintos').select('id, codigo').in('id', [origenId, destinoId]);
+  if (error) throw errorDe(error, 'No se pudo leer el recinto');
+  const { auth } = await import('../lib/firebase');
+  const usuario = auth.currentUser?.email || 'desconocido';
+  const { moverAhora } = await import('./asignacion');
+  await moverAhora([{ persona: ocupante, desde_id: origenId, hacia_id: destinoId, conservar_origen: conservarEnOrigen }],
+    new Map((data as { id: string; codigo: string }[]).map(r => [r.id, r.codigo])), usuario);
 }
 
 export async function eliminarRecinto(id: string): Promise<void> {

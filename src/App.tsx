@@ -59,6 +59,7 @@ const LicitacionDemo = lazy(() => import('./pages/LicitacionDemo').then(m => ({ 
 const IndicadoresDemo = lazy(() => import('./pages/IndicadoresDemo').then(m => ({ default: m.IndicadoresDemo })));
 const PreciosUnitariosPage = lazy(() => import('./components/PreciosUnitariosPage').then(m => ({ default: m.PreciosUnitariosPage })));
 const EspaciosApp = lazy(() => import('./pages/EspaciosApp').then(m => ({ default: m.EspaciosApp })));
+const AsignacionApp = lazy(() => import('./pages/AsignacionApp').then(m => ({ default: m.AsignacionApp })));
 const PreciosDemo = lazy(() => import('./pages/PreciosDemo').then(m => ({ default: m.PreciosDemo })));
 const InscripcionProveedorPage = lazy(() => import('./pages/InscripcionProveedorPage').then(m => ({ default: m.InscripcionProveedorPage })));
 const ArchivoPage = lazy(() => import('./pages/ArchivoPage').then(m => ({ default: m.ArchivoPage })));
@@ -557,6 +558,7 @@ export function App() {
           <Route path="/adjudicaciones" element={<Navigate to="/proyectos" replace />} />
           {/* Gestor de Espacios: módulo propio, con su entrada y su menú (comparte el inicio de sesión). */}
           <Route path="/espacios" element={<BloqueaProveedor><ProtectedInternalRoute><EspaciosApp /></ProtectedInternalRoute></BloqueaProveedor>} />
+          <Route path="/asignacion" element={<BloqueaProveedor><ProtectedInternalRoute><AsignacionApp /></ProtectedInternalRoute></BloqueaProveedor>} />
           <Route path="/libro-obra" element={<BloqueaProveedor><ProtectedInternalRoute><LibroObraMovilPage /></ProtectedInternalRoute></BloqueaProveedor>} />
           <Route path="/libro-obra/:id" element={<BloqueaProveedor><ProtectedInternalRoute><LibroObraMovilPage /></ProtectedInternalRoute></BloqueaProveedor>} />
 

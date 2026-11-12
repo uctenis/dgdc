@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, FolderKanban, DoorOpen, Check, Home, LayoutGrid } from 'lucide-react';
+import { ChevronDown, FolderKanban, DoorOpen, Check, Home, LayoutGrid, Users } from 'lucide-react';
 
 // Módulos del sistema DGDC. Cada uno tiene su propia entrada y menú; comparten el inicio de sesión y se cruzan datos.
 const MODULOS = [
   { id: 'adjudicaciones', nombre: 'Gestor de Proyectos', detalle: 'Cartera, presupuestos, licitaciones, obras y proveedores', ruta: '/proyectos', icono: FolderKanban },
   { id: 'espacios', nombre: 'Gestor de Espacios', detalle: 'Campus, edificios, recintos y planos', ruta: '/espacios', icono: DoorOpen },
+  { id: 'asignacion', nombre: 'Asignación de Espacios', detalle: 'Ubicar personas, propuestas de cambio e historial', ruta: '/asignacion', icono: Users },
 ] as const;
 export type IdModulo = typeof MODULOS[number]['id'];
 
@@ -13,9 +14,11 @@ export type IdModulo = typeof MODULOS[number]['id'];
  * Logo del sistema: lleva al inicio de DGDC (donde se elige el módulo). Es el mismo en todos los módulos; cambia solo
  * el color, para que el usuario reconozca dónde está.
  */
-export function LogoInicioDGDC({ tono = 'azul' }: { tono?: 'azul' | 'verde' }) {
+export function LogoInicioDGDC({ tono = 'azul' }: { tono?: 'azul' | 'verde' | 'violeta' }) {
   const navigate = useNavigate();
-  const fondo = tono === 'verde'
+  const fondo = tono === 'violeta'
+    ? { background: 'linear-gradient(135deg, #c4b5fd 0%, #6d28d9 100%)', boxShadow: '0 0 0 2px rgba(196,181,253,0.25), 0 4px 12px -2px rgba(109,40,217,0.5)' }
+    : tono === 'verde'
     ? { background: 'linear-gradient(135deg, #5eead4 0%, #0f766e 100%)', boxShadow: '0 0 0 2px rgba(94,234,212,0.25), 0 4px 12px -2px rgba(15,118,110,0.5)' }
     : { background: 'linear-gradient(135deg, #38bdf8 0%, #1d4ed8 100%)', boxShadow: '0 0 0 2px rgba(56,189,248,0.25), 0 4px 12px -2px rgba(29,78,216,0.5)' };
   return (
