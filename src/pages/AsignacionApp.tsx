@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { CheckCircle2, ClipboardList, History, Loader2, LogOut, UserCircle2, UserPlus, Users, XCircle } from 'lucide-react';
+import { CheckCircle2, ClipboardList, History, Loader2, LogOut, UserCircle2, UserPlus, UserRoundCog, Users, XCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { LogoInicioDGDC, SelectorModulos } from '../components/SelectorModulos';
 import { ContextoAsignacion, type DatosAsignacion } from '../components/asignacion/comun';
 import { PorUbicar } from '../components/asignacion/PorUbicar';
 import { Propuestas } from '../components/asignacion/Propuestas';
 import { HistorialAsignacion } from '../components/asignacion/HistorialAsignacion';
+import { Personas } from '../components/asignacion/Personas';
 import { listarPropuestas, listarRecintosAsignables, listarSalidas, type Movimiento, type Propuesta } from '../services/asignacion';
 import { listarEdificiosConDatos } from '../services/recintos';
 import { useNomina } from '../services/nomina';
@@ -14,7 +15,7 @@ import { clavePersona } from '../utils/analisisEspacios';
 import { personasConRecinto, type RecintoAsignable } from '../utils/asignacion';
 import { formatoFecha } from '../utils/fechas';
 
-type Pestana = 'ubicar' | 'propuestas' | 'historial';
+type Pestana = 'ubicar' | 'personas' | 'propuestas' | 'historial';
 
 /**
  * Asignación de Espacios: ubicar en recintos a los funcionarios vigentes que aún no tienen uno, plantear cambios
@@ -84,6 +85,7 @@ export function AsignacionApp() {
 
   const pestanas: { id: Pestana; texto: string; icono: typeof Users; contador?: number }[] = [
     { id: 'ubicar', texto: 'Por ubicar', icono: UserPlus, contador: vigentes - ubicados },
+    { id: 'personas', texto: 'Personas', icono: UserRoundCog },
     { id: 'propuestas', texto: 'Propuestas de cambio', icono: ClipboardList, contador: borradores || undefined },
     { id: 'historial', texto: 'Historial', icono: History },
   ];
@@ -143,6 +145,7 @@ export function AsignacionApp() {
         ) : (
           <ContextoAsignacion.Provider value={datos}>
             {pestana === 'ubicar' && <PorUbicar nomina={nomina} propuestas={propuestas} onIrAPropuesta={id => ir({ vista: 'propuestas', propuesta: id })} />}
+            {pestana === 'personas' && <Personas nomina={nomina} propuestas={propuestas} onIrAPropuesta={id => ir({ vista: 'propuestas', propuesta: id })} />}
             {pestana === 'propuestas' && <Propuestas propuestas={propuestas} abiertaId={propuestaAbierta} onAbrir={id => ir({ propuesta: id })} onCambio={recargarPropuestas} />}
             {pestana === 'historial' && <HistorialAsignacion propuestas={propuestas} version={version} />}
           </ContextoAsignacion.Provider>

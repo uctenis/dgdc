@@ -19,7 +19,7 @@ export function HistorialAsignacion({ propuestas, version }: { propuestas: Propu
   }, [version]); // eslint-disable-line react-hooks/exhaustive-deps
   const nombrePropuesta = useMemo(() => new Map(propuestas.map(p => [p.id, p.nombre])), [propuestas]);
   const origen = (m: Movimiento) => (m.propuesta_id ? `Propuesta «${nombrePropuesta.get(m.propuesta_id) || '—'}»`
-    : !m.desde_id ? 'Ubicación' : !m.hacia_id ? (m.realizado_por?.startsWith('Nómina') ? 'Salida: ya no figura en la nómina' : 'Salida') : 'Cambio de recinto');
+    : !m.desde_id ? 'Ubicación' : m.desde_id === m.hacia_id ? 'Cambio de unidad' : !m.hacia_id ? (m.realizado_por?.startsWith('Nómina') ? 'Salida: ya no figura en la nómina' : 'Salida') : 'Cambio de recinto');
   const filtrados = useMemo(() => {
     const q = normalizar(busqueda).split(/\s+/).filter(Boolean);
     return movimientos.filter(m => q.every(p => normalizar([m.persona.nombre, m.persona.unidad, m.desde_codigo, m.hacia_codigo, m.realizado_por, origen(m)].join(' ')).includes(p)));
@@ -28,7 +28,9 @@ export function HistorialAsignacion({ propuestas, version }: { propuestas: Propu
   const exportar = () => {
     const hoja = XLSX.utils.json_to_sheet(filtrados.map(m => ({
       Fecha: fechaHora(m.realizado_en), Persona: comoTitulo(m.persona.nombre), Unidad: comoTitulo(m.persona.unidad || ''),
-      Desde: m.desde_codigo || '(sin recinto)', Hacia: m.hacia_codigo || '(sale)', Origen: origen(m), Por: m.realizado_por || '',
+      Desde: m.desde_codigo || '(sin recinto)', Hacia: m.hacia_codigo || '(sale)',
+      'Unidad anterior': m.unidad_nueva ? comoTitulo(m.unidad_anterior || '') : '', 'Unidad nueva': m.unidad_nueva ? comoTitulo(m.unidad_nueva) : '',
+      Origen: origen(m), Por: m.realizado_por || '',
     })));
     const libro = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(libro, hoja, 'Historial');
@@ -61,6 +63,7 @@ export function HistorialAsignacion({ propuestas, version }: { propuestas: Propu
                     <ArrowRight className="inline w-3.5 h-3.5 mx-1 text-violet-600" />
                     <span className={m.hacia_codigo ? 'font-bold text-violet-800' : 'font-sans italic text-slate-400'}>{m.hacia_codigo || 'sale'}</span>
                     {m.conservar_origen && <span className="ml-1 font-sans text-[10px] px-1.5 rounded-full bg-sky-100 text-sky-800">conserva su recinto</span>}
+                    {m.unidad_nueva && <span className="block font-sans text-[11px] text-violet-800">Unidad: {comoTitulo(m.unidad_anterior || 'sin unidad')} → <b>{comoTitulo(m.unidad_nueva)}</b></span>}
                   </td>
                   <td className="px-4 py-2 text-slate-600">{origen(m)}</td>
                   <td className="px-4 py-2 text-slate-500">{m.realizado_por?.startsWith('Nómina') ? 'Sistema' : (m.realizado_por || '').split('@')[0]}</td>

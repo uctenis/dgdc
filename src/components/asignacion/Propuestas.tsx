@@ -89,7 +89,7 @@ function DetallePropuesta({ propuesta, onCambio, onCerrar }: { propuesta: Propue
   useEffect(() => { void cargar(); }, [propuesta.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const simulacion = useMemo(() => simularMovimientos(porId, movimientos), [porId, movimientos]);
-  const agregar = async (nuevos: { persona: Ocupante; desde_id: string | null; hacia_id: string | null; conservar_origen?: boolean }[]) => {
+  const agregar = async (nuevos: { persona: Ocupante; desde_id: string | null; hacia_id: string | null; conservar_origen?: boolean; unidad_nueva?: string | null }[]) => {
     try {
       const guardados = await agregarMovimientos(propuesta.id, nuevos, codigos, movimientos.length);
       setMovimientos(m => [...m, ...guardados]);
@@ -185,6 +185,7 @@ function DetallePropuesta({ propuesta, onCambio, onCerrar }: { propuesta: Propue
                   <ArrowRight className="w-3.5 h-3.5 text-violet-600" />
                   <span className={m.hacia_codigo ? 'text-violet-800 font-bold' : 'text-slate-400 font-sans italic'}>{m.hacia_codigo || 'sale'}</span>
                   {m.conservar_origen && <span className="font-sans text-[10px] px-1.5 rounded-full bg-sky-100 text-sky-800">conserva su recinto</span>}
+                  {m.unidad_nueva && <span className="font-sans text-[10px] px-1.5 rounded-full bg-violet-100 text-violet-800" title={`Antes: ${comoTitulo(m.unidad_anterior || 'sin unidad')}`}>unidad → {comoTitulo(m.unidad_nueva)}</span>}
                 </span>
                 {editable && <button type="button" onClick={() => void quitar(m.id)} title="Quitar este cambio" className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50"><X className="w-4 h-4" /></button>}
               </li>
@@ -232,6 +233,9 @@ function AntesDespues({ filas, guardado }: { filas: (ResumenPropuesta[number] & 
               <ul className="mt-2 space-y-0.5 text-xs">
                 {entran.map(o => <li key={'e' + o.nombre} className="text-emerald-700"><b>+</b> {comoTitulo(o.nombre)} {o.unidad && <span className="text-slate-400">· {comoTitulo(o.unidad)}</span>}</li>)}
                 {salen.map(o => <li key={'s' + o.nombre} className="text-rose-700 line-through decoration-rose-300"><b className="no-underline">−</b> {comoTitulo(o.nombre)}</li>)}
+                {quedan.filter(o => (f.antes.find(a => clavePersona(a.nombre) === clavePersona(o.nombre))?.unidad || '') !== (o.unidad || '')).map(o => (
+                  <li key={'u' + o.nombre} className="text-violet-700">↺ {comoTitulo(o.nombre)}: unidad → {comoTitulo(o.unidad || 'sin unidad')}</li>
+                ))}
                 {quedan.length > 0 && <li className="text-slate-500">Siguen: {quedan.map(o => comoTitulo(o.nombre).split(',')[0]).join(', ')}</li>}
               </ul>
             </div>
@@ -242,13 +246,14 @@ function AntesDespues({ filas, guardado }: { filas: (ResumenPropuesta[number] & 
   );
 }
 
-type Agregar = (m: { persona: Ocupante; desde_id: string | null; hacia_id: string | null; conservar_origen?: boolean }[]) => Promise<void>;
+type Agregar = (m: { persona: Ocupante; desde_id: string | null; hacia_id: string | null; conservar_origen?: boolean; unidad_nueva?: string | null }[]) => Promise<void>;
 
 function MoverPersonas({ onAgregar }: { onAgregar: Agregar }) {
   const [origen, setOrigen] = useState<RecintoAsignable | null>(null);
   const [destino, setDestino] = useState<RecintoAsignable | null>(null);
   const [elegidas, setElegidas] = useState<Set<number>>(new Set());
   const [conservar, setConservar] = useState(false);
+  const [unidadNueva, setUnidadNueva] = useState('');
   const personas = origen?.ocupantes || [];
   const listo = origen && destino && elegidas.size > 0;
   return (
@@ -274,7 +279,8 @@ function MoverPersonas({ onAgregar }: { onAgregar: Agregar }) {
         {destino ? <RecintoElegido r={destino} agregar={elegidas.size} onCambiar={() => setDestino(null)} />
           : <BuscadorRecinto onElegir={setDestino} agregar={elegidas.size} excluir={new Set(origen ? [origen.id] : [])} placeholder="Recinto de destino…" />}
         <label className="flex items-center gap-2 text-xs text-slate-600"><input type="checkbox" className="accent-violet-700" checked={conservar} onChange={e => setConservar(e.target.checked)} /> Conservar también su recinto actual (segunda oficina)</label>
-        <button type="button" disabled={!listo} onClick={() => { if (!listo) return; void onAgregar(personas.filter((_, i) => elegidas.has(i)).map(p => ({ persona: p, desde_id: origen.id, hacia_id: destino.id, conservar_origen: conservar }))).then(() => { setOrigen(null); setDestino(null); setElegidas(new Set()); }); }}
+        <CampoUnidadNueva valor={unidadNueva} onCambiar={setUnidadNueva} />
+        <button type="button" disabled={!listo} onClick={() => { if (!listo) return; void onAgregar(personas.filter((_, i) => elegidas.has(i)).map(p => ({ persona: p, desde_id: origen.id, hacia_id: destino.id, conservar_origen: conservar, unidad_nueva: unidadNueva.trim() || null }))).then(() => { setOrigen(null); setDestino(null); setElegidas(new Set()); setUnidadNueva(''); }); }}
           className="w-full px-4 py-2 rounded-xl bg-violet-700 hover:bg-violet-800 text-white font-bold text-sm disabled:opacity-40">Agregar {elegidas.size || ''} cambio(s) a la propuesta</button>
       </div>
     </div>
@@ -285,6 +291,7 @@ function MoverUnidad({ onAgregar }: { onAgregar: Agregar }) {
   const { recintos } = useAsignacion();
   const [unidad, setUnidad] = useState('');
   const [destino, setDestino] = useState<RecintoAsignable | null>(null);
+  const [unidadNueva, setUnidadNueva] = useState('');
   const unidades = useMemo(() => {
     const m = new Map<string, number>();
     for (const r of recintos) for (const o of r.ocupantes || []) if (o.unidad?.trim()) m.set(comoTitulo(o.unidad.trim()), (m.get(comoTitulo(o.unidad.trim())) || 0) + 1);
@@ -333,8 +340,9 @@ function MoverUnidad({ onAgregar }: { onAgregar: Agregar }) {
         {destino ? <RecintoElegido r={destino} agregar={elegidos.filter(m => m.recinto.id !== destino.id).length} onCambiar={() => setDestino(null)} />
           : <BuscadorRecinto onElegir={setDestino} agregar={elegidos.length} placeholder="Recinto de destino para la unidad…" />}
         <p className="text-[11px] text-slate-500">Si la unidad se reparte en varios recintos, agregue un grupo de personas por vez: desmarque a quienes van a otro recinto.</p>
+        <CampoUnidadNueva valor={unidadNueva} onCambiar={setUnidadNueva} />
         <button type="button" disabled={!destino || !elegidos.length}
-          onClick={() => { if (!destino) return; void onAgregar(elegidos.filter(m => m.recinto.id !== destino.id).map(m => ({ persona: m.persona, desde_id: m.recinto.id, hacia_id: destino.id }))).then(() => setDestino(null)); }}
+          onClick={() => { if (!destino) return; const u = unidadNueva.trim() || null; void onAgregar(elegidos.filter(m => m.recinto.id !== destino.id || u).map(m => ({ persona: m.persona, desde_id: m.recinto.id, hacia_id: destino.id, unidad_nueva: u }))).then(() => { setDestino(null); setUnidadNueva(''); }); }}
           className="w-full px-4 py-2 rounded-xl bg-violet-700 hover:bg-violet-800 text-white font-bold text-sm disabled:opacity-40">Agregar {elegidos.length || ''} cambio(s) a la propuesta</button>
       </div>
     </div>
@@ -364,5 +372,21 @@ function Intercambiar({ onAgregar }: { onAgregar: Agregar }) {
         <CheckCircle2 className="w-4 h-4" /> Agregar intercambio ({na + nb} cambio(s))
       </button>
     </div>
+  );
+}
+
+/** Unidad nueva opcional al mover personas (reestructuraciones: pasan a otra unidad además de otro recinto). */
+function CampoUnidadNueva({ valor, onCambiar }: { valor: string; onCambiar: (v: string) => void }) {
+  const { recintos } = useAsignacion();
+  const unidades = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of recintos) for (const o of r.ocupantes || []) if (o.unidad?.trim()) s.add(comoTitulo(o.unidad.trim()));
+    return [...s].sort((a, b) => a.localeCompare(b, 'es'));
+  }, [recintos]);
+  return (
+    <label className="block text-xs font-bold text-slate-700">Nueva unidad <span className="font-normal text-slate-500">(opcional: si además cambian de unidad)</span>
+      <input list="unidades-nuevas" value={valor} onChange={e => onCambiar(e.target.value)} placeholder="Dejar vacío si siguen en su unidad" className={`mt-1 ${campoClase} font-normal`} />
+      <datalist id="unidades-nuevas">{unidades.map(u => <option key={u} value={u} />)}</datalist>
+    </label>
   );
 }

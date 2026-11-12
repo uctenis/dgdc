@@ -33,4 +33,9 @@ describe('asignación de espacios', () => {
     expect(avisoOcupacion(r('A', [], 40), 2)).toBeNull();
     expect(personasConRecinto([r('A', ['Pérez Soto, Ana'])]).has('ANA PEREZ SOTO')).toBe(true);
   });
+  it('cambia de unidad sin cambiar de recinto (mismo origen y destino)', () => {
+    const s = simularMovimientos(mapa(r('A', ['Uno, A', 'Dos, B'])), [{ persona: { nombre: 'Uno, A', unidad: 'Unidad Nueva' }, desde_id: 'A', hacia_id: 'A' }]);
+    expect(s[0].despues).toHaveLength(2);
+    expect(s[0].despues.find(o => o.nombre === 'Uno, A')?.unidad).toBe('Unidad Nueva');
+  });
 });

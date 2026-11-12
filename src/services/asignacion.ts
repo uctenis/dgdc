@@ -27,6 +27,9 @@ export interface Movimiento {
   hacia_id: string | null;
   hacia_codigo: string | null;
   conservar_origen: boolean;
+  /** Cambio de unidad (migración 0022): la que tenía y la que pasa a tener. */
+  unidad_anterior?: string | null;
+  unidad_nueva?: string | null;
   estado: 'Propuesto' | 'Aplicado';
   orden: number;
   realizado_por: string | null;
@@ -98,14 +101,16 @@ export async function listarSalidas(): Promise<Movimiento[]> {
   return data as Movimiento[];
 }
 
-type NuevoMovimiento = Pick<Movimiento, 'persona' | 'desde_id' | 'hacia_id'> & { conservar_origen?: boolean };
+type NuevoMovimiento = Pick<Movimiento, 'persona' | 'desde_id' | 'hacia_id'> & { conservar_origen?: boolean; unidad_nueva?: string | null };
 
 /** Guarda movimientos (de una propuesta, o sueltos si propuestaId es null) con el código de cada recinto. */
 export async function agregarMovimientos(propuestaId: string | null, movimientos: NuevoMovimiento[], codigos: Map<string, string>, ordenInicial = 0): Promise<Movimiento[]> {
   if (!movimientos.length) return [];
   const filas = movimientos.map((m, i) => ({
     propuesta_id: propuestaId,
-    persona: { nombre: m.persona.nombre, cargo: m.persona.cargo || null, unidad: m.persona.unidad || null },
+    // Con unidad nueva, la persona llega al destino con esa unidad; la anterior queda para el historial.
+    persona: { nombre: m.persona.nombre, cargo: m.persona.cargo || null, unidad: (m.unidad_nueva?.trim() || m.persona.unidad) || null },
+    ...(m.unidad_nueva?.trim() && m.unidad_nueva.trim() !== (m.persona.unidad || '') ? { unidad_anterior: m.persona.unidad || null, unidad_nueva: m.unidad_nueva.trim() } : {}),
     desde_id: m.desde_id, desde_codigo: m.desde_id ? codigos.get(m.desde_id) || null : null,
     hacia_id: m.hacia_id, hacia_codigo: m.hacia_id ? codigos.get(m.hacia_id) || null : null,
     conservar_origen: !!m.conservar_origen,
