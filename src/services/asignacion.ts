@@ -90,6 +90,14 @@ export async function listarHistorial(limite = 500): Promise<Movimiento[]> {
   return data as Movimiento[];
 }
 
+/** Salidas ya aplicadas (personas que dejaron un recinto sin pasar a otro, p. ej. porque ya no están en la nómina). */
+export async function listarSalidas(): Promise<Movimiento[]> {
+  const { data, error } = await supabase.from('asignacion_movimientos').select('*').eq('estado', 'Aplicado')
+    .is('hacia_id', null).not('desde_id', 'is', null).order('realizado_en', { ascending: false }).limit(2000);
+  fallo(error, 'No se pudieron leer las salidas');
+  return data as Movimiento[];
+}
+
 type NuevoMovimiento = Pick<Movimiento, 'persona' | 'desde_id' | 'hacia_id'> & { conservar_origen?: boolean };
 
 /** Guarda movimientos (de una propuesta, o sueltos si propuestaId es null) con el código de cada recinto. */

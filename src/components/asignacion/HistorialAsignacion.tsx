@@ -18,7 +18,8 @@ export function HistorialAsignacion({ propuestas, version }: { propuestas: Propu
     listarHistorial().then(setMovimientos).catch(e => avisar(e instanceof Error ? e.message : String(e), 'error')).finally(() => setCargando(false));
   }, [version]); // eslint-disable-line react-hooks/exhaustive-deps
   const nombrePropuesta = useMemo(() => new Map(propuestas.map(p => [p.id, p.nombre])), [propuestas]);
-  const origen = (m: Movimiento) => (m.propuesta_id ? `Propuesta «${nombrePropuesta.get(m.propuesta_id) || '—'}»` : !m.desde_id ? 'Ubicación' : 'Cambio de recinto');
+  const origen = (m: Movimiento) => (m.propuesta_id ? `Propuesta «${nombrePropuesta.get(m.propuesta_id) || '—'}»`
+    : !m.desde_id ? 'Ubicación' : !m.hacia_id ? (m.realizado_por?.startsWith('Nómina') ? 'Salida: ya no figura en la nómina' : 'Salida') : 'Cambio de recinto');
   const filtrados = useMemo(() => {
     const q = normalizar(busqueda).split(/\s+/).filter(Boolean);
     return movimientos.filter(m => q.every(p => normalizar([m.persona.nombre, m.persona.unidad, m.desde_codigo, m.hacia_codigo, m.realizado_por, origen(m)].join(' ')).includes(p)));
@@ -62,7 +63,7 @@ export function HistorialAsignacion({ propuestas, version }: { propuestas: Propu
                     {m.conservar_origen && <span className="ml-1 font-sans text-[10px] px-1.5 rounded-full bg-sky-100 text-sky-800">conserva su recinto</span>}
                   </td>
                   <td className="px-4 py-2 text-slate-600">{origen(m)}</td>
-                  <td className="px-4 py-2 text-slate-500">{(m.realizado_por || '').split('@')[0]}</td>
+                  <td className="px-4 py-2 text-slate-500">{m.realizado_por?.startsWith('Nómina') ? 'Sistema' : (m.realizado_por || '').split('@')[0]}</td>
                 </tr>
               ))}
             </tbody>

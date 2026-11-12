@@ -7,7 +7,7 @@ import { ContextoAsignacion, type DatosAsignacion } from '../components/asignaci
 import { PorUbicar } from '../components/asignacion/PorUbicar';
 import { Propuestas } from '../components/asignacion/Propuestas';
 import { HistorialAsignacion } from '../components/asignacion/HistorialAsignacion';
-import { listarPropuestas, listarRecintosAsignables, type Propuesta } from '../services/asignacion';
+import { listarPropuestas, listarRecintosAsignables, listarSalidas, type Movimiento, type Propuesta } from '../services/asignacion';
 import { listarEdificiosConDatos } from '../services/recintos';
 import { useNomina } from '../services/nomina';
 import { clavePersona } from '../utils/analisisEspacios';
@@ -36,6 +36,7 @@ export function AsignacionApp() {
   const [recintos, setRecintos] = useState<RecintoAsignable[]>([]);
   const [nombresEdificio, setNombresEdificio] = useState<Record<string, string>>({});
   const [propuestas, setPropuestas] = useState<Propuesta[]>([]);
+  const [salidas, setSalidas] = useState<Movimiento[]>([]);
   const [cargando, setCargando] = useState(true);
   const [version, setVersion] = useState(0);
   const [aviso, setAviso] = useState<{ texto: string; tipo: 'ok' | 'error' } | null>(null);
@@ -46,7 +47,8 @@ export function AsignacionApp() {
   }, []);
   const recargar = useCallback(async () => {
     try {
-      setRecintos(await listarRecintosAsignables());
+      const [r, s] = await Promise.all([listarRecintosAsignables(), listarSalidas().catch(() => [] as Movimiento[])]);
+      setRecintos(r); setSalidas(s);
       setVersion(v => v + 1);
     } catch (e) { avisar(e instanceof Error ? e.message : String(e), 'error'); }
   }, [avisar]);
@@ -61,10 +63,17 @@ export function AsignacionApp() {
     ]).finally(() => setCargando(false));
   }, [recargar, recargarPropuestas]);
 
+  // Recintos que alguien dejó: se agrupan las salidas por recinto (solo los que siguen vigentes).
+  const liberados = useMemo(() => {
+    const vigentes = new Set(recintos.map(r => r.id));
+    const m = new Map<string, Movimiento[]>();
+    for (const s of salidas) if (s.desde_id && vigentes.has(s.desde_id)) m.set(s.desde_id, [...(m.get(s.desde_id) || []), s]);
+    return m;
+  }, [salidas, recintos]);
   const datos: DatosAsignacion = useMemo(() => ({
     recintos, porId: new Map(recintos.map(r => [r.id, r])), codigos: new Map(recintos.map(r => [r.id, r.codigo])),
-    nombresEdificio, usuario: user?.email || 'desconocido', recargar, avisar,
-  }), [recintos, nombresEdificio, user?.email, recargar, avisar]);
+    nombresEdificio, liberados, usuario: user?.email || 'desconocido', recargar, avisar,
+  }), [recintos, nombresEdificio, liberados, user?.email, recargar, avisar]);
 
   // Indicadores: vigentes de la nómina con y sin recinto, y propuestas abiertas.
   const conRecinto = useMemo(() => personasConRecinto(recintos), [recintos]);
@@ -103,11 +112,12 @@ export function AsignacionApp() {
 
       <main className="max-w-[1600px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4">
         {/* Indicadores */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3">
           {[
             { t: 'Funcionarios vigentes', v: vigentes, d: fechaNomina ? `Nómina de Personas al ${fechaNomina}` : 'Sin nómina cargada' },
             { t: 'Con recinto', v: ubicados, d: vigentes ? `${Math.round((ubicados / vigentes) * 100)} % de los vigentes` : '' },
             { t: 'Por ubicar', v: vigentes - ubicados, d: 'Vigentes sin recinto asignado', destacado: true },
+            { t: 'Recintos liberados', v: liberados.size, d: `${salidas.length} persona(s) los dejaron` },
             { t: 'Propuestas en borrador', v: borradores, d: `${propuestas.filter(p => p.estado === 'Aplicada').length} aplicada(s)` },
           ].map(k => (
             <div key={k.t} className={`rounded-2xl border p-3 sm:p-4 shadow-sm ${k.destacado ? 'bg-violet-700 border-violet-700 text-white' : 'bg-white border-slate-200'}`}>

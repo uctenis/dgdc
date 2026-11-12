@@ -4,6 +4,7 @@ import { ExternalLink, Map as IconoPlano, Search, Users } from 'lucide-react';
 
 const PlanoUbicacion = lazy(() => import('./PlanoUbicacion').then(m => ({ default: m.PlanoUbicacion })));
 import type { Ocupante } from '../../types/recintos';
+import type { Movimiento } from '../../services/asignacion';
 import type { RecintoAsignable } from '../../utils/asignacion';
 import { avisoOcupacion, m2PorPersona } from '../../utils/asignacion';
 import { comoTitulo } from '../../utils/texto';
@@ -15,6 +16,8 @@ export interface DatosAsignacion {
   porId: Map<string, RecintoAsignable>;
   codigos: Map<string, string>;
   nombresEdificio: Record<string, string>;
+  /** Recintos que alguien dejó (salidas), con quiénes salieron: espacio que se puede volver a ocupar. */
+  liberados: Map<string, Movimiento[]>;
   usuario: string;
   recargar: () => Promise<void>;
   avisar: (texto: string, tipo?: 'ok' | 'error') => void;
@@ -61,7 +64,7 @@ export function BuscadorRecinto({ onElegir, excluir, placeholder = 'Buscar recin
   /** Edificio con que se abre el plano (si no, el del primer sugerido). */
   edificioPlano?: string | null;
 }) {
-  const { recintos, nombresEdificio } = useAsignacion();
+  const { recintos, nombresEdificio, liberados } = useAsignacion();
   const [texto, setTexto] = useState('');
   const [enPlano, setEnPlano] = useState(false);
   const resultados = useMemo(() => {
@@ -108,6 +111,7 @@ export function BuscadorRecinto({ onElegir, excluir, placeholder = 'Buscar recin
                   <span className="truncate">{nombreEdificio(nombresEdificio, r.edificio_codigo)}</span>
                   <Ocupacion r={r} personas={n + agregar} compacto />
                   {motivo && <span className="text-violet-700 font-bold">{motivo}</span>}
+                  {!motivo.startsWith('Liberado') && liberados.has(r.id) && <span className="px-1.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]" title={`Lo dejó: ${liberados.get(r.id)!.map(m => comoTitulo(m.persona.nombre)).join(', ')}`}>Liberado</span>}
                 </span>
               </button>
             </li>

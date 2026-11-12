@@ -8,7 +8,7 @@ import type { Ocupante } from '../../types/recintos';
 import { clavePersona } from '../../utils/analisisEspacios';
 import { personasConRecinto, type RecintoAsignable } from '../../utils/asignacion';
 import { comoTitulo } from '../../utils/texto';
-import { BuscadorRecinto, RecintoElegido, campoClase, normalizar, useAsignacion } from './comun';
+import { BuscadorRecinto, Ocupacion, RecintoElegido, campoClase, nombreEdificio, normalizar, useAsignacion } from './comun';
 
 const SIN_UNIDAD = 'Sin unidad en la nómina';
 export const comoOcupante = (f: Funcionario): Ocupante => ({ nombre: comoTitulo(f.nombre), cargo: null, unidad: f.unidad ? comoTitulo(f.unidad) : null });
@@ -16,7 +16,8 @@ export const comoOcupante = (f: Funcionario): Ocupante => ({ nombre: comoTitulo(
 export function PorUbicar({ nomina, propuestas, onIrAPropuesta }: {
   nomina: Map<string, Funcionario>; propuestas: Propuesta[]; onIrAPropuesta: (id: string) => void;
 }) {
-  const { recintos, codigos, usuario, recargar, avisar } = useAsignacion();
+  const { recintos, codigos, liberados, porId, nombresEdificio, usuario, recargar, avisar } = useAsignacion();
+  const [filtroLiberados, setFiltroLiberados] = useState('');
   const [busqueda, setBusqueda] = useState('');
   const [campus, setCampus] = useState('');
   const [elegidos, setElegidos] = useState<Set<string>>(new Set());
@@ -53,11 +54,24 @@ export function PorUbicar({ nomina, propuestas, onIrAPropuesta }: {
       const colegas = (r.ocupantes || []).filter(o => unidades.has(normalizar(o.unidad || ''))).length
         + (unidades.has(normalizar(r.unidad_usuaria || '')) ? 1 : 0);
       const mismoEdificio = edificios.has(r.edificio_codigo) && /oficina|box|estaci|despacho/i.test(r.nombre);
-      if (!colegas && !mismoEdificio) continue;
-      puntaje.set(r.id, { r, p: colegas * 3 + (mismoEdificio ? 2 : 0), motivo: colegas ? `${colegas} de su unidad` : 'Edificio según la nómina' });
+      // Recinto que alguien dejó (sobre todo si era de la misma unidad): espacio disponible.
+      const salieron = liberados.get(r.id) || [];
+      const salieronUnidad = salieron.filter(m => unidades.has(normalizar(m.persona.unidad || ''))).length;
+      if (!colegas && !mismoEdificio && !salieronUnidad) continue;
+      const motivo = salieronUnidad ? `Liberado: salió${salieronUnidad > 1 ? `ron ${salieronUnidad}` : ''} de su unidad`
+        : colegas ? `${colegas} de su unidad${salieron.length ? ` · liberado` : ''}` : 'Edificio según la nómina';
+      puntaje.set(r.id, { r, p: colegas * 3 + salieronUnidad * 5 + (salieron.length ? 2 : 0) + (mismoEdificio ? 2 : 0), motivo });
     }
     return [...puntaje.values()].sort((a, b) => b.p - a.p).slice(0, 12).map(x => ({ recinto: x.r, motivo: x.motivo }));
-  }, [seleccion, recintos]);
+  }, [seleccion, recintos, liberados]);
+
+  // Recintos liberados (alguien los dejó), para revisarlos y elegir uno como destino antes de marcar personas.
+  const listaLiberados = useMemo(() => {
+    const q = normalizar(filtroLiberados).split(/\s+/).filter(Boolean);
+    return [...liberados.entries()].map(([id, salidas]) => ({ r: porId.get(id)!, salidas })).filter(x => x.r)
+      .filter(x => q.every(p => normalizar([x.r.codigo, x.r.nombre, nombresEdificio[x.r.edificio_codigo], ...x.salidas.map(m => `${m.persona.nombre} ${m.persona.unidad || ''}`)].join(' ')).includes(p)))
+      .sort((a, b) => a.r.codigo.localeCompare(b.r.codigo, 'es', { numeric: true }));
+  }, [liberados, porId, filtroLiberados, nombresEdificio]);
 
   const alternar = (clave: string) => setElegidos(prev => { const s = new Set(prev); if (s.has(clave)) s.delete(clave); else s.add(clave); return s; });
   const alternarGrupo = (fs: Funcionario[]) => setElegidos(prev => {
@@ -145,7 +159,37 @@ export function PorUbicar({ nomina, propuestas, onIrAPropuesta }: {
       <aside className="lg:sticky lg:top-24 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
         <h3 className="flex items-center gap-2 font-extrabold text-slate-900"><MapPinned className="w-5 h-5 text-violet-700" /> Ubicar en un recinto</h3>
         {!seleccion.length ? (
-          <p className="text-sm text-slate-500">Marque una o varias personas de la lista (o una unidad completa) y elija aquí su recinto.</p>
+          <>
+            <p className="text-sm text-slate-500">Marque una o varias personas de la lista (o una unidad completa) y elija aquí su recinto.</p>
+            {destino ? (
+              <>
+                <RecintoElegido r={destino} onCambiar={() => setDestino(null)} />
+                <p className="text-xs text-violet-800 font-semibold">Ahora marque en la lista a quiénes ubicará aquí.</p>
+              </>
+            ) : listaLiberados.length > 0 && (
+              <div className="space-y-2 pt-1">
+                <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Recintos liberados ({liberados.size})</p>
+                <p className="text-[11px] text-slate-500">Recintos que dejaron personas que ya no están en la nómina. Elija uno para ocuparlo.</p>
+                <input value={filtroLiberados} onChange={e => setFiltroLiberados(e.target.value)} placeholder="Filtrar: edificio, unidad, persona…" className={`${campoClase} py-1.5 text-sm`} />
+                <ul className="max-h-[55vh] overflow-y-auto space-y-1 pr-1">
+                  {listaLiberados.map(({ r, salidas }) => (
+                    <li key={r.id}>
+                      <button type="button" onClick={() => setDestino(r)} className="w-full text-left rounded-xl border border-slate-200 px-3 py-2 hover:border-violet-400 hover:bg-violet-50/40">
+                        <span className="flex items-baseline gap-2">
+                          <span className="font-mono font-bold text-violet-800">{r.codigo}</span>
+                          <span className="font-bold text-sm text-slate-800 truncate">{comoTitulo(r.nombre)}</span>
+                        </span>
+                        <span className="block text-[11px] text-slate-500 truncate">{nombreEdificio(nombresEdificio, r.edificio_codigo)}</span>
+                        <span className="flex flex-wrap items-center gap-2 mt-0.5"><Ocupacion r={r} personas={(r.ocupantes || []).length} compacto />
+                          <span className="text-[11px] text-rose-700">Salió{salidas.length > 1 ? `ron ${salidas.length}` : ''}: {salidas.map(m => comoTitulo(m.persona.nombre).split(',')[0]).join(', ')}</span></span>
+                        {salidas[0]?.persona.unidad && <span className="block text-[10px] text-slate-400 truncate">{comoTitulo(salidas[0].persona.unidad)}</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
         ) : (
           <>
             <div className="flex flex-wrap gap-1.5">
