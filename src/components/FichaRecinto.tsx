@@ -9,6 +9,7 @@ import { formatoFecha } from '../utils/fechas';
 import { comoTitulo } from '../utils/texto';
 import { colorDeCategoria } from '../utils/geometriaPlano';
 import { tipoConfigurado } from '../data/espaciosConfig';
+import { buscarEnNomina, useNomina } from '../services/nomina';
 
 const m2 = (n?: number | null) => (n ? `${Number(n).toLocaleString('es-CL', { maximumFractionDigits: 2 })} m²` : '—');
 const COLOR_ESTADO: Record<string, string> = {
@@ -58,6 +59,8 @@ export function FichaRecinto({ recinto: r, piso, campus, edificio, onClose, onEd
   const observaciones = observacionesSinNotas(r.observaciones);
   const atributos = Object.entries(r.atributos || {}).filter(([, v]) => v !== '' && v != null);
   const ocupantes = r.ocupantes || [];
+  const nomina = useNomina();
+  const fechaNomina = nomina.size ? formatoFecha([...nomina.values()][0].nomina) : '';
   const codigoCorto = r.codigo.replace(`${r.edificio_codigo}_`, '');
   const codigoAnterior = codigoAnteriorRecinto(r);
   const cuenta: Partial<Record<IdSeccion, number>> = { ocupantes: ocupantes.length, catastro: atributos.length };
@@ -131,6 +134,21 @@ export function FichaRecinto({ recinto: r, piso, campus, edificio, onClose, onEd
             <span className="min-w-0 flex-1">
               <span className="block font-bold text-slate-800">{comoTitulo(o.nombre)}</span>
               {(o.cargo || o.unidad) && <span className="block text-slate-500">{[o.cargo, o.unidad].filter(Boolean).join(' · ')}</span>}
+              {(() => {
+                // Contraste con la nómina vigente de Personas: quien no figura probablemente ya no trabaja en la UCT.
+                const n = buscarEnNomina(nomina, o.nombre);
+                if (n.estado === 'no-figura') return (
+                  <span className="mt-1 inline-block px-1.5 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-bold"
+                    title={`No aparece en la nómina vigente de funcionarios (${fechaNomina}). Puede haber dejado la universidad, o ser externo u honorario.`}>
+                    No figura en la nómina vigente</span>
+                );
+                if (n.estado === 'parecido') return (
+                  <span className="mt-1 block text-[11px] text-sky-800" title="El nombre está escrito distinto en el catastro y en la nómina vigente">
+                    En la nómina como «{comoTitulo(n.funcionario.nombre)}»</span>
+                );
+                if (n.estado === 'vigente' && n.funcionario.telefono) return <span className="block text-[11px] text-slate-400">Fono {n.funcionario.telefono}</span>;
+                return null;
+              })()}
             </span>
             <button type="button" onClick={() => onMover(o)} title="Cambiar a esta persona a otro recinto (o agregarla a otro sin quitarla de este)"
               className="shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 font-bold text-slate-700 hover:bg-slate-50">

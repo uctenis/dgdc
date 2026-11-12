@@ -27,6 +27,7 @@ import { FichaRecinto } from './FichaRecinto';
 import { MiniaturaCampus } from './MiniaturaCampus';
 import { CargarPlantasVectoriales } from './CargarPlantasVectoriales';
 import { CampoAutocompletar, type OpcionAutocompletar } from './CampoAutocompletar';
+import { claveNombre, useNomina } from '../services/nomina';
 import { catalogoPersonas, catalogoUnidades, sinTildes, unidadSugerida, unidadesDe } from '../utils/sugerencias';
 import { alertasRecinto } from '../utils/alertasRecinto';
 import { formatoFecha } from '../utils/fechas';
@@ -1008,6 +1009,14 @@ function EditorOcupantes({ ocupantes, onChange, personas = [], unidades = [] }: 
   ocupantes: Ocupante[]; onChange: (o: Ocupante[]) => void; personas?: (OpcionAutocompletar & { cargo?: string | null; unidad?: string | null })[]; unidades?: OpcionAutocompletar[];
 }) {
   const cambiar = (i: number, campo: keyof Ocupante, valor: string) => onChange(ocupantes.map((o, k) => (k === i ? { ...o, [campo]: valor } : o)));
+  // A las personas ya registradas en recintos se suman las de la nómina vigente que aún no tienen recinto.
+  const nomina = useNomina();
+  const sugeridas = useMemo(() => {
+    const ya = new Set(personas.map(p => claveNombre(p.texto)));
+    const deNomina = [...nomina.values()].filter(f => !ya.has(f.clave))
+      .map(f => ({ texto: comoTitulo(f.nombre), detalle: ['Nómina', f.unidad && comoTitulo(f.unidad)].filter(Boolean).join(' · '), cargo: null, unidad: f.unidad ? comoTitulo(f.unidad) : null }));
+    return [...personas, ...deNomina];
+  }, [personas, nomina]);
   return (
     <div className="sm:col-span-3 space-y-1.5">
       <div className="flex items-center gap-2">
@@ -1019,9 +1028,9 @@ function EditorOcupantes({ ocupantes, onChange, personas = [], unidades = [] }: 
       {ocupantes.map((o, i) => (
         <div key={i} className="grid grid-cols-[1.4fr_1fr_1.2fr_auto] gap-1.5">
           {/* Al elegir una persona que ya existe, se completan su cargo y unidad (si estaban vacíos). */}
-          <CampoAutocompletar valor={o.nombre} opciones={personas} onCambiar={v => cambiar(i, 'nombre', v)} placeholder="Nombre (escriba para buscar)" className={`w-full ${campo}`}
+          <CampoAutocompletar valor={o.nombre} opciones={sugeridas} onCambiar={v => cambiar(i, 'nombre', v)} placeholder="Nombre (escriba para buscar)" className={`w-full ${campo}`}
             onElegir={p => {
-              const conocida = personas.find(x => x.texto === p.texto);
+              const conocida = sugeridas.find(x => x.texto === p.texto);
               onChange(ocupantes.map((x, k) => (k === i ? { ...x, nombre: p.texto, cargo: x.cargo || conocida?.cargo || '', unidad: x.unidad || conocida?.unidad || '' } : x)));
             }} />
           <input value={o.cargo || ''} onChange={e => cambiar(i, 'cargo', e.target.value)} placeholder="Cargo" className={campo} />
