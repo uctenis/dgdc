@@ -36,7 +36,7 @@ jobs:
 
       - name: Build site
         env:
-          VITE_BASE_PATH: /dgdc/
+          VITE_BASE_PATH: ${{ vars.VITE_BASE_PATH || '/dgdc/' }}
           # La IA pasa por el intermediario de Supabase (supabase/functions/consultar-ia): la clave, el
           # proveedor y el modelo viven allá, nunca en el código publicado.
           VITE_IA_SERVIDOR: ${{ vars.VITE_IA_SERVIDOR }}

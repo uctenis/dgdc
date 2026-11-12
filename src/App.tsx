@@ -540,9 +540,12 @@ function ProtectedInternalRoute({ children }: { children: React.ReactNode }) {
 }
 
 export function App() {
+  const baseRuta = typeof window !== 'undefined' && window.location.pathname.startsWith('/dgdc')
+    ? '/dgdc'
+    : '/';
   return (
     <AuthProvider>
-      <BrowserRouter basename={import.meta.env.BASE_URL}>
+      <BrowserRouter basename={baseRuta}>
         <Suspense fallback={<div className="min-h-screen bg-slate-950" />}>
         <Routes>
           {/* Inicio: formas de ingreso y elección de módulo (Licitaciones o Espacios). */}
