@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { armarPrompt, catalogo, ejecutarPlan, leerPlan } from '../utils/consultaIA';
+import { armarPrompt, catalogo, ejecutarPlan, esSiglaDe, leerPlan } from '../utils/consultaIA';
 import type { FilaAnalisis } from '../utils/analisisEspacios';
 
 const fila = (codigo: string, tipo: string, util: number, extra: Partial<FilaAnalisis> = {}): FilaAnalisis => ({
@@ -44,5 +44,20 @@ describe('asistente de consultas', () => {
     expect(cat.unidades).toContain('Dirección de Gestión y Desarrollo de Campus');
     expect(cat.unidades.length).toBeLessThan(40);
     expect(cat.tipos.length).toBeLessThan(60);
+  });
+  it('entiende siglas de unidades y, sin resultados, dice dónde sí hay', () => {
+    expect(esSiglaDe('DDPER', 'Dirección de Desarrollo de Personas')).toBe(true);
+    expect(esSiglaDe('DGDC', 'Dirección de Gestión y Desarrollo de Campus')).toBe(true);
+    expect(esSiglaDe('VRA', 'Vicerrectoría Académica')).toBe(true);
+    expect(esSiglaDe('DDPER', 'Dirección de Informática')).toBe(false);
+    expect(esSiglaDe('superficie', 'Servicios Generales')).toBe(false);
+    const datos = [...filas,
+      fila('CRC08_101', 'Oficina', 15, { campus: 'CRC', edificio: 'CRC08', unidades: ['Dirección de Desarrollo de Personas'] }),
+      fila('CRC09_101', 'Oficina', 9, { campus: 'CRC', edificio: 'CRC09', unidades: ['DDPER'] })];
+    const r = ejecutarPlan(datos, leerPlan('{"filtros":{"edificio":["CRC08"],"unidad":["DDPER"]},"medida":"util"}'));
+    expect(r.totales.util).toBe(15);
+    const vacio = ejecutarPlan(datos, leerPlan('{"filtros":{"edificio":["CJP01"],"unidad":["DDPER"]}}'));
+    expect(vacio.filas).toHaveLength(0);
+    expect(vacio.sinFiltro?.find(x => x.dimension === 'edificio')?.donde.map(d => d.clave)).toEqual(expect.arrayContaining(['CRC08', 'CRC09']));
   });
 });

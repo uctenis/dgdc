@@ -136,7 +136,16 @@ function Respuesta({ r, onAbrirRecinto, onAbrirAnalisis }: {
     <div className="space-y-2">
       {plan.interpretacion && <p className="text-[12px] italic text-slate-500">{plan.interpretacion}</p>}
       {r.sinCoincidencia.length > 0 && <p className="text-[12px] text-amber-700">No encontré: {r.sinCoincidencia.join(', ')}.</p>}
-      {!r.filas.length ? <p className="text-slate-700">Ningún recinto cumple esas condiciones.</p> : (
+      {!r.filas.length ? (
+        <div className="space-y-1 text-slate-700">
+          <p>Ningún recinto cumple todas esas condiciones.</p>
+          {r.sinFiltro?.map(x => (
+            <p key={x.dimension} className="text-[12px] text-slate-600">
+              Sin el filtro de <b>{DIMENSIONES.find(d => d.id === x.dimension)!.nombre.toLowerCase()}</b> hay {x.recintos} recinto(s): {x.donde.map(g => `${comoTitulo(g.clave)} (${g.recintos})`).join(', ')}.
+            </p>
+          ))}
+        </div>
+      ) : (
         <>
           <div className="flex flex-wrap gap-1.5">
             <Cifra valor={numero(t.recintos)} texto={t.recintos === 1 ? 'recinto' : 'recintos'} />

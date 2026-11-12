@@ -25,9 +25,36 @@ export interface ResultadoConsulta {
   sinCoincidencia: string[];
   /** Filtros con los valores reales (para abrir la misma consulta en Análisis). */
   filtrosAplicados: Filtros;
+  /** Si no hubo resultados: qué pasa al quitar cada filtro (para orientar: «la unidad está en CJP02 y CRC09»). */
+  sinFiltro?: { dimension: Dimension; recintos: number; donde: { clave: string; recintos: number }[] }[];
 }
 
 const norm = (s: string) => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim();
+const MENORES = new Set(['de', 'del', 'la', 'las', 'los', 'el', 'y', 'e', 'en', 'a', 'al', 'para', 'por', 'con']);
+
+/**
+ * ¿Es `sigla` la sigla de `nombre`? Cada palabra importante aporta el comienzo de sí misma, en orden:
+ * DDPER = Dirección de Desarrollo de PERsonas, DGDC = Dirección de Gestión y Desarrollo de Campus, VRA = VicerRectoría Académica.
+ */
+export function esSiglaDe(sigla: string, nombre: string): boolean {
+  const s = norm(sigla).replace(/[^a-z]/g, '');
+  const palabras = norm(nombre).split(/[^a-z]+/).filter(p => p && !MENORES.has(p));
+  if (s.length < 2 || s.length > 10 || palabras.length < 2 || norm(sigla).includes(' ')) return false;
+  if (sigla !== sigla.toUpperCase() && s.length > 6) return false;   // una palabra común larga no es sigla
+  const probar = (i: number, j: number): boolean => {
+    if (i === s.length) return j === palabras.length;
+    if (j === palabras.length) return false;
+    const p = palabras[j];
+    // «Vicerrectoría» puede aportar «V» o «VR» (vice + rectoría).
+    for (let k = 1; k <= Math.min(p.length, s.length - i); k++) {
+      const trozo = s.slice(i, i + k);
+      if (!(p.startsWith(trozo) || (p.startsWith('vicerrector') && 'vr'.startsWith(trozo)))) break;
+      if (probar(i + k, j + 1)) return true;
+    }
+    return false;
+  };
+  return probar(0, 0);
+}
 
 /**
  * Catálogo de valores existentes (para que la IA use nombres reales). Con `pregunta`, se recorta a lo que la pregunta
@@ -35,7 +62,11 @@ const norm = (s: string) => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').to
  */
 export function catalogo(filas: FilaAnalisis[], nombresCampus: Record<string, string>, pregunta?: string) {
   const palabras = pregunta ? norm(pregunta).split(/[^a-z0-9_]+/).filter(p => p.length >= 4 || /\d/.test(p)) : [];
-  const menciona = (v: string) => { const n = norm(v); return palabras.some(p => n.includes(p) || (p.length >= 5 && p.includes(n) && n.length >= 4)); };
+  const siglas = pregunta ? pregunta.split(/[^A-Za-zÁÉÍÓÚÑáéíóúñ]+/).filter(w => w.length >= 2 && w.length <= 10) : [];
+  const menciona = (v: string) => {
+    const n = norm(v);
+    return palabras.some(p => n.includes(p) || (p.length >= 5 && p.includes(n) && n.length >= 4)) || siglas.some(sg => esSiglaDe(sg, v));
+  };
   const recortar = (valores: string[], frecuentes: number) => (pregunta ? valores.filter((v, i) => i < frecuentes || menciona(v)) : valores);
   const contar = (valores: string[]) => {
     const m = new Map<string, number>();
@@ -77,6 +108,7 @@ Reglas:
 - Usa valores del catálogo de abajo (copia el texto exacto); el catálogo puede estar resumido: si el usuario nombra una unidad o tipo que no aparece, escríbelo tal como lo dijo. Omite los filtros que no se piden.
 - "campus": siglas (CJP, CSF…). "edificio": códigos (CSF16, CJP01…). Si nombran un edificio por su nombre, usa su código.
 - "codigos": códigos de recintos puntuales que el usuario nombre (ej. "CSF16_301"). Si da solo el número y el edificio, escribe el número ("301") y pon el edificio en "edificio".
+- Las unidades suelen nombrarse por su sigla (DDPER = Dirección de Desarrollo de Personas, DGDC = Dirección de Gestión y Desarrollo de Campus). Si usan una sigla, pon en "unidad" la sigla Y el nombre completo que le corresponda del catálogo.
 - "texto": palabras para buscar en código, tipo, uso, unidad u ocupantes (ej. el nombre de una persona). Úsalo solo si nada más sirve.
 - "medida": util (m² útiles, por defecto para superficies), oguc (m² OGUC), recintos (cantidad), capacidad, ocupantes (personas).
 - "agrupar": una de campus, edificio, piso, tipo, uso, unidad, clase, estado, tenencia, cuando pidan un desglose o comparación ("por piso", "cada edificio"), si no null.
@@ -122,13 +154,17 @@ export function leerPlan(texto: string): PlanConsulta {
 }
 
 /** Valores reales que corresponden a lo que nombró la IA (sin importar mayúsculas ni tildes; si no, por contenido). */
-function emparejar(pedidos: string[], existentes: string[], sinCoincidencia: string[]): string[] {
+function emparejar(pedidos: string[], existentes: string[], sinCoincidencia: string[], conSiglas = false): string[] {
   const porNorma = new Map(existentes.map(v => [norm(v), v]));
   const salida = new Set<string>();
   for (const p of pedidos) {
     const n = norm(p);
     const exacto = porNorma.get(n);
+    // Una sigla también trae los nombres completos que le corresponden (DDPER → Dirección de Desarrollo de Personas).
+    const expandidos = conSiglas ? existentes.filter(v => esSiglaDe(p, v)) : [];
+    expandidos.forEach(v => salida.add(v));
     if (exacto) { salida.add(exacto); continue; }
+    if (expandidos.length) continue;
     const parecidos = existentes.filter(v => norm(v).includes(n) || (n.length > 4 && n.includes(norm(v))));
     if (parecidos.length) parecidos.forEach(v => salida.add(v)); else sinCoincidencia.push(p);
   }
@@ -144,7 +180,7 @@ export function ejecutarPlan(todas: FilaAnalisis[], plan: PlanConsulta): Resulta
     const pedidos = plan.filtros[d];
     if (!pedidos?.length) continue;
     const existentes = [...new Set(base.flatMap(f => (d === 'unidad' ? f.unidades : [String(f[d as keyof FilaAnalisis] ?? '')])))].filter(Boolean);
-    const valores = emparejar(pedidos, existentes, sinCoincidencia);
+    const valores = emparejar(pedidos, existentes, sinCoincidencia, d === 'unidad');
     filtros[d] = valores.length ? valores : ['__ninguno__'];
   }
   if (plan.filtros.texto) filtros.texto = plan.filtros.texto;
@@ -157,5 +193,14 @@ export function ejecutarPlan(todas: FilaAnalisis[], plan: PlanConsulta): Resulta
     });
     for (const x of plan.filtros.codigos || []) if (!filas.some(f => norm(f.codigo).endsWith(norm(x)))) sinCoincidencia.push(x);
   }
-  return { plan, filas, totales: totales(filas), grupos: plan.agrupar ? agrupar(filas, plan.agrupar, plan.medida) : [], sinCoincidencia, filtrosAplicados: filtros };
+  // Sin resultados: se prueba quitando cada filtro, para decir dónde sí hay (p. ej. la unidad está en otro edificio).
+  let sinFiltro: ResultadoConsulta['sinFiltro'];
+  const activos = DIMS.filter(d => filtros[d]?.length);
+  if (!filas.length && activos.length >= 2) {
+    sinFiltro = activos.map(d => {
+      const resto = filtrar(base, { ...filtros, [d]: undefined });
+      return { dimension: d, recintos: resto.length, donde: agrupar(resto, d, 'recintos').slice(0, 6).map(g => ({ clave: g.clave, recintos: g.recintos })) };
+    }).filter(x => x.recintos > 0);
+  }
+  return { plan, filas, totales: totales(filas), grupos: plan.agrupar ? agrupar(filas, plan.agrupar, plan.medida) : [], sinCoincidencia, filtrosAplicados: filtros, sinFiltro };
 }
