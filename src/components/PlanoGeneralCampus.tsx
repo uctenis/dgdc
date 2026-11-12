@@ -5,7 +5,7 @@ import {
   guardarMarcadoresCampus, obtenerMarcadoresCampus, obtenerPlanoGeneralCampus, subirPlanoGeneralCampus,
   type MarcadorCampus, type PlanoGeneralCampus as Plano,
 } from '../services/recintos';
-import { ajustarPuntoOrtogonal } from '../utils/geometriaPlano';
+import { ajustarPuntoOrtogonal, puntoEnPoligono } from '../utils/geometriaPlano';
 import { sinTildes } from '../utils/sugerencias';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.js', import.meta.url).toString();
@@ -231,6 +231,22 @@ export function PlanoGeneralCampus({ sigla, nombre, direccion, edificios, onEleg
     const r = capa.current!.getBoundingClientRect();
     return [redondear((e.clientX - r.left) / r.width), redondear((e.clientY - r.top) / r.height)];
   };
+  /** Encuentra el edificio bajo un punto normalizado [0..1, 0..1] (por cercanía al número o dentro de su contorno). */
+  const edificioEnPunto = (p: Punto): string | null => {
+    let mejorCodigo: string | null = null;
+    let mejorDist = 0.042 / Math.sqrt(vista.k);
+    for (const m of ultimos.current) {
+      const d = Math.hypot(p[0] - m.x, p[1] - m.y);
+      if (d <= mejorDist) { mejorDist = d; mejorCodigo = m.edificio; }
+    }
+    if (mejorCodigo) return mejorCodigo;
+    for (const m of ultimos.current) {
+      if (m.contorno && m.contorno.length >= 3 && puntoEnPoligono(p, m.contorno)) return m.edificio;
+    }
+    return null;
+  };
+  const pellizco = useRef<{ dist: number; k0: number; cx: number; cy: number } | null>(null);
+  const ultimoTactil = useRef(false);
   const terminarDibujo = () => {
     // El doble clic que termina también cuenta como clics: se quitan los puntos repetidos (o casi) seguidos.
     const limpio = (dibujo || []).filter((p, i, a) => i === 0 || Math.hypot(p[0] - a[i - 1][0], p[1] - a[i - 1][1]) > 0.002);
@@ -242,9 +258,15 @@ export function PlanoGeneralCampus({ sigla, nombre, direccion, edificios, onEleg
   const alClicImagen = (e: React.MouseEvent<HTMLDivElement>) => {
     setMapaActivo(true);
     if (suprimirClic.current) { suprimirClic.current = false; return; }
-    if (!ubicando) { setElegidoTactil(null); return; }
-    if (!aUbicar) return;
     const crudo = puntoEn(e);
+    if (!ubicando) {
+      const tocado = edificioEnPunto(crudo);
+      if (tocado) { abrir(tocado); return; }
+      setElegidoTactil(null);
+      setActivo(null);
+      return;
+    }
+    if (!aUbicar) return;
     if (herramienta === 'contorno') {
       if (dibujo) {
         const r = capa.current?.getBoundingClientRect();
@@ -266,12 +288,22 @@ export function PlanoGeneralCampus({ sigla, nombre, direccion, edificios, onEleg
     if (siguiente) setAUbicar(siguiente.codigo);
   };
   const alPresionarMapa = (e: React.PointerEvent<HTMLDivElement>) => {
+    ultimoTactil.current = e.pointerType === 'touch';
     if (e.button !== 0 || arrastre) return;
     setMapaActivo(true);
+    // En celular con zoom al 100% y sin estar ubicando, un dedo explora edificios o desplaza la página sin bloquear el toque.
+    if (e.pointerType === 'touch' && vista.k <= 1 && !ubicando && !ampliado) {
+      if (capa.current) {
+        const ed = edificioEnPunto(puntoEn(e));
+        if (ed) { setElegidoTactil(ed); setActivo({ codigo: ed, desde: 'mapa' }); }
+      }
+      return;
+    }
     paneo.current = { x: e.clientX, y: e.clientY, vx: vista.x, vy: vista.y, movio: false };
   };
-  // Arrastre de una esquina del contorno, paneo del mapa con zoom o vista previa al dibujar.
+  // Arrastre de una esquina del contorno, paneo del mapa con zoom, exploración táctil o vista previa al dibujar.
   const alMover = (e: React.PointerEvent) => {
+    if (pellizco.current) return;
     if (arrastre) {
       const crudo = puntoEn(e);
       const r = capa.current?.getBoundingClientRect();
@@ -289,11 +321,18 @@ export function PlanoGeneralCampus({ sigla, nombre, direccion, edificios, onEleg
       setArrastre(a => a && { ...a, puntos: a.puntos.map((q, i) => (i === a.indice ? p : q)) });
       return;
     }
+    // En celular al 100%, deslizar el dedo sobre la ilustración ilumina suavemente el edificio bajo el dedo.
+    if (e.pointerType === 'touch' && !ubicando && vista.k <= 1 && capa.current) {
+      const ed = edificioEnPunto(puntoEn(e));
+      if (ed) { setElegidoTactil(ed); setActivo({ codigo: ed, desde: 'mapa' }); }
+      return;
+    }
     const pPan = paneo.current;
     if (pPan && (vista.k > 1 || ubicando || ampliado)) {
       const dx = e.clientX - pPan.x;
       const dy = e.clientY - pPan.y;
-      if (Math.abs(dx) + Math.abs(dy) > 4) pPan.movio = true;
+      const umbral = e.pointerType === 'touch' ? 12 : 4;
+      if (Math.hypot(dx, dy) > umbral) pPan.movio = true;
       if (pPan.movio) {
         setVista(v => ({ ...v, x: pPan.vx + dx, y: pPan.vy + dy }));
         return;
@@ -322,6 +361,29 @@ export function PlanoGeneralCampus({ sigla, nombre, direccion, edificios, onEleg
     cambiarEdificio(aUbicar, { contorno: arrastre.puntos });
     setArrastre(null);
   };
+  // Pellizco con 2 dedos en iPhone / Android para acercar y alejar el mapa del campus.
+  const alIniciarToque = (e: React.TouchEvent<HTMLDivElement>) => {
+    ultimoTactil.current = true;
+    if (e.touches.length === 2) {
+      paneo.current = null;
+      const [t1, t2] = [e.touches[0], e.touches[1]];
+      pellizco.current = {
+        dist: Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY) || 1,
+        k0: vista.k,
+        cx: (t1.clientX + t2.clientX) / 2,
+        cy: (t1.clientY + t2.clientY) / 2,
+      };
+    }
+  };
+  const alMoverToque = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 2 && pellizco.current) {
+      const [t1, t2] = [e.touches[0], e.touches[1]];
+      const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY) || 1;
+      const factor = ( pellizco.current.k0 * (dist / pellizco.current.dist) ) / vista.k;
+      if (Math.abs(factor - 1) > 0.01) zoom(factor, pellizco.current.cx, pellizco.current.cy);
+    }
+  };
+  const alTerminarToque = () => { pellizco.current = null; };
   /** Borra una esquina del contorno del edificio elegido (siempre quedan al menos 3). */
   const borrarEsquina = (i: number) => {
     const c = ultimos.current.find(m => m.edificio === aUbicar)?.contorno;
@@ -347,9 +409,14 @@ export function PlanoGeneralCampus({ sigla, nombre, direccion, edificios, onEleg
   const nombreDe = (codigo: string) => edificios.find(e => e.codigo === codigo)?.nombre || '';
   const iluminado = ubicando ? null : (activo?.codigo || elegidoTactil);
   const enfocar = (codigo: string) => !ubicando && setActivo({ codigo, desde: 'mapa' });
+  const esDispositivoTactil = () => ultimoTactil.current || window.matchMedia('(hover: none), (pointer: coarse)').matches;
   const abrir = (codigo: string) => {
     if (suprimirClic.current) { suprimirClic.current = false; return; }
-    if (window.matchMedia('(hover: none)').matches && elegidoTactil !== codigo) { setElegidoTactil(codigo); return; }
+    if (esDispositivoTactil() && elegidoTactil !== codigo) {
+      setElegidoTactil(codigo);
+      setActivo({ codigo, desde: 'mapa' });
+      return;
+    }
     onElegir(codigo);
   };
   const elegido = ubicando ? marcadorDe.get(aUbicar) : undefined;
@@ -521,8 +588,13 @@ export function PlanoGeneralCampus({ sigla, nombre, direccion, edificios, onEleg
           onPointerMove={alMover}
           onPointerUp={alSoltar}
           onPointerCancel={() => { paneo.current = null; }}
+          onTouchStart={alIniciarToque}
+          onTouchMove={alMoverToque}
+          onTouchEnd={alTerminarToque}
           onMouseLeave={() => { setActivo(a => (a?.desde === 'mapa' ? null : a)); if (!paneo.current && !arrastre && !ubicando) setMapaActivo(false); }}
           className={`relative bg-slate-100 flex items-center justify-center overflow-hidden lg:border-r border-slate-100 select-none ${
+            vista.k > 1 || ubicando || ampliado ? 'touch-none' : 'touch-pan-y'
+          } ${
             ubicando ? 'cursor-crosshair' : vista.k > 1 ? 'cursor-grab active:cursor-grabbing' : ''
           }`}>
           <div ref={capa}
@@ -536,17 +608,25 @@ export function PlanoGeneralCampus({ sigla, nombre, direccion, edificios, onEleg
               ? <canvas ref={lienzo} className={`block w-full h-auto lg:w-auto lg:max-w-full ${ampliado ? 'lg:max-h-[calc(100vh-110px)]' : 'lg:max-h-[78vh]'}`} />
               : <img src={plano.url} alt={`Ilustración del campus ${nombre}`} draggable={false} className={`block w-full h-auto lg:w-auto lg:max-w-full ${ampliado ? 'lg:max-h-[calc(100vh-110px)]' : 'lg:max-h-[78vh]'}`} />}
 
-            {/* Contornos: invisibles hasta que se ilumina el edificio; también se puede entrar haciendo clic en él. */}
+            {/* Contornos: invisibles hasta que se ilumina el edificio; también se puede entrar haciendo clic o tocando en él. */}
             <svg className="absolute inset-0 w-full h-full overflow-visible" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden>
               {!ubicando && marcadores.filter(m => m.contorno && m.contorno.length >= 3).map(m => {
                 const encendido = iluminado === m.edificio;
                 return (
                   <polygon key={m.edificio} points={m.contorno!.map(p => p.join(',')).join(' ')}
-                    // Iluminación sutil: el edificio se aclara (mezcla «screen») con un borde fino y suave.
-                    className="cursor-pointer transition-all duration-300"
-                    style={{ mixBlendMode: 'screen' }}
-                    fill={encendido ? 'rgba(255, 236, 179, 0.55)' : 'transparent'}
-                    stroke={encendido ? 'rgba(255, 244, 214, 0.9)' : 'transparent'} strokeWidth={1.25} vectorEffect="non-scaling-stroke" strokeLinejoin="round"
+                    // Iluminación gradual y delicada compatible con desktop, iPhone (iOS Safari) y Android.
+                    className="cursor-pointer"
+                    pointerEvents="all"
+                    fill="rgba(255, 248, 220, 0.24)"
+                    stroke="rgba(253, 224, 71, 0.55)"
+                    strokeWidth={1}
+                    vectorEffect="non-scaling-stroke"
+                    strokeLinejoin="round"
+                    style={{
+                      opacity: encendido ? 1 : 0,
+                      filter: 'drop-shadow(0 0 7px rgba(253, 224, 71, 0.3))',
+                      transition: 'opacity 480ms cubic-bezier(0.22, 1, 0.36, 1)',
+                    }}
                     onMouseEnter={() => enfocar(m.edificio)}
                     onClick={e => { e.stopPropagation(); abrir(m.edificio); }} />
                 );
@@ -624,22 +704,30 @@ export function PlanoGeneralCampus({ sigla, nombre, direccion, edificios, onEleg
             {marcadores.map(m => {
               const encendido = iluminado === m.edificio;
               const enUbicar = ubicando && m.edificio === aUbicar;
+              const alBordeIzq = m.x < 0.22;
+              const alBordeDer = m.x > 0.78;
+              const alBordeSup = m.y < 0.14;
               return (
                 <button key={m.edificio} type="button" aria-label={`Abrir ${m.edificio} ${nombreDe(m.edificio)}`}
-                  onMouseEnter={() => enfocar(m.edificio)} onFocus={() => enfocar(m.edificio)} onBlur={() => setActivo(null)}
+                  onMouseEnter={() => enfocar(m.edificio)} onFocus={() => enfocar(m.edificio)}
                   onClick={e => {
                     e.stopPropagation();
                     if (suprimirClic.current) { suprimirClic.current = false; return; }
                     if (ubicando) { if (!dibujo) setAUbicar(m.edificio); return; }
                     abrir(m.edificio);
                   }}
-                  className={`absolute -translate-x-1/2 -translate-y-1/2 w-[2.6%] min-w-7 aspect-square rounded-full transition
-                    ${enUbicar ? 'bg-amber-400/70 ring-4 ring-amber-500' : ubicando ? 'bg-teal-500/40 ring-2 ring-white' : ''}
+                  className={`absolute -translate-x-1/2 -translate-y-1/2 w-[3.2%] min-w-8 aspect-square rounded-full transition-all duration-500 ease-out
+                    ${enUbicar ? 'bg-amber-400/70 ring-4 ring-amber-500' : ubicando ? 'bg-teal-500/40 ring-2 ring-white' : encendido ? 'bg-amber-200/20 ring-2 ring-amber-200/60' : ''}
                     ${ubicando && herramienta === 'contorno' ? 'pointer-events-none' : ''}`}
-                  style={{ left: `${m.x * 100}%`, top: `${m.y * 100}%` }}>
+                  style={{ left: `${m.x * 100}%`, top: `${m.y * 100}%`, WebkitTapHighlightColor: 'transparent' }}>
                   {encendido && !ubicando && (
-                    <span className="pointer-events-none absolute left-1/2 bottom-full mb-2 whitespace-nowrap rounded-lg bg-slate-900/95 px-2.5 py-1 text-xs font-semibold text-white shadow-lg"
-                      style={{ transform: `translateX(-50%) scale(${1 / vista.k})`, transformOrigin: 'bottom center' }}>
+                    <span className={`pointer-events-none absolute z-20 ${alBordeSup ? 'top-full mt-2' : 'bottom-full mb-2'} ${
+                      alBordeIzq ? 'left-0' : alBordeDer ? 'right-0' : 'left-1/2'
+                    } whitespace-nowrap rounded-lg bg-slate-900/95 px-2.5 py-1 text-xs font-semibold text-white shadow-lg`}
+                      style={{
+                        transform: `${alBordeIzq || alBordeDer ? '' : 'translateX(-50%) '}scale(${1 / vista.k})`,
+                        transformOrigin: `${alBordeSup ? 'top' : 'bottom'} ${alBordeIzq ? 'left' : alBordeDer ? 'right' : 'center'}`,
+                      }}>
                       <span className="font-mono text-amber-300">{m.edificio}</span> · {nombreDe(m.edificio)}
                     </span>
                   )}
@@ -648,8 +736,8 @@ export function PlanoGeneralCampus({ sigla, nombre, direccion, edificios, onEleg
             })}
           </div>
 
-          {/* Controles flotantes de zoom sobre el mapa */}
-          <div className="absolute right-2.5 bottom-2.5 z-10 flex items-center gap-0.5 rounded-xl bg-white/95 backdrop-blur border border-slate-200 px-1.5 py-1 shadow-md"
+          {/* Controles flotantes de zoom sobre el mapa (arriba a la derecha para no tapar la barra táctil inferior en celulares) */}
+          <div className="absolute right-2.5 top-2.5 z-10 flex items-center gap-0.5 rounded-xl bg-white/95 backdrop-blur border border-slate-200 px-1.5 py-1 shadow-md"
             onPointerDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
             <button type="button" title="Alejar" onClick={() => zoom(1 / 1.35)} disabled={vista.k <= 1}
               className="p-1 rounded-lg hover:bg-slate-100 text-slate-700 disabled:opacity-35"><ZoomOut className="w-4 h-4" /></button>
@@ -665,14 +753,18 @@ export function PlanoGeneralCampus({ sigla, nombre, direccion, edificios, onEleg
 
           {/* Celular: ficha del edificio tocado, con el botón para entrar. */}
           {tactil && !ubicando && (
-            <div className="absolute left-2 right-2 bottom-2 z-20 flex items-center gap-3 rounded-xl bg-white/95 backdrop-blur px-3 py-2 shadow-xl" onClick={e => e.stopPropagation()}>
-              <span className="grid place-items-center w-9 h-9 rounded-full bg-blue-600 text-white font-extrabold text-sm shrink-0">{numeroDe(tactil.codigo, sigla)}</span>
+            <div className="absolute left-2 right-2 bottom-2 z-20 flex items-center gap-3 rounded-xl bg-white/95 backdrop-blur px-3 py-2 shadow-xl border border-amber-200"
+              onPointerDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
+              <span className="grid place-items-center w-9 h-9 rounded-full bg-amber-400 text-slate-900 font-extrabold text-sm shrink-0">{numeroDe(tactil.codigo, sigla)}</span>
               <span className="min-w-0 flex-1">
                 <span className="block font-mono text-[11px] font-bold text-teal-800">{tactil.codigo}</span>
                 <span className="block font-bold text-slate-800 truncate">{tactil.nombre || 'Sin nombre'}</span>
               </span>
-              <button type="button" onClick={() => onElegir(tactil.codigo)} className="flex items-center gap-1 px-3 py-2 rounded-lg bg-teal-700 text-white font-bold">
+              <button type="button" onClick={() => onElegir(tactil.codigo)} className="flex items-center gap-1 px-3 py-2 rounded-lg bg-teal-700 text-white font-bold shrink-0">
                 Entrar <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+              <button type="button" aria-label="Cerrar" onClick={() => { setElegidoTactil(null); setActivo(null); }} className="p-1 text-slate-400 hover:text-slate-600">
+                <X className="w-4 h-4" />
               </button>
             </div>
           )}
