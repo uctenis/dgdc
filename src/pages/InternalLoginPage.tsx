@@ -26,6 +26,8 @@ const CAMPUS_PORTADA = [
   { sigla: 'CSN', nombre: 'Campus San Nicolás', ciudad: 'Curacautín', src: ilusCSN, foco: '62% 45%' },
 ] as const;
 const DURACION_CAMPUS = 7000;
+/** Coordenadas de la ciudad de cada campus, para el rótulo de la lámina. */
+const COORDENADAS: Record<string, string> = { Temuco: '38°44′ S · 72°36′ O', 'Curacautín': '38°26′ S · 71°53′ O' };
 
 /** Módulos a los que se puede entrar desde el inicio. Comparten el mismo inicio de sesión. */
 const MODULOS = [
@@ -88,7 +90,7 @@ function LogoGoogle() {
 
 function MarcaDGDC({ className = 'h-10 w-10' }: { className?: string }) {
   return (
-    <div className={`${className} flex shrink-0 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/25 backdrop-blur-md`}>
+    <div className={`${className} flex shrink-0 items-center justify-center rounded-xl bg-slate-900 shadow-sm`}>
       <svg viewBox="0 0 40 40" className="h-[60%] w-[60%]" fill="none" aria-hidden>
         <path d="M20 4L36 12V28L20 36L4 28V12L20 4Z" stroke="white" strokeWidth="2.5" strokeLinejoin="round" />
         <path d="M20 4V36M4 12L36 12M4 28L36 28" stroke="rgba(255,255,255,0.45)" strokeWidth="1.5" />
@@ -169,56 +171,73 @@ export function InternalLoginPage() {
 
   return (
     <main className="min-h-screen bg-[#f6f7f9] text-slate-900 lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-      {/* ── Panel institucional ───────────────────────────────────── */}
-      <aside className="relative h-64 overflow-hidden bg-slate-950 sm:h-80 lg:sticky lg:top-0 lg:h-screen">
-        {CAMPUS_PORTADA.map((c, i) => (i === 0 || carrusel.todas) && (
-          <img
-            key={c.sigla}
-            src={c.src}
-            alt=""
-            decoding="async"
-            onLoad={i === 0 ? carrusel.cargada : undefined}
-            style={{ objectPosition: c.foco }}
-            className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-[1600ms] ease-out ${
-              i === carrusel.actual ? 'opacity-100' : 'opacity-0'
-            } ${i === carrusel.actual || i === carrusel.anterior ? 'inicio-deriva' : ''}`}
-          />
-        ))}
-        {/* Sombras solo arriba (marca) y abajo (texto): el centro deja ver la ilustración con su color. */}
-        <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-slate-950/70 to-transparent" />
-        <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-slate-950/90 via-slate-950/40 to-transparent lg:h-[72%] lg:from-slate-950 lg:via-slate-950/75" />
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-950/35 to-transparent" />
+      {/* ── Panel institucional: una hoja de plano ──────────────────────── */}
+      <aside className="inicio-hoja relative overflow-hidden text-slate-900 lg:sticky lg:top-0 lg:h-screen">
+        {/* Margen de la hoja, con marcas de esquina */}
+        <div aria-hidden className="pointer-events-none absolute inset-3 border border-slate-900/10 sm:inset-5">
+          {['-left-px -top-px border-l border-t', '-right-px -top-px border-r border-t', '-left-px -bottom-px border-l border-b', '-right-px -bottom-px border-r border-b'].map(c => (
+            <span key={c} className={`absolute h-3 w-3 border-slate-900/40 ${c}`} />
+          ))}
+        </div>
 
-        <div className="relative flex h-full flex-col justify-between p-6 text-white sm:p-10 xl:p-14">
+        <div className="relative flex h-full flex-col gap-4 px-7 py-6 sm:gap-6 sm:px-12 sm:py-10 xl:px-16">
           <div className="inicio-aparecer flex items-center gap-3" style={retraso(50)}>
             <MarcaDGDC />
             <div className="leading-tight">
               <p className="text-sm font-semibold tracking-tight">Universidad Católica de Temuco</p>
-              <p className="text-[11px] text-white/60">Dirección de Gestión y Desarrollo de Campus · DGDC</p>
+              <p className="text-[11px] text-slate-500">Dirección de Gestión y Desarrollo de Campus · DGDC</p>
             </div>
           </div>
 
+          {/* Lámina: la ilustración del campus, pequeña y enmarcada */}
+          <figure className="inicio-aparecer flex flex-1 flex-col justify-center" style={retraso(150)}>
+            <div className="relative mx-auto aspect-[4/3] w-full max-w-[14rem] sm:max-w-[26rem] lg:max-w-[min(30rem,82%)]">
+              <div className="inicio-vineta absolute inset-0 overflow-hidden rounded-[22px] bg-[#ece8df]">
+                {CAMPUS_PORTADA.map((c, i) => (i === 0 || carrusel.todas) && (
+                  <img
+                    key={c.sigla}
+                    src={c.src}
+                    alt={i === carrusel.actual ? `Ilustración del ${c.nombre}` : ''}
+                    decoding="async"
+                    onLoad={i === 0 ? carrusel.cargada : undefined}
+                    style={{ objectPosition: c.foco }}
+                    className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-[1800ms] ease-out ${
+                      i === carrusel.actual ? 'opacity-100' : 'opacity-0'
+                    } ${i === carrusel.actual || i === carrusel.anterior ? 'inicio-deriva' : ''}`}
+                  />
+                ))}
+              </div>
+              {/* Cota bajo la lámina: un guiño al dibujo de arquitectura */}
+              <span aria-hidden className="absolute -bottom-4 left-0 right-0 flex items-center gap-2 text-[9px] font-medium tracking-[.2em] text-slate-400">
+                <span className="h-2 w-px bg-slate-300" /><span className="h-px flex-1 bg-slate-300" />
+                <span className="font-mono">{campus.sigla}</span>
+                <span className="h-px flex-1 bg-slate-300" /><span className="h-2 w-px bg-slate-300" />
+              </span>
+            </div>
+
+            <figcaption key={campus.sigla} className="inicio-rotulo mx-auto mt-7 w-full sm:mt-9 max-w-[14rem] sm:max-w-[26rem] lg:max-w-[min(30rem,82%)]" aria-live="polite">
+              <p className="font-mono text-[10px] uppercase tracking-[.25em] text-slate-400">
+                Lámina {String(carrusel.actual + 1).padStart(2, '0')} / {String(CAMPUS_PORTADA.length).padStart(2, '0')}
+                <span className="hidden sm:inline"><span className="mx-2 text-slate-300">·</span>{COORDENADAS[campus.ciudad]}</span>
+              </p>
+              <p className="mt-1 font-serif-inicio text-lg text-slate-900 sm:mt-1.5 sm:text-2xl">{campus.nombre}</p>
+              <p className="text-xs text-slate-500">{campus.ciudad}</p>
+            </figcaption>
+          </figure>
+
           <div>
             <div className="hidden lg:block">
-              <p className="inicio-aparecer text-[11px] font-semibold uppercase tracking-[.28em] text-sky-200/80" style={retraso(150)}>
-                Plataforma de gestión
-              </p>
-              <h2 className="inicio-aparecer mt-4 max-w-md text-[2.6rem] font-semibold leading-[1.08] tracking-[-0.03em] xl:text-5xl" style={retraso(250)}>
+              <h2 className="inicio-aparecer max-w-md font-serif-inicio text-[2.1rem] leading-[1.1] tracking-[-0.01em] text-slate-900 xl:text-[2.4rem]" style={retraso(250)}>
                 Infraestructura universitaria, gestionada con rigor.
               </h2>
-              <p className="inicio-aparecer mt-5 max-w-sm text-sm leading-relaxed text-white/65" style={retraso(350)}>
+              <p className="inicio-aparecer mt-3 max-w-sm text-sm leading-relaxed text-slate-500" style={retraso(350)}>
                 Un solo acceso para la cartera de proyectos, los procesos de licitación y el catastro de espacios de la Universidad.
               </p>
             </div>
 
-            {/* Campus a la vista y avance del recorrido */}
-            <div className="inicio-aparecer lg:mt-10 lg:border-t lg:border-white/15 lg:pt-6" style={retraso(450)}>
-              <p key={campus.sigla} className="inicio-rotulo flex items-baseline gap-2 text-sm" aria-live="polite">
-                <span className="rounded bg-white/15 px-1.5 py-0.5 font-mono text-[10px] font-semibold tracking-wider text-white/90 ring-1 ring-white/20 backdrop-blur-sm">{campus.sigla}</span>
-                <span className="truncate font-medium text-white">{campus.nombre}</span>
-                <span className="hidden shrink-0 text-white/50 sm:inline">· {campus.ciudad}</span>
-              </p>
-              <div className="mt-3 flex gap-1.5" role="tablist" aria-label="Campus de la Universidad">
+            {/* Escala gráfica: cada tramo es un campus; el que está a la vista se va rellenando */}
+            <div className="inicio-aparecer mt-2 flex items-end gap-4 lg:mt-6" style={retraso(450)}>
+              <div className="flex pt-4" role="tablist" aria-label="Campus de la Universidad">
                 {CAMPUS_PORTADA.map((c, i) => (
                   <button
                     key={c.sigla}
@@ -228,21 +247,20 @@ export function InternalLoginPage() {
                     aria-label={c.nombre}
                     title={c.nombre}
                     onClick={() => carrusel.ir(i)}
-                    className="group relative h-4 flex-1 max-w-12"
+                    className={`relative h-2.5 w-7 border border-slate-800 transition hover:opacity-80 sm:w-9 ${i > 0 ? '-ml-px' : ''} ${i % 2 ? 'bg-slate-800' : 'bg-white'}`}
                   >
-                    <span className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 overflow-hidden rounded-full bg-white/20 transition group-hover:bg-white/35">
-                      {i === carrusel.actual && (
-                        <span
-                          key={carrusel.vuelta}
-                          className={`absolute inset-y-0 left-0 rounded-full bg-white ${carrusel.todas ? 'inicio-avance' : 'w-0'}`}
-                          style={{ animationDuration: `${DURACION_CAMPUS}ms` }}
-                        />
-                      )}
-                      {i < carrusel.actual && <span className="absolute inset-0 rounded-full bg-white/55" />}
-                    </span>
+                    {i === carrusel.actual && (
+                      <span
+                        key={carrusel.vuelta}
+                        className={`absolute inset-y-0 left-0 bg-sky-500 ${carrusel.todas ? 'inicio-avance' : 'w-0'}`}
+                        style={{ animationDuration: `${DURACION_CAMPUS}ms` }}
+                      />
+                    )}
+                    <span className="absolute -top-4 left-0 hidden -translate-x-1/2 font-mono text-[8px] text-slate-400 sm:block">{i}</span>
                   </button>
                 ))}
               </div>
+              <span className="font-mono text-[9px] uppercase tracking-[.2em] text-slate-400">campus</span>
             </div>
           </div>
         </div>
