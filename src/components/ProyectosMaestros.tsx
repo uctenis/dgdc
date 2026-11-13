@@ -45,7 +45,7 @@ interface ProyectosMaestrosProps {
   onOpenFicha?: (p: ProyectoMaestro) => void;
   modoSelector?: boolean;
   configFirmas?: ConfiguracionFirmas;
-  /** Guarda la configuraciÃ³n compartida (se usa al cerrar la revisiÃ³n de cartera, que fija el presupuesto del aÃ±o). */
+  /** Guarda la configuración compartida (se usa al cerrar la revisión de cartera, que fija el presupuesto del año). */
   onSaveConfig?: (cfg: ConfiguracionFirmas) => void;
 }
 
@@ -93,7 +93,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   const { isAdmin, user, profile } = useAuth();
   const [proyectos, setProyectos] = useState<ProyectoMaestro[]>([]);
   const [licitaciones, setLicitaciones] = useState<LicitacionProyecto[]>([]);
-  // Cartera (aÃ±o presupuestario) que se estÃ¡ viendo: los totales, la tabla y los proyectos nuevos son de ese aÃ±o.
+  // Cartera (año presupuestario) que se está viendo: los totales, la tabla y los proyectos nuevos son de ese año.
   const [anioCartera, setAnioCartera] = useState(leerAnioCarteraElegido);
   const proyectosAnio = React.useMemo(() => proyectos.filter(p => anioDeCartera(p) === anioCartera), [proyectos, anioCartera]);
   const [loading, setLoading] = useState(true);
@@ -111,7 +111,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   const rubrosDisponibles = getRubrosList().filter(r => r.estado === 'Activo');
   const tiposObraDisponibles = getTiposObraList().filter(t => t.estado === 'Activo');
   const [showModal, setShowModal] = useState(false);
-  /** Responsables con quien iniciÃ³ sesiÃ³n primero (si no estÃ¡ en la nÃ³mina, igual se ofrece con sus datos de sesiÃ³n). */
+  /** Responsables con quien inició sesión primero (si no está en la nómina, igual se ofrece con sus datos de sesión). */
   const responsablesOrdenados = React.useMemo(() => {
     const correo = (user?.email || '').toLowerCase();
     const yo = RESPONSABLES_INFRAESTRUCTURA.find(r => r.email.toLowerCase() === correo);
@@ -129,13 +129,13 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   // Estado del formulario
   const [form, setForm] = useState(EMPTY_FORM);
 
-  // Mejora de la descripciÃ³n con IA: se muestra como propuesta y el usuario decide si la usa.
+  // Mejora de la descripción con IA: se muestra como propuesta y el usuario decide si la usa.
   const [mejorandoDescripcion, setMejorandoDescripcion] = useState(false);
   const [descripcionPropuestaIA, setDescripcionPropuestaIA] = useState<string | null>(null);
   const [errorDescripcionIA, setErrorDescripcionIA] = useState<string | null>(null);
 
   // Presupuesto estimativo adjunto al crear el proyecto (Excel o PDF): sus partidas quedan como el itemizado del
-  // proyecto y son la fuente con que la IA sugiere la descripciÃ³n y el fundamento.
+  // proyecto y son la fuente con que la IA sugiere la descripción y el fundamento.
   const [presupuestoAdjunto, setPresupuestoAdjunto] = useState<{
     archivo: string;
     itemizado: ItemItemizadoProyecto[];
@@ -154,7 +154,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
     }
   }, [showModal]);
 
-  // `itemizado` se pasa al llamar apenas se adjunta el presupuesto, cuando el estado aÃºn no se actualiza.
+  // `itemizado` se pasa al llamar apenas se adjunta el presupuesto, cuando el estado aún no se actualiza.
   const mejorarDescripcion = async (itemizado: ItemItemizadoProyecto[] | undefined = presupuestoAdjunto?.itemizado) => {
     setErrorDescripcionIA(null);
     setMejorandoDescripcion(true);
@@ -172,13 +172,13 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
               form.edificioSigla ? descripcionEdificioParaIA(form.edificioSigla) : '',
               `${campus.nombre} (sigla ${campus.sigla})`,
               campus.direccion || '',
-              `${campus.ciudad}, ${campus.ciudad === 'Santiago' ? 'RegiÃ³n Metropolitana' : 'RegiÃ³n de La AraucanÃ­a'}, Chile`,
+              `${campus.ciudad}, ${campus.ciudad === 'Santiago' ? 'Región Metropolitana' : 'Región de La Araucanía'}, Chile`,
             ].filter(Boolean).join(', ')
           : undefined,
       });
       setDescripcionPropuestaIA(propuesta);
     } catch (err) {
-      console.error('Error mejorando la descripciÃ³n con IA:', err);
+      console.error('Error mejorando la descripción con IA:', err);
       setErrorDescripcionIA(mensajeErrorIA(err));
     } finally {
       setMejorandoDescripcion(false);
@@ -201,19 +201,19 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
       const markup = { gastosGeneralesPct: importado.gastosGeneralesPct || 0, utilidadPct: importado.utilidadPct || 0 };
       const total = totalItemizadoConIva(importado.items, markup, configFirmas?.parametrosSgc?.tasaIva ?? 19);
       setPresupuestoAdjunto({ archivo: file.name, itemizado: importado.items, markup, total });
-      // El total del presupuesto pasa a ser el Presupuesto Estimado solo si aÃºn no se escribiÃ³ uno.
+      // El total del presupuesto pasa a ser el Presupuesto Estimado solo si aún no se escribió uno.
       if (total > 0) setForm(f => (f.valorAprox > 0 ? f : { ...f, valorAprox: total }));
-      // Con el cuadro de la descripciÃ³n vacÃ­o, se sugiere de inmediato una a partir de las partidas.
+      // Con el cuadro de la descripción vacío, se sugiere de inmediato una a partir de las partidas.
       if (isAIConfigured() && !form.descripcion.trim()) void mejorarDescripcion(importado.items);
     } catch (err) {
       console.error('Error leyendo el presupuesto estimativo:', err);
-      setErrorPresupuesto(`No se pudo leer el archivo. Verifique que sea un ${esPdf ? 'PDF' : 'Excel (.xlsx/.xls)'} vÃ¡lido.`);
+      setErrorPresupuesto(`No se pudo leer el archivo. Verifique que sea un ${esPdf ? 'PDF' : 'Excel (.xlsx/.xls)'} válido.`);
     } finally {
       setLeyendoPresupuesto(false);
     }
   };
 
-  // Fundamento asistido por IA: toma la descripciÃ³n, el presupuesto adjunto y los argumentos ya escritos en el cuadro del fundamento.
+  // Fundamento asistido por IA: toma la descripción, el presupuesto adjunto y los argumentos ya escritos en el cuadro del fundamento.
   const [redactandoFundamento, setRedactandoFundamento] = useState(false);
   const redactarFundamento = async () => {
     setErrorDescripcionIA(null);
@@ -253,7 +253,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
       },
       err => {
         console.error('Error cargando proyectos:', err);
-        setErrorCarga('No se pudo cargar la Cartera de Proyectos. Puede ser un problema de conexiÃ³n o de permisos â€” recargue la pÃ¡gina; si persiste, avise al administrador del sistema.');
+        setErrorCarga('No se pudo cargar la Cartera de Proyectos. Puede ser un problema de conexión o de permisos — recargue la página; si persiste, avise al administrador del sistema.');
         setLoading(false);
       }
     );
@@ -273,8 +273,8 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
     return unsub;
   }, []);
 
-  // Set de proyectos maestros que ya cuentan con una licitaciÃ³n creada.
-  // Coincide primero por proyectoMaestroId (vÃ­nculo directo) y, como respaldo
+  // Set de proyectos maestros que ya cuentan con una licitación creada.
+  // Coincide primero por proyectoMaestroId (vínculo directo) y, como respaldo
   // para licitaciones antiguas sin ese campo, por codigoProyecto.
   const proyectosConLicitacion = React.useMemo(() => {
     const porId = new Set(licitaciones.map(l => l.proyectoMaestroId).filter(Boolean) as string[]);
@@ -305,7 +305,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
 
   const handleAgregarAntecedente = () => {
     if (!nuevoDocNombre.trim()) {
-      alert('Ingrese el nombre o descripciÃ³n del documento o plano.');
+      alert('Ingrese el nombre o descripción del documento o plano.');
       return;
     }
 
@@ -341,7 +341,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
       return;
     }
     if (!form.tipoObra) {
-      alert('Seleccione el Tipo de Obra: define la plantilla legal de Bases y la polÃ­tica de garantÃ­as del proyecto.');
+      alert('Seleccione el Tipo de Obra: define la plantilla legal de Bases y la política de garantías del proyecto.');
       return;
     }
     if (!form.valorAprox || form.valorAprox <= 0) {
@@ -349,7 +349,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
       return;
     }
     if (form.driveCarpetaUrl.trim() && !esCarpetaDrive(form.driveCarpetaUrl)) {
-      alert('La Carpeta del Proyecto debe ser el enlace de una carpeta de Google Drive (https://drive.google.com/drive/folders/â€¦).');
+      alert('La Carpeta del Proyecto debe ser el enlace de una carpeta de Google Drive (https://drive.google.com/drive/folders/…).');
       return;
     }
 
@@ -410,13 +410,13 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           ...(form.alcanceEspacios.pisos.length + form.alcanceEspacios.recintos.length > 0 ? { alcanceEspacios: form.alcanceEspacios } : {}),
           ...(presupuestoAdjunto ? { itemizado: presupuestoAdjunto.itemizado, itemizadoMarkup: presupuestoAdjunto.markup } : {}),
         });
-        // Las Bases no se abren al crear: se preparan despuÃ©s, desde la ficha del proyecto.
+        // Las Bases no se abren al crear: se preparan después, desde la ficha del proyecto.
       }
 
       setShowModal(false);
     } catch (err) {
       console.error('Error guardando proyecto:', err);
-      alert('No se pudo guardar el proyecto: ' + (err instanceof Error ? err.message : 'error desconocido') + '. Sus datos NO se perdieron de esta ventana â€” intente guardar de nuevo; si el error persiste, avise al administrador del sistema.');
+      alert('No se pudo guardar el proyecto: ' + (err instanceof Error ? err.message : 'error desconocido') + '. Sus datos NO se perdieron de esta ventana — intente guardar de nuevo; si el error persiste, avise al administrador del sistema.');
     } finally {
       setSaving(false);
     }
@@ -426,7 +426,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   const [filtroEstado, setFiltroEstado] = useState('Todos');
   const [filtroLicitacion, setFiltroLicitacion] = useState<'Todos' | 'Con' | 'Sin'>('Todos');
 
-  // CÃ¡lculos de Resumen por Prioridad y Financiero
+  // Cálculos de Resumen por Prioridad y Financiero
   const totalAltaVal = proyectosAnio.filter(p => p.prioridad === 'Alta').reduce((sum, p) => sum + (p.valorAprox || 0), 0);
   const totalAltaCount = proyectosAnio.filter(p => p.prioridad === 'Alta').length;
 
@@ -439,7 +439,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   const totalPresupuestoGeneral = proyectosAnio.reduce((sum, p) => sum + (p.valorAprox || 0), 0);
   const totalGastoEfectivoGeneral = proyectosAnio.reduce((sum, p) => sum + (p.gastoEfectivo || 0), 0);
 
-  // Solo los proyectos con Presupuesto Aprobado comprometen el techo institucional â€” el resto
+  // Solo los proyectos con Presupuesto Aprobado comprometen el techo institucional — el resto
   // de la cartera (totalPresupuestoGeneral) queda "en espera" y no cuenta para ese control.
   const proyectosAprobadosPpto = proyectosAnio.filter(p => p.presupuesto?.aprobado);
   const totalPresupuestoAprobado = proyectosAprobadosPpto.reduce((sum, p) => sum + (p.montoAdjudicado || p.valorAprox || 0), 0);
@@ -447,7 +447,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   // Techo institucional anual (distinto de la suma de montos adjudicados): lo que hay que
   // controlar para que la Cartera no se pase, comparado contra lo ya comprometido (estimado).
   const presupuestoAnualAprobado = presupuestoDelAnio(configFirmas, anioCartera);
-  // RevisiÃ³n de la cartera: el presupuesto del aÃ±o es la suma de los aprobados al cerrarla.
+  // Revisión de la cartera: el presupuesto del año es la suma de los aprobados al cerrarla.
   const revision = resumenRevisionCartera(proyectosAnio);
   const cierreRevision = configFirmas?.revisionesCartera?.[String(anioCartera)];
   const pctPresupuestoUsado = presupuestoAnualAprobado > 0
@@ -459,7 +459,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
   const handleToggleAprobacionPresupuesto = async (p: ProyectoMaestro) => {
     if (!isAdmin) return;
     const yaAprobado = Boolean(p.presupuesto?.aprobado);
-    // Misma vÃ­a que la RevisiÃ³n de cartera, para que la decisiÃ³n quede en el historial del proyecto.
+    // Misma vía que la Revisión de cartera, para que la decisión quede en el historial del proyecto.
     await setDecisionPresupuesto(p.id, yaAprobado ? 'pendiente' : 'aprobado', {
       nombre: profile?.displayName || user?.displayName,
       email: user?.email,
@@ -517,17 +517,17 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
       {!showModal && (<>
       {errorCarga && (
         <div className="bg-red-50 border border-red-300 text-red-900 rounded-2xl px-4 py-3 flex items-start justify-between gap-3">
-          <p className="text-xs font-semibold">âš ï¸ {errorCarga}</p>
+          <p className="text-xs font-semibold">⚠️ {errorCarga}</p>
           <button
             type="button"
             onClick={() => window.location.reload()}
             className="shrink-0 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold"
           >
-            Recargar pÃ¡gina
+            Recargar página
           </button>
         </div>
       )}
-      {/* Header compacto: fila 1 = tÃ­tulo + prioridades + acciones Â· fila 2 = totales financieros */}
+      {/* Header compacto: fila 1 = título + prioridades + acciones · fila 2 = totales financieros */}
       <div className="bg-white px-4 py-2 rounded-2xl shadow-sm border border-slate-200">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <h2 className="text-sm font-bold text-slate-800 flex items-center gap-1.5 shrink-0">
@@ -536,7 +536,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
             <select
               value={anioCartera}
               onChange={e => { const a = Number(e.target.value); setAnioCartera(a); guardarAnioCarteraElegido(a); }}
-              title="AÃ±o de la cartera y de su presupuesto"
+              title="Año de la cartera y de su presupuesto"
               className="font-bold text-indigo-800 bg-indigo-50 border border-indigo-200 rounded-lg px-1.5 py-0.5 outline-none focus:ring-2 focus:ring-indigo-500"
             >
               {aniosDeCartera(proyectos).map(a => <option key={a} value={a}>{a}</option>)}
@@ -566,10 +566,10 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
               <button
                 onClick={() => setRevisionAbierta(true)}
                 className="flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-300 text-indigo-800 font-semibold px-2.5 py-1.5 rounded-lg text-[11px] shrink-0"
-                title="Fundamentar, aprobar o rechazar los proyectos de la cartera y fijar el presupuesto del aÃ±o"
+                title="Fundamentar, aprobar o rechazar los proyectos de la cartera y fijar el presupuesto del año"
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span className="hidden lg:inline">RevisiÃ³n de cartera</span>
+                <span className="hidden lg:inline">Revisión de cartera</span>
               </button>
               <button
                 onClick={() => setImportarExcelAbierto(true)}
@@ -590,34 +590,34 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           )}
         </div>
 
-        {/* Totales financieros â€” franja propia para distinguirlos de la distribuciÃ³n por prioridad */}
+        {/* Totales financieros — franja propia para distinguirlos de la distribución por prioridad */}
         <div className="mt-2 pt-2 border-t border-slate-100 grid grid-cols-2 lg:grid-cols-4 gap-2">
           <button
             type="button"
             onClick={() => setRevisionAbierta(true)}
             className="text-left rounded-xl bg-indigo-50/60 hover:bg-indigo-100/70 border border-indigo-100 px-3 py-2 transition"
-            title="Presupuesto del aÃ±o: se fija al cerrar la revisiÃ³n de la cartera, con la suma de los proyectos aprobados. Clic para abrir la revisiÃ³n."
+            title="Presupuesto del año: se fija al cerrar la revisión de la cartera, con la suma de los proyectos aprobados. Clic para abrir la revisión."
           >
             <span className="block text-[9px] font-bold uppercase tracking-wide text-indigo-400">Presupuesto anual {anioCartera}</span>
             {presupuestoAnualAprobado > 0 ? (
               <>
                 <span className="block text-sm font-black text-indigo-900 tabular-nums">{formatoMonedaCLP(presupuestoAnualAprobado)}</span>
                 <span className={`block text-[10px] font-bold ${presupuestoColor}`}>
-                  {pctPresupuestoUsado}% comprometido{cierreRevision ? ` Â· fijado el ${formatoFecha(cierreRevision.fecha)}` : ''}
+                  {pctPresupuestoUsado}% comprometido{cierreRevision ? ` · fijado el ${formatoFecha(cierreRevision.fecha)}` : ''}
                 </span>
               </>
             ) : (
               <>
-                <span className="block text-sm font-black text-amber-700">En revisiÃ³n</span>
+                <span className="block text-sm font-black text-amber-700">En revisión</span>
                 <span className="block text-[10px] text-amber-700">
-                  {revision.pendiente.cantidad} por revisar Â· {revision.aprobado.cantidad} aprobado{revision.aprobado.cantidad === 1 ? '' : 's'}
+                  {revision.pendiente.cantidad} por revisar · {revision.aprobado.cantidad} aprobado{revision.aprobado.cantidad === 1 ? '' : 's'}
                 </span>
               </>
             )}
           </button>
           <div
             className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2"
-            title="Suma de proyectos con Presupuesto Aprobado â€” son los que se proyectan mes a mes en Avance Financiero"
+            title="Suma de proyectos con Presupuesto Aprobado — son los que se proyectan mes a mes en Avance Financiero"
           >
             <span className={`block text-[9px] font-bold uppercase tracking-wide ${presupuestoColor}`}>Aprobado p/ presupuesto</span>
             <span className={`block text-sm font-black tabular-nums ${presupuestoColor}`}>{formatoMonedaCLP(totalPresupuestoAprobado)}</span>
@@ -632,7 +632,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
             <span className="block text-[9px] font-bold uppercase tracking-wide text-emerald-600">Gasto efectivo pagado</span>
             <span className="block text-sm font-black text-emerald-700 tabular-nums">{formatoMonedaCLP(totalGastoEfectivoGeneral)}</span>
             <span className="block text-[10px] text-slate-500">
-              {totalPresupuestoGeneral > 0 ? `${Math.round((totalGastoEfectivoGeneral / totalPresupuestoGeneral) * 100)}% de la cartera` : 'â€”'}
+              {totalPresupuestoGeneral > 0 ? `${Math.round((totalGastoEfectivoGeneral / totalPresupuestoGeneral) * 100)}% de la cartera` : '—'}
             </span>
           </div>
         </div>
@@ -644,7 +644,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           <Search className="absolute left-2.5 top-2 w-3.5 h-3.5 text-slate-400" />
           <input
             type="text"
-            placeholder="Buscar por nombre, CP, OC, CÃ³d. Proyecto o responsable..."
+            placeholder="Buscar por nombre, CP, OC, Cód. Proyecto o responsable..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
@@ -659,7 +659,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
             <option value="Todos">Todos los Responsables</option>
             {RESPONSABLES_INFRAESTRUCTURA.map(r => (
               <option key={r.codigo} value={r.nombre}>
-                ðŸ‘¤ {r.nombre}
+                👤 {r.nombre}
               </option>
             ))}
           </select>
@@ -673,7 +673,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
             <option value="Todos">Todos los Campus</option>
             {getCampusList().map(c => (
               <option key={c.sigla} value={c.sigla}>
-                {c.sigla} â€” {c.nombre}
+                {c.sigla} — {c.nombre}
               </option>
             ))}
           </select>
@@ -685,9 +685,9 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
             className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm font-semibold"
           >
             <option value="Todas">Todas las Prioridades</option>
-            <option value="Alta">ðŸ”´ Alta (P1)</option>
-            <option value="Media">ðŸŸ¡ Media (P2)</option>
-            <option value="Baja">ðŸŸ¢ Baja (P3)</option>
+            <option value="Alta">🔴 Alta (P1)</option>
+            <option value="Media">🟡 Media (P2)</option>
+            <option value="Baja">🟢 Baja (P3)</option>
           </select>
         </div>
         <div>
@@ -697,9 +697,9 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
             className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm font-semibold"
           >
             <option value="Todos">Todos los Estados</option>
-            <option value="Pendiente">â³ Pendiente</option>
-            <option value="En Proceso">ðŸš§ En Proceso / EjecuciÃ³n</option>
-            <option value="Completado">âœ… Completado</option>
+            <option value="Pendiente">⏳ Pendiente</option>
+            <option value="En Proceso">🚧 En Proceso / Ejecución</option>
+            <option value="Completado">✅ Completado</option>
           </select>
         </div>
         <div>
@@ -722,21 +722,21 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
             onChange={e => setFiltroLicitacion(e.target.value as 'Todos' | 'Con' | 'Sin')}
             className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-700 focus:ring-2 focus:ring-indigo-500 shadow-sm font-semibold"
           >
-            <option value="Todos">Con / Sin LicitaciÃ³n</option>
-            <option value="Con">ðŸ“‹ Con LicitaciÃ³n</option>
-            <option value="Sin">â€” Sin LicitaciÃ³n</option>
+            <option value="Todos">Con / Sin Licitación</option>
+            <option value="Con">📋 Con Licitación</option>
+            <option value="Sin">— Sin Licitación</option>
           </select>
         </div>
       </div>
 
-      {/* Totales del filtro activo â€” se recalculan sobre lo que muestra la tabla, no sobre toda la cartera */}
+      {/* Totales del filtro activo — se recalculan sobre lo que muestra la tabla, no sobre toda la cartera */}
       {!modoSelector && (
         <div className={`px-3 py-2 rounded-xl border text-[10px] space-y-1.5 ${
           hayFiltrosActivos ? 'bg-sky-50 border-sky-200' : 'bg-slate-50 border-slate-200'
         }`}>
           <div className="flex items-center justify-between gap-2">
             <span className="font-bold uppercase tracking-wide text-slate-500">
-              {hayFiltrosActivos ? `Filtro activo Â· ${filtered.length} proyecto(s)` : `Todos los proyectos Â· ${filtered.length}`}
+              {hayFiltrosActivos ? `Filtro activo · ${filtered.length} proyecto(s)` : `Todos los proyectos · ${filtered.length}`}
             </span>
             {hayFiltrosActivos && (
               <button
@@ -771,11 +771,11 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
       ) : filtered.length === 0 ? (
         <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
           <BookOpen className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-          <p className="text-slate-500 text-sm">No se encontraron proyectos en la Cartera {anioCartera} con ese criterio de bÃºsqueda.</p>
+          <p className="text-slate-500 text-sm">No se encontraron proyectos en la Cartera {anioCartera} con ese criterio de búsqueda.</p>
         </div>
       ) : (
         <>
-        {/* Celular: lista compacta (una fila por proyecto, tÃ­tulo completo). Tocar la fila abre la Ficha, donde se editan los datos. */}
+        {/* Celular: lista compacta (una fila por proyecto, título completo). Tocar la fila abre la Ficha, donde se editan los datos. */}
         <div className="sm:hidden bg-white rounded-2xl border border-slate-200 shadow-sm divide-y divide-slate-100 overflow-hidden">
           {filtered.map(p => {
             const colorPrioridad = p.prioridad === 'Alta' ? 'bg-red-500' : p.prioridad === 'Baja' ? 'bg-emerald-500' : 'bg-amber-400';
@@ -792,12 +792,12 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                   <p className="text-[13px] font-bold text-slate-800 leading-snug">{(p.nombre || '').toUpperCase()}</p>
                   <p className="text-[11px] text-slate-500 leading-snug mt-0.5">
                     <span className="font-mono font-bold text-sky-700">{p.codigoProyecto || (p.correlativo ? String(p.correlativo).padStart(3, '0') : '-')}</span>
-                    {' Â· '}{p.estado}
-                    {p.campusSigla && ` Â· ${p.campusSigla}`}
-                    {' Â· '}<span className="font-semibold text-slate-700">{formatoMonedaCLP(p.montoAdjudicado || p.valorAprox)}</span>
+                    {' · '}{p.estado}
+                    {p.campusSigla && ` · ${p.campusSigla}`}
+                    {' · '}<span className="font-semibold text-slate-700">{formatoMonedaCLP(p.montoAdjudicado || p.valorAprox)}</span>
                     {p.montoAdjudicado ? ' adj.' : ' est.'}
-                    {p.presupuesto?.aprobado && <span className="text-indigo-600 font-bold"> Â· âœ“ Ppto</span>}
-                    {tieneLicitacion(p) && <span className="text-indigo-600 font-bold"> Â· Lic.</span>}
+                    {p.presupuesto?.aprobado && <span className="text-indigo-600 font-bold"> · ✓ Ppto</span>}
+                    {tieneLicitacion(p) && <span className="text-indigo-600 font-bold"> · Lic.</span>}
                   </p>
                   {p.responsableNombre && <p className="text-[10px] text-slate-400 truncate">{p.responsableNombre}</p>}
                 </div>
@@ -822,11 +822,11 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
           <table className={`w-full text-xs ${modoSelector ? 'min-w-[560px]' : 'min-w-[880px]'}`}>
             <thead className="bg-slate-900 text-white border-b border-slate-800">
               <tr>
-                <th className="px-3 py-1.5 text-center font-bold sticky top-0 z-10 bg-slate-900">CÃ³d. Proyecto</th>
+                <th className="px-3 py-1.5 text-center font-bold sticky top-0 z-10 bg-slate-900">Cód. Proyecto</th>
                 {!modoSelector && <th className="px-3 py-1.5 text-center font-bold sticky top-0 z-10 bg-slate-900">Centro Costo (CC)</th>}
                 {!modoSelector && <th className="px-3 py-1.5 text-center font-bold sticky top-0 z-10 bg-slate-900">Orden Compra (OC)</th>}
                 <th className="px-3 py-1.5 text-left font-bold sticky top-0 z-10 bg-slate-900">Proyecto Institucional</th>
-                <th className="px-3 py-1.5 text-left font-bold sticky top-0 z-10 bg-slate-900">UbicaciÃ³n UCT</th>
+                <th className="px-3 py-1.5 text-left font-bold sticky top-0 z-10 bg-slate-900">Ubicación UCT</th>
                 {!modoSelector && <th className="px-3 py-1.5 text-center font-bold sticky top-0 z-10 bg-slate-900">Prioridad</th>}
                 {!modoSelector && <th className="px-3 py-1.5 text-center font-bold sticky top-0 z-10 bg-slate-900">Estado / Avance</th>}
                 <th className="px-3 py-1.5 text-right font-bold sticky top-0 z-10 bg-slate-900 min-w-[190px]">Presupuesto (Estimado / Adjudicado / Gasto)</th>
@@ -889,7 +889,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                         {tieneLicitacion(p) && (
                           <span
                             className="shrink-0 inline-flex items-center gap-1 text-[9px] font-extrabold bg-indigo-100 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded-full mt-0.5"
-                            title="Este proyecto ya tiene una licitaciÃ³n creada"
+                            title="Este proyecto ya tiene una licitación creada"
                           >
                             <FileText className="w-2.5 h-2.5" />
                           </span>
@@ -1006,16 +1006,16 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                               'bg-amber-50 text-amber-700 border-amber-200'
                             }`}
                           >
-                            <option value="Alta">ðŸ”´ Alta (P1)</option>
-                            <option value="Media">ðŸŸ¡ Media (P2)</option>
-                            <option value="Baja">ðŸŸ¢ Baja (P3)</option>
+                            <option value="Alta">🔴 Alta (P1)</option>
+                            <option value="Media">🟡 Media (P2)</option>
+                            <option value="Baja">🟢 Baja (P3)</option>
                           </select>
                           <button
                             type="button"
                             onClick={() => handleToggleAprobacionPresupuesto(p)}
                             disabled={!isAdmin}
                             title={(p.presupuesto?.aprobado
-                              ? `Aprobado para Presupuesto Anual por ${p.presupuesto.aprobadoPorNombre || p.presupuesto.aprobadoPorEmail || 'â€”'} el ${p.presupuesto.fecha ? formatoFecha(p.presupuesto.fecha) : 'â€”'}.`
+                              ? `Aprobado para Presupuesto Anual por ${p.presupuesto.aprobadoPorNombre || p.presupuesto.aprobadoPorEmail || '—'} el ${p.presupuesto.fecha ? formatoFecha(p.presupuesto.fecha) : '—'}.`
                               : 'Fuera del Presupuesto Anual Proyectado.')
                               + (isAdmin ? (p.presupuesto?.aprobado ? ' Clic para retirar.' : ' Clic para aprobar.') : ' Solo el administrador puede aprobar presupuestos.')}
                             className={`text-[9px] font-extrabold rounded-full px-2 py-0.5 border transition whitespace-nowrap disabled:cursor-default ${
@@ -1024,7 +1024,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                                 : `bg-white text-slate-400 border-slate-200 ${isAdmin ? 'hover:bg-slate-50 hover:text-slate-600' : ''}`
                             }`}
                           >
-                            {p.presupuesto?.aprobado ? 'âœ“ Aprob. Ppto' : p.presupuesto?.rechazado ? 'âœ— Rechazado' : p.presupuesto?.observado ? '! Observado' : isAdmin ? 'Aprobar Ppto' : 'Sin aprobar'}
+                            {p.presupuesto?.aprobado ? '✓ Aprob. Ppto' : p.presupuesto?.rechazado ? '✗ Rechazado' : p.presupuesto?.observado ? '! Observado' : isAdmin ? 'Aprobar Ppto' : 'Sin aprobar'}
                           </button>
                         </div>
                       </td>
@@ -1088,7 +1088,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                               p.bases ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200' :
                               'text-slate-400 bg-slate-50 hover:bg-slate-100 border-slate-200'
                             }`}
-                            title={p.bases ? `Continuar Bases (${p.bases.estado}) â€” Ãºltima ediciÃ³n ${formatoFecha(p.bases.fechaActualizacion)}` : 'Generar Bases Administrativas y TÃ©cnicas'}
+                            title={p.bases ? `Continuar Bases (${p.bases.estado}) — última edición ${formatoFecha(p.bases.fechaActualizacion)}` : 'Generar Bases Administrativas y Técnicas'}
                           >
                             <ScrollText className="w-3.5 h-3.5" />
                           </button>
@@ -1106,7 +1106,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                         </div>
                       )}
                       {modoSelector && (
-                        <span className="text-indigo-600 font-bold text-xs">Seleccionar â†’</span>
+                        <span className="text-indigo-600 font-bold text-xs">Seleccionar →</span>
                       )}
                     </td>
                   </tr>
@@ -1133,7 +1133,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
             <div className="flex items-center justify-between border-b pb-4 shrink-0">
               <div>
                 <span className="text-[10px] font-extrabold uppercase bg-indigo-100 text-indigo-900 px-2.5 py-0.5 rounded">
-                  Cartera de Proyectos {anioCartera} â€¢ SubdirecciÃ³n de Infraestructura
+                  Cartera de Proyectos {anioCartera} • Subdirección de Infraestructura
                 </span>
                 <h3 className="text-base font-bold text-slate-800 mt-1">
                   {editingId ? `Editar Proyecto: ${form.nombre}` : `Nuevo Proyecto en Cartera ${anioCartera}`}
@@ -1144,7 +1144,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
               </button>
             </div>
 
-            {/* PestaÃ±as del Modal (Datos Generales | Planos | Documentos) */}
+            {/* Pestañas del Modal (Datos Generales | Planos | Documentos) */}
             <div className="flex items-center gap-2 border-b pb-1 shrink-0 text-xs">
               <button
                 type="button"
@@ -1169,7 +1169,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                 }`}
               >
                 <Paperclip className="w-3.5 h-3.5" />
-                <span>ðŸ“ Planos del Proyecto ({(form.documentosAntecedentes || []).filter(d => d.tipo === 'Plano').length})</span>
+                <span>📐 Planos del Proyecto ({(form.documentosAntecedentes || []).filter(d => d.tipo === 'Plano').length})</span>
               </button>
 
               <button
@@ -1182,7 +1182,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                 }`}
               >
                 <FileText className="w-3.5 h-3.5" />
-                <span>ðŸ“„ Documentos & Bases ({(form.documentosAntecedentes || []).filter(d => d.tipo !== 'Plano').length})</span>
+                <span>📄 Documentos & Bases ({(form.documentosAntecedentes || []).filter(d => d.tipo !== 'Plano').length})</span>
               </button>
             </div>
 
@@ -1192,7 +1192,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
               {/* TAB 1: DATOS GENERALES */}
               {tabActivaModal === 'datos' && (
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  {/* CodificaciÃ³n Oficial */}
+                  {/* Codificación Oficial */}
                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
                     <div>
                       <label className="block font-semibold text-slate-700 mb-1">Centro de Costo (CC) *</label>
@@ -1207,7 +1207,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                           .filter(c => c.estado !== 'Inactivo' || c.codigoCP === form.codigoCP)
                           .map(c => (
                             <option key={c.codigoCP} value={c.codigoCP}>
-                              {c.codigoCP} â€” {c.nombre}
+                              {c.codigoCP} — {c.nombre}
                             </option>
                           ))}
                       </select>
@@ -1215,33 +1215,33 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                     </div>
 
                     <div>
-                      <label className="block font-semibold text-slate-700 mb-1">CÃ³d. Proyecto Correlativo</label>
+                      <label className="block font-semibold text-slate-700 mb-1">Cód. Proyecto Correlativo</label>
                       <input
                         type="text"
                         disabled
-                        value={form.codigoProyecto || 'Se asignarÃ¡ automÃ¡ticamente al guardar'}
+                        value={form.codigoProyecto || 'Se asignará automáticamente al guardar'}
                         className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg outline-none font-bold text-slate-500 cursor-not-allowed"
                       />
-                      <span className="text-[10px] text-slate-400 mt-0.5 block">Identificador correlativo â€” lo asigna el sistema, no es editable</span>
+                      <span className="text-[10px] text-slate-400 mt-0.5 block">Identificador correlativo — lo asigna el sistema, no es editable</span>
                     </div>
 
                     <div>
-                      <label className="block font-semibold text-slate-500 mb-1">NÂ° Orden Compra (OC)</label>
+                      <label className="block font-semibold text-slate-500 mb-1">N° Orden Compra (OC)</label>
                       <input
                         type="text"
                         disabled
-                        value={form.ordenCompraNumero || form.codigoOC || 'AsignaciÃ³n Post-AdjudicaciÃ³n'}
+                        value={form.ordenCompraNumero || form.codigoOC || 'Asignación Post-Adjudicación'}
                         className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-slate-500 outline-none text-[11px] font-semibold cursor-not-allowed"
                       />
-                      <span className="text-[10px] text-amber-700 font-semibold mt-0.5 block">Se carga al adjudicar la licitaciÃ³n (con el PDF de la OC)</span>
+                      <span className="text-[10px] text-amber-700 font-semibold mt-0.5 block">Se carga al adjudicar la licitación (con el PDF de la OC)</span>
                     </div>
 
                     <div>
-                      <label className="block font-semibold text-slate-500 mb-1">CÃ³digos OP / OT</label>
+                      <label className="block font-semibold text-slate-500 mb-1">Códigos OP / OT</label>
                       <input
                         type="text"
                         disabled
-                        value="AsignaciÃ³n Post-AdjudicaciÃ³n"
+                        value="Asignación Post-Adjudicación"
                         className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-slate-500 outline-none text-[11px] font-semibold"
                       />
                       <span className="text-[10px] text-amber-700 font-semibold mt-0.5 block">Se generan al adjudicar</span>
@@ -1254,7 +1254,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                       type="text"
                       required
                       {...ATRIBUTOS_ORTOGRAFIA_ES}
-                      placeholder="Ej: IluminaciÃ³n y tabiquerÃ­a interior laboratorio CRC17"
+                      placeholder="Ej: Iluminación y tabiquería interior laboratorio CRC17"
                       value={form.nombre}
                       onChange={e => setForm(f => ({ ...f, nombre: e.target.value.toLocaleUpperCase('es-CL') }))}
                       onBlur={e => setForm(f => ({ ...f, nombre: normalizarNombreProyecto(e.target.value) }))}
@@ -1268,12 +1268,12 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                         <div className="min-w-0">
                           <p className="font-semibold text-slate-700">Presupuesto Estimativo (opcional)</p>
                           <p className="text-[10px] text-slate-500">
-                            Excel o PDF con las partidas (Ãtem, DescripciÃ³n, Unidad, Cantidad, P. Unitario). Quedan como el itemizado del proyecto y sirven para sugerir la descripciÃ³n y el fundamento.
+                            Excel o PDF con las partidas (Ítem, Descripción, Unidad, Cantidad, P. Unitario). Quedan como el itemizado del proyecto y sirven para sugerir la descripción y el fundamento.
                           </p>
                         </div>
                         <label className={`flex items-center gap-1.5 bg-white hover:bg-slate-100 border border-slate-300 text-slate-700 font-bold px-2.5 py-1.5 rounded-lg text-[11px] shrink-0 ${leyendoPresupuesto ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}`}>
                           {leyendoPresupuesto ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                          {leyendoPresupuesto ? 'Leyendoâ€¦' : presupuestoAdjunto ? 'Cambiar archivo' : 'Adjuntar presupuesto'}
+                          {leyendoPresupuesto ? 'Leyendo…' : presupuestoAdjunto ? 'Cambiar archivo' : 'Adjuntar presupuesto'}
                           <input
                             type="file"
                             accept=".xlsx,.xls,.pdf"
@@ -1293,7 +1293,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                             <Paperclip className="w-3.5 h-3.5 shrink-0" />
                             <span className="truncate">{presupuestoAdjunto.archivo}</span>
                           </span>
-                          <span>{presupuestoAdjunto.itemizado.length} partidas Â· {formatoMonedaCLP(presupuestoAdjunto.total)} con IVA</span>
+                          <span>{presupuestoAdjunto.itemizado.length} partidas · {formatoMonedaCLP(presupuestoAdjunto.total)} con IVA</span>
                           {presupuestoAdjunto.total > 0 && presupuestoAdjunto.total !== form.valorAprox && (
                             <button
                               type="button"
@@ -1317,27 +1317,27 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
 
                   <div>
                     <div className="flex items-center justify-between gap-2 mb-1">
-                      <label className="block font-semibold text-slate-700">DescripciÃ³n del Requerimiento Institucional</label>
+                      <label className="block font-semibold text-slate-700">Descripción del Requerimiento Institucional</label>
                       <button
                         type="button"
                         onClick={() => mejorarDescripcion()}
                         disabled={mejorandoDescripcion || (!presupuestoAdjunto && !form.nombre.trim() && form.descripcion.trim().length < 10) || !isAIConfigured()}
                         title={
-                          !isAIConfigured() ? 'Configure VITE_GEMINI_API_KEY o VITE_OPENAI_API_KEY para habilitar esta funciÃ³n'
-                            : !presupuestoAdjunto && !form.nombre.trim() && form.descripcion.trim().length < 10 ? 'Escriba primero el nombre del proyecto o una descripciÃ³n breve, o adjunte el presupuesto estimativo'
-                            : presupuestoAdjunto ? 'La IA usa las partidas del presupuesto adjunto, el tÃ­tulo, el campus/edificio y lo que usted escribiÃ³ para describir el alcance, sin inventar cifras ni mencionar precios. Usted decide si usa la propuesta.'
-                            : 'La IA usa el tÃ­tulo, el campus/edificio y lo que usted escribiÃ³ para precisar el alcance con fundamento tÃ©cnico, sin inventar cifras. Usted decide si usa la propuesta.'
+                          !isAIConfigured() ? 'Configure VITE_GEMINI_API_KEY o VITE_OPENAI_API_KEY para habilitar esta función'
+                            : !presupuestoAdjunto && !form.nombre.trim() && form.descripcion.trim().length < 10 ? 'Escriba primero el nombre del proyecto o una descripción breve, o adjunte el presupuesto estimativo'
+                            : presupuestoAdjunto ? 'La IA usa las partidas del presupuesto adjunto, el título, el campus/edificio y lo que usted escribió para describir el alcance, sin inventar cifras ni mencionar precios. Usted decide si usa la propuesta.'
+                            : 'La IA usa el título, el campus/edificio y lo que usted escribió para precisar el alcance con fundamento técnico, sin inventar cifras. Usted decide si usa la propuesta.'
                         }
                         className="flex items-center gap-1.5 bg-violet-50 hover:bg-violet-100 disabled:opacity-50 disabled:cursor-not-allowed border border-violet-200 text-violet-800 font-bold px-2.5 py-1 rounded-lg text-[11px] shrink-0"
                       >
                         {mejorandoDescripcion ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                        {mejorandoDescripcion ? 'Redactandoâ€¦' : form.descripcion.trim() ? 'Mejorar con IA' : 'Redactar con IA'}
+                        {mejorandoDescripcion ? 'Redactando…' : form.descripcion.trim() ? 'Mejorar con IA' : 'Redactar con IA'}
                       </button>
                     </div>
                     <textarea
                       rows={3}
                       {...ATRIBUTOS_ORTOGRAFIA_ES}
-                      placeholder="Detalle los trabajos, recintos intervenidos y justificaciÃ³n de compra..."
+                      placeholder="Detalle los trabajos, recintos intervenidos y justificación de compra..."
                       value={form.descripcion}
                       onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))}
                       onBlur={e => setForm(f => ({ ...f, descripcion: corregirTextoAvanzado(e.target.value) }))}
@@ -1349,7 +1349,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                     {descripcionPropuestaIA && (
                       <div className="mt-2 rounded-lg border border-violet-200 bg-violet-50/60 p-3 space-y-2">
                         <p className="text-[11px] font-bold text-violet-800 flex items-center gap-1.5">
-                          <Sparkles className="w-3.5 h-3.5" /> Propuesta de la IA â€” revÃ­sela antes de usarla
+                          <Sparkles className="w-3.5 h-3.5" /> Propuesta de la IA — revísela antes de usarla
                         </p>
                         <p className="text-xs text-slate-700 whitespace-pre-line">{descripcionPropuestaIA}</p>
                         <div className="flex flex-wrap justify-end gap-2">
@@ -1366,7 +1366,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                             disabled={mejorandoDescripcion}
                             className="px-3 py-1.5 bg-white hover:bg-violet-50 disabled:opacity-50 border border-violet-200 text-violet-800 rounded-lg text-[11px] font-bold"
                           >
-                            Otra versiÃ³n
+                            Otra versión
                           </button>
                           <button
                             type="button"
@@ -1376,7 +1376,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                             }}
                             className="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-[11px] font-bold"
                           >
-                            Usar esta descripciÃ³n
+                            Usar esta descripción
                           </button>
                         </div>
                       </div>
@@ -1391,25 +1391,25 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                           type="button"
                           onClick={redactarFundamento}
                           disabled={redactandoFundamento || !form.nombre.trim()}
-                          title={`Redacta el fundamento a partir de la descripciÃ³n${presupuestoAdjunto ? ', del presupuesto adjunto' : ''} y de los argumentos escritos en este cuadro`}
+                          title={`Redacta el fundamento a partir de la descripción${presupuestoAdjunto ? ', del presupuesto adjunto' : ''} y de los argumentos escritos en este cuadro`}
                           className="flex items-center gap-1 text-[11px] font-bold text-violet-700 hover:text-violet-900 disabled:opacity-50"
                         >
                           {redactandoFundamento ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                          {redactandoFundamento ? 'Redactandoâ€¦' : 'Redactar con IA'}
+                          {redactandoFundamento ? 'Redactando…' : 'Redactar con IA'}
                         </button>
                       )}
                     </div>
                     <textarea
                       rows={2}
                       {...ATRIBUTOS_ORTOGRAFIA_ES}
-                      placeholder="Por quÃ© debe entrar al presupuesto: necesidad que resuelve, beneficio y urgencia. Se usa en la revisiÃ³n de la cartera."
+                      placeholder="Por qué debe entrar al presupuesto: necesidad que resuelve, beneficio y urgencia. Se usa en la revisión de la cartera."
                       value={form.fundamento}
                       onChange={e => setForm(f => ({ ...f, fundamento: e.target.value }))}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
                     />
                   </div>
 
-                  {/* UbicaciÃ³n: Campus & Edificio */}
+                  {/* Ubicación: Campus & Edificio */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
                     <div>
                       <label className="block font-semibold text-slate-700 mb-1 flex items-center gap-1">
@@ -1435,7 +1435,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                         <option value="">-- Seleccionar Campus --</option>
                         {getCampusList().map(c => (
                           <option key={c.sigla} value={c.sigla}>
-                            {c.sigla} â€” {c.nombre}
+                            {c.sigla} — {c.nombre}
                           </option>
                         ))}
                       </select>
@@ -1479,7 +1479,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                     </label>
                     <input
                       type="url"
-                      placeholder="https://drive.google.com/drive/folders/â€¦ (opcional, se puede agregar despuÃ©s en la ficha)"
+                      placeholder="https://drive.google.com/drive/folders/… (opcional, se puede agregar después en la ficha)"
                       value={form.driveCarpetaUrl}
                       onChange={e => setForm(f => ({ ...f, driveCarpetaUrl: e.target.value }))}
                       className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
@@ -1492,7 +1492,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                           ? <> (<a href={driveEdificio} target="_blank" rel="noreferrer" className="text-sky-700 underline">abrir carpeta de {form.edificioSigla}</a>)</>
                           : null;
                       })()}
-                      {' '}y pegue aquÃ­ su enlace.
+                      {' '}y pegue aquí su enlace.
                     </p>
                   </div>
 
@@ -1518,7 +1518,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                       <option value="">-- Seleccionar Responsable --</option>
                       {responsablesOrdenados.map(r => (
                         <option key={r.codigo} value={r.nombre}>
-                          {r.nombre}{r.esUsted ? ' (usted)' : ''} â€” {r.email} ({r.cargo})
+                          {r.nombre}{r.esUsted ? ' (usted)' : ''} — {r.email} ({r.cargo})
                         </option>
                       ))}
                     </select>
@@ -1546,7 +1546,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                           </option>
                         ))}
                       </select>
-                      <p className="text-[10px] text-slate-400 mt-1">Define quÃ© plantilla de Bases se pre-carga al generar las bases del proyecto.</p>
+                      <p className="text-[10px] text-slate-400 mt-1">Define qué plantilla de Bases se pre-carga al generar las bases del proyecto.</p>
                     </div>
                     <div>
                       <label className="block font-semibold text-slate-700 mb-1 flex items-center gap-1">
@@ -1560,7 +1560,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                         placeholder="-- Seleccionar Rubro --"
                         className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
                       />
-                      <p className="text-[10px] text-slate-400 mt-1">Especialidad del contratista: define a quÃ© proveedores se sugiere invitar y la normativa de las Bases. â˜… = sugerido para el tipo de obra.</p>
+                      <p className="text-[10px] text-slate-400 mt-1">Especialidad del contratista: define a qué proveedores se sugiere invitar y la normativa de las Bases. ★ = sugerido para el tipo de obra.</p>
                     </div>
                   </div>
 
@@ -1582,7 +1582,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                     </div>
                     <div>
                       <label className="block font-semibold text-slate-700 mb-1 flex items-center gap-1">
-                        <Clock className="w-3.5 h-3.5 text-amber-600" /> DuraciÃ³n Aproximada (dÃ­as)
+                        <Clock className="w-3.5 h-3.5 text-amber-600" /> Duración Aproximada (días)
                       </label>
                       <input
                         type="number"
@@ -1593,7 +1593,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                         className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-slate-700"
                       />
                       <span className="text-[10px] text-slate-400 mt-0.5 block">
-                        {form.duracionEstimadaDias > 0 ? `â‰ˆ ${(form.duracionEstimadaDias / 30).toFixed(1)} meses` : 'EstimaciÃ³n previa a licitar â€” se reemplaza por el plazo real al adjudicar'}
+                        {form.duracionEstimadaDias > 0 ? `≈ ${(form.duracionEstimadaDias / 30).toFixed(1)} meses` : 'Estimación previa a licitar — se reemplaza por el plazo real al adjudicar'}
                       </span>
                     </div>
                   </div>
@@ -1628,21 +1628,21 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1 flex items-center gap-1">
                       <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
-                      PolÃ­tica de GarantÃ­as del Contrato
+                      Política de Garantías del Contrato
                     </label>
                     <select
                       value={form.politicaGarantias || ''}
                       onChange={e => setForm(f => ({ ...f, politicaGarantias: (e.target.value || '') as typeof f.politicaGarantias }))}
                       className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
                     >
-                      <option value="">-- Sin definir (se usarÃ¡ la sugerencia por monto) --</option>
-                      <option value="Sin GarantÃ­as">Sin GarantÃ­as</option>
-                      <option value="RetenciÃ³n sobre Estados de Pago">RetenciÃ³n sobre Estados de Pago</option>
-                      <option value="Boletas de GarantÃ­a Completas">Boletas de GarantÃ­a Completas</option>
+                      <option value="">-- Sin definir (se usará la sugerencia por monto) --</option>
+                      <option value="Sin Garantías">Sin Garantías</option>
+                      <option value="Retención sobre Estados de Pago">Retención sobre Estados de Pago</option>
+                      <option value="Boletas de Garantía Completas">Boletas de Garantía Completas</option>
                     </select>
                     <p className="text-[10px] text-slate-400 mt-1">
                       Sugerencia para {formatoMonedaCLP(form.valorAprox || 0)}: <strong className="text-slate-600">{sugerirPoliticaGarantias(form.valorAprox || 0)}</strong>.
-                      {' '}No es obligatorio exigir boletas en contratos de bajo monto â€” esta polÃ­tica ajusta el texto de la secciÃ³n de GarantÃ­as en las Bases.
+                      {' '}No es obligatorio exigir boletas en contratos de bajo monto — esta política ajusta el texto de la sección de Garantías en las Bases.
                     </p>
                   </div>
 
@@ -1670,7 +1670,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <input
                         type="text"
-                        placeholder="Nombre / DescripciÃ³n del Plano (ej: Plano Arquitectura Nivel 1)..."
+                        placeholder="Nombre / Descripción del Plano (ej: Plano Arquitectura Nivel 1)..."
                         value={nuevoDocNombre}
                         onChange={e => setNuevoDocNombre(e.target.value)}
                         className="sm:col-span-2 px-3 py-2 bg-white border border-sky-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-sky-500"
@@ -1693,16 +1693,16 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                     <h5 className="font-bold text-slate-800 text-xs">Planos Registrados:</h5>
                     {(form.documentosAntecedentes || []).filter(d => d.tipo === 'Plano').length === 0 ? (
                       <p className="text-slate-400 italic text-xs p-4 bg-slate-50 rounded-xl text-center border border-dashed border-slate-300">
-                        No hay planos adjuntos aÃºn a este proyecto.
+                        No hay planos adjuntos aún a este proyecto.
                       </p>
                     ) : (
                       (form.documentosAntecedentes || []).filter(d => d.tipo === 'Plano').map(d => (
                         <div key={d.id} className="p-3 bg-white border border-slate-200 rounded-xl flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <span className="p-2 bg-sky-100 text-sky-700 rounded-lg font-bold text-xs">ðŸ“ DWG/PDF</span>
+                            <span className="p-2 bg-sky-100 text-sky-700 rounded-lg font-bold text-xs">📐 DWG/PDF</span>
                             <div>
                               <span className="font-bold text-slate-800 block text-xs">{d.nombre}</span>
-                              <span className="text-[10px] text-slate-400">{d.archivoNombre} â€¢ Carga: {d.fechaCarga}</span>
+                              <span className="text-[10px] text-slate-400">{d.archivoNombre} • Carga: {d.fechaCarga}</span>
                             </div>
                           </div>
                           <button
@@ -1726,12 +1726,12 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                     <div>
                       <h4 className="font-bold text-emerald-900 text-xs flex items-center gap-2">
                         <ScrollText className="w-4 h-4 text-emerald-700" />
-                        Bases Administrativas y TÃ©cnicas
+                        Bases Administrativas y Técnicas
                       </h4>
                       <p className="text-[11px] text-emerald-800 mt-1">
                         {editingId
-                          ? 'Se generan solas a partir de una plantilla segÃºn el Tipo de Obra del proyecto (pestaÃ±a Datos Generales) â€” no se adjunta un archivo aquÃ­.'
-                          : 'Al hacer clic en "Agregar Proyecto a Cartera" (botÃ³n abajo) se abrirÃ¡n automÃ¡ticamente, ya pre-cargadas segÃºn el Tipo de Obra que elijas en "Datos Generales".'}
+                          ? 'Se generan solas a partir de una plantilla según el Tipo de Obra del proyecto (pestaña Datos Generales) — no se adjunta un archivo aquí.'
+                          : 'Al hacer clic en "Agregar Proyecto a Cartera" (botón abajo) se abrirán automáticamente, ya pre-cargadas según el Tipo de Obra que elijas en "Datos Generales".'}
                       </p>
                     </div>
                     {editingId && (
@@ -1753,11 +1753,11 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                       <FolderPlus className="w-4 h-4 text-indigo-600" />
                       <span>Agregar Otro Documento o Antecedente</span>
                     </h4>
-                    <p className="text-[10px] text-indigo-700 -mt-1.5">Solo para registrar nombres de antecedentes de respaldo (planos externos, informes, anexos) â€” no reemplaza las Bases de arriba.</p>
+                    <p className="text-[10px] text-indigo-700 -mt-1.5">Solo para registrar nombres de antecedentes de respaldo (planos externos, informes, anexos) — no reemplaza las Bases de arriba.</p>
                     <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
                       <input
                         type="text"
-                        placeholder="Nombre / DescripciÃ³n (ej: EETT Especificaciones TÃ©cnicas)..."
+                        placeholder="Nombre / Descripción (ej: EETT Especificaciones Técnicas)..."
                         value={nuevoDocNombre}
                         onChange={e => setNuevoDocNombre(e.target.value)}
                         className="sm:col-span-2 px-3 py-2 bg-white border border-indigo-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500"
@@ -1767,7 +1767,7 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                         onChange={e => setNuevoDocTipo(e.target.value as any)}
                         className="px-2 py-2 bg-white border border-indigo-300 rounded-lg text-xs font-semibold"
                       >
-                        <option value="Bases">Bases TÃ©cnicas</option>
+                        <option value="Bases">Bases Técnicas</option>
                         <option value="EETT">EETT / Memoria</option>
                         <option value="Documento">Documento General</option>
                         <option value="Anexo">Anexo Administrativo</option>
@@ -1787,16 +1787,16 @@ export const ProyectosMaestros: React.FC<ProyectosMaestrosProps> = ({
                     <h5 className="font-bold text-slate-800 text-xs">Documentos Registrados:</h5>
                     {(form.documentosAntecedentes || []).filter(d => d.tipo !== 'Plano').length === 0 ? (
                       <p className="text-slate-400 italic text-xs p-4 bg-slate-50 rounded-xl text-center border border-dashed border-slate-300">
-                        No hay documentos tÃ©cnicos adjuntos aÃºn a este proyecto.
+                        No hay documentos técnicos adjuntos aún a este proyecto.
                       </p>
                     ) : (
                       (form.documentosAntecedentes || []).filter(d => d.tipo !== 'Plano').map(d => (
                         <div key={d.id} className="p-3 bg-white border border-slate-200 rounded-xl flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <span className="p-2 bg-indigo-100 text-indigo-800 rounded-lg font-bold text-xs">ðŸ“„ {d.tipo}</span>
+                            <span className="p-2 bg-indigo-100 text-indigo-800 rounded-lg font-bold text-xs">📄 {d.tipo}</span>
                             <div>
                               <span className="font-bold text-slate-800 block text-xs">{d.nombre}</span>
-                              <span className="text-[10px] text-slate-400">{d.archivoNombre} â€¢ Carga: {d.fechaCarga}</span>
+                              <span className="text-[10px] text-slate-400">{d.archivoNombre} • Carga: {d.fechaCarga}</span>
                             </div>
                           </div>
                           <button
