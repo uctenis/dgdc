@@ -65,12 +65,16 @@ describe('pantalla de consultas y análisis', () => {
     await desmontar();
   });
 
-  it('una pregunta frecuente arma la consulta con un clic', async () => {
+  it('en lugar de preguntas frecuentes tiene la barra para preguntar en palabras', async () => {
     const { contenedor, desmontar } = await montar({ f: { edificio: ['CJP08'] } });
-    const boton = [...contenedor.querySelectorAll('button')].find(b => b.textContent?.startsWith('¿Cómo se reparten oficinas y salas'));
-    expect(boton).toBeTruthy();
-    await act(async () => { boton!.click(); });
-    expect(contenedor.textContent).toContain('de tipo OFICINA, SALA CATEDRA');
+    expect(contenedor.textContent).not.toContain('Preguntas frecuentes');
+    // El asistente se carga aparte: se espera a que aparezca su barra.
+    let barra: Element | null = null;
+    for (let i = 0; i < 60 && !barra; i++) {
+      await act(async () => { await new Promise(r => setTimeout(r, 50)); });
+      barra = contenedor.querySelector('input[placeholder^="Pregunte en palabras"]');
+    }
+    expect(barra).toBeTruthy();
     await desmontar();
   });
 
