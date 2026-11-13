@@ -1,9 +1,13 @@
 import { collection, doc, getDoc, getDocs, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { comprimirImagen } from '../utils/imagenes';
+import { supabase, SUPABASE_CONFIGURADO } from '../lib/supabase';
 
 /**
- * Almacén de archivos en Firestore (sin Firebase Storage, que exige plan de pago). Cada archivo es un documento
+ * Archivos del sistema. Desde la migración 0024 los nuevos se guardan en Supabase Storage (depósito «archivos-sistema»,
+ * con reglas por carpeta según quién puede verlos); su enlace es `{sitio}/archivo/sb-{ruta codificada}`.
+ *
+ * Antes: almacén de archivos en Firestore (sin Firebase Storage, que exige plan de pago). Cada archivo es un documento
  * `archivos/{id}` con sus datos y quién puede verlo, y el contenido en `archivos/{id}/partes/{n}` (pedazos en base64
  * de ~700 KB, bajo el límite de 1 MB por documento). Se abre con el enlace propio `{sitio}/archivo/{id}`.
  */
@@ -72,12 +76,66 @@ async function prepararImagen(file: File): Promise<Blob> {
   return new Blob([desdeBase64(dataUrl.split(',')[1])], { type: 'image/jpeg' });
 }
 
+// ── Supabase Storage ──
+const DEPOSITO = 'archivos-sistema';
+const PREFIJO_SUPABASE = 'sb-';
+
+const b64url = (s: string) => btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const desdeB64url = (s: string) => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)));
+
+/** Nombre apto para la ruta del almacenamiento (sin tildes ni símbolos); el nombre original va en el enlace. */
+function nombreSeguro(nombre: string): string {
+  const limpio = nombre.normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '');
+  return (limpio || 'archivo').slice(-120);
+}
+
+/** Carpeta según quién puede ver el archivo (las reglas de la 0024 se aplican por carpeta). */
+function carpetaDe(acceso: AccesoArchivo): string {
+  switch (acceso.tipo) {
+    case 'invitados': return `invitados/${acceso.licitacionId}`;
+    case 'oferta': return `oferta/${acceso.licitacionId}/${acceso.proveedorId}`;
+    case 'inscripcion': return `inscripcion/${acceso.codigo}`;
+    default: return 'interno';
+  }
+}
+
+/** Ruta y nombre original de un archivo de Supabase a partir de su id (o null si es de Firestore). */
+export function rutaSupabase(id: string): { ruta: string; nombre: string } | null {
+  if (!id.startsWith(PREFIJO_SUPABASE)) return null;
+  try {
+    const [ruta, nombre] = desdeB64url(id.slice(PREFIJO_SUPABASE.length)).split('|');
+    return ruta ? { ruta, nombre: nombre || ruta.split('/').pop() || 'archivo' } : null;
+  } catch {
+    return null;
+  }
+}
+
+function mensajeErrorSubida(mensaje: string): string {
+  if (/row-level security|unauthorized|403/i.test(mensaje)) {
+    return 'No tiene permiso para subir este archivo (el plazo pudo haber cerrado o la invitación ya no está vigente).';
+  }
+  return `No se pudo subir el archivo: ${mensaje}`;
+}
+
 /** Guarda el archivo y devuelve su enlace. `onProgress` va de 0 a 100. */
 export async function subirArchivo(file: File, acceso: AccesoArchivo, onProgress?: (pct: number) => void): Promise<string> {
   const contenido = await prepararImagen(file);
   if (contenido.size > MAX_BYTES_ARCHIVO) {
     throw new Error(`ARCHIVO_MUY_GRANDE: el archivo pesa ${(contenido.size / 1048576).toFixed(1)} MB; el máximo es ${MAX_BYTES_ARCHIVO / 1048576} MB.`);
   }
+  if (!SUPABASE_CONFIGURADO) return subirArchivoFirestore(file, contenido, acceso, onProgress);
+  onProgress?.(5);
+  const ruta = `${carpetaDe(acceso)}/${crypto.randomUUID()}/${nombreSeguro(file.name)}`;
+  const { error } = await supabase.storage.from(DEPOSITO).upload(ruta, contenido, {
+    contentType: contenido.type || file.type || 'application/octet-stream', upsert: false,
+  });
+  if (error) throw new Error(mensajeErrorSubida(error.message));
+  onProgress?.(100);
+  return urlArchivo(PREFIJO_SUPABASE + b64url(`${ruta}|${file.name}`));
+}
+
+/** Almacén anterior (pedazos en Firestore): solo si este ambiente no tiene Supabase configurado. */
+async function subirArchivoFirestore(file: File, contenido: Blob, acceso: AccesoArchivo, onProgress?: (pct: number) => void): Promise<string> {
   const bytes = new Uint8Array(await contenido.arrayBuffer());
   const partes = Math.max(1, Math.ceil(bytes.length / BYTES_POR_PARTE));
   const ref = doc(collection(db, 'archivos'));
@@ -118,6 +176,12 @@ export async function obtenerBlobArchivo(url: string): Promise<{ blob: Blob; nom
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`No se pudo descargar (${resp.status}).`);
     return { blob: await resp.blob() };
+  }
+  const enSupabase = rutaSupabase(id);
+  if (enSupabase) {
+    const { data, error } = await supabase.storage.from(DEPOSITO).download(enSupabase.ruta);
+    if (error || !data) throw new Error(/not found|404/i.test(error?.message || '') ? 'ARCHIVO_NO_EXISTE' : 'ARCHIVO_SIN_PERMISO');
+    return { blob: data, nombre: enSupabase.nombre };
   }
   const meta = await leerMetaArchivo(id);
   if (!meta) throw new Error('ARCHIVO_NO_EXISTE');

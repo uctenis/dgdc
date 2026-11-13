@@ -39,7 +39,7 @@ export function ArchivoPage() {
       .catch(err => {
         if (!vigente) return;
         const msg = String((err as { code?: string; message?: string })?.code || (err as Error)?.message || '');
-        setEstado(/permission|insufficient/i.test(msg) ? 'sin-permiso' : 'no-existe');
+        setEstado(/permission|insufficient|SIN_PERMISO/i.test(msg) ? 'sin-permiso' : 'no-existe');
       });
     return () => { vigente = false; if (objeto) URL.revokeObjectURL(objeto); };
   }, [id, loading, user]);

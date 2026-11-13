@@ -282,7 +282,10 @@ export function InscripcionProveedorPage() {
                             <input type="file" accept="application/pdf,image/*" className="hidden" disabled={Boolean(subiendo)} onChange={e => { void subir(r.id, e.target.files?.[0]); e.target.value = ''; }} />
                           </label>
                         )}
-                        {d && <a href={d.url} target="_blank" rel="noreferrer" className="text-xs text-sky-700 hover:underline truncate max-w-[220px]">{d.nombre}</a>}
+                        {/* Sin sesión el archivo ya guardado no se puede volver a abrir (solo lo ve la UCT): se muestra su nombre. */}
+                        {d && (d.url.startsWith('blob:')
+                          ? <a href={d.url} target="_blank" rel="noreferrer" className="text-xs text-sky-700 hover:underline truncate max-w-[220px]">{d.nombre}</a>
+                          : <span className="text-xs text-slate-600 truncate max-w-[220px]" title="Documento recibido">{d.nombre}</span>)}
                         {d && r.vigenciaDias && (
                           <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
                             Emitido el
