@@ -1,6 +1,7 @@
 import { collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, setDoc, onSnapshot, serverTimestamp, increment, arrayUnion, arrayRemove, collectionGroup, type Unsubscribe, db } from '../../lib/almacen';
 import { type LicitacionProyecto, type InvitadoLicitacion, type EnvioInvitacion, type InvitacionAcceso } from '../../types';
 import { getAllLicitaciones } from './licitaciones';
+import { supabase } from '../../lib/supabase';
 
 // ═══════════════════════════════════════════════════════════════════
 // INVITADOS A LICITACIÓN (subcolección)
@@ -130,13 +131,13 @@ export async function verificarInvitacionLicitacion(
   quien: { proveedorId?: string | null; email?: string | null; token?: string | null }
 ): Promise<InvitacionAcceso | null> {
   if (!licitacionId || !quien.token) return null;
-  const snap = await getDoc(doc(db, 'invitaciones', quien.token));
-  if (!snap.exists()) return null;
-  const invitacion = snap.data() as InvitacionAcceso;
-  if (invitacion.licitacionId !== licitacionId) return null;
-  if (quien.proveedorId) return invitacion.proveedorId === quien.proveedorId ? invitacion : null;
-  const email = (quien.email || '').trim().toLowerCase();
-  return email && (invitacion.proveedorEmail || '').trim().toLowerCase() === email ? invitacion : null;
+  // La base compara el código con el correo verificado de la sesión (o con la empresa ya vinculada a la cuenta); sin
+  // sesión, con el correo indicado. Los códigos no se pueden leer ni listar directamente (migración 0023).
+  const { data, error } = await supabase.rpc('portal_verificar_invitacion', { p_lic: licitacionId, p_token: quien.token, p_email: quien.email || null });
+  if (error) throw new Error(error.message);
+  const invitacion = data as InvitacionAcceso | null;
+  if (!invitacion) return null;
+  return quien.proveedorId && invitacion.proveedorId !== quien.proveedorId ? null : invitacion;
 }
 
 export async function removeInvitado(licitacionId: string, proveedorId: string): Promise<void> {

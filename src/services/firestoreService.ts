@@ -8,7 +8,7 @@ export { subscribeToInvitados, asegurarTokensInvitados, addEnvioInvitacion, subs
 export { addConsulta, subscribeToConsultas, subscribeToMisConsultas, subscribeToConsultasPublicadas, subscribeToConsultasPendientes, updateInvitadoEstado } from './datos/consultas';
 export {  subscribeToAllCotizaciones, getAllCotizaciones, licitacionCerradaParaOfertas,  subscribeToEstadosPago, subscribeToAumentosObra, subscribeToBitacoraProyecto, addHitoDesarrolloProyecto, updateHitoDesarrolloEstado } from './datos/cotizacionesYObra';
 export { subscribeToPropuestas, savePropuesta, cargarAntecedentesContrato, registrarConfirmacionPropuesta, getPropuesta, convertirPropuestaACotizacion } from './datos/propuestas';
-export { createUserProfile, getUserProfile, updateUserProfile } from './datos/usuarios';
+export { createUserProfile, getUserProfile, updateUserProfile, vincularPerfilProveedor } from './datos/usuarios';
 export { contarCarteraYLicitaciones, resetCarteraYLicitaciones } from './datos/mantenimiento';
 export type { ProyectoConGastoEfectivo } from './datos/mantenimiento';
 export { subscribeToGarantias, subscribeToGarantiasVigentes, registrarAperturaOfertas } from './datos/garantias';

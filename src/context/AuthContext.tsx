@@ -12,7 +12,7 @@ import {
   type User,
 } from 'firebase/auth';
 import { auth } from '../lib/firebase';
-import { createUserProfile, getUserProfile, verificarInvitacionLicitacion } from '../services/firestoreService';
+import { createUserProfile, getUserProfile, verificarInvitacionLicitacion, vincularPerfilProveedor } from '../services/firestoreService';
 import type { UserProfile } from '../types';
 import { getInternalAccess, SYSTEM_ADMIN_EMAIL } from '../services/internalAccessService';
 import { cargarConfigCompartida, suscribirConfigCompartida } from '../services/configCompartida';
@@ -217,6 +217,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Vincula la cuenta a la empresa invitada; si la base lo rechaza, se cierra la sesión con un mensaje claro.
+  const vincularOCerrar = async (licitacionId: string, token: string): Promise<UserProfile> => {
+    try {
+      return await vincularPerfilProveedor(licitacionId, token);
+    } catch (e) {
+      await signOut(auth);
+      const codigo = (e as Error).message;
+      setError(codigo === 'CUENTA_INTERNA'
+        ? 'Las cuentas @uct.cl ingresan por el inicio del sistema, no por el portal de proveedores.'
+        : codigo === 'INVALID_ROLE' ? 'Esta cuenta no corresponde a un perfil de proveedor.'
+        : 'No se pudo vincular su cuenta a la invitación. Ingrese con el correo al que llegó la invitación.');
+      throw new Error('NO_INVITADO');
+    }
+  };
+
   // Ingreso de proveedores con Google, SIEMPRE dentro de una licitación: solo entra quien esté
   // invitado a ella (por su cuenta ya vinculada o por el correo con el que se le invitó). No hay
   // registro libre ni lista de empresas.
@@ -247,22 +262,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error('NO_INVITADO');
       }
 
-      if (storedProfile) {
-        setUser(cuenta);
-        setProfile(storedProfile);
-        return;
-      }
-      const perfil: UserProfile = {
-        uid: cuenta.uid,
-        email: cuenta.email || '',
-        role: 'proveedor',
-        displayName: invitacion.proveedorNombre || cuenta.displayName || cuenta.email?.split('@')[0] || 'Proveedor',
-        proveedorId: invitacion.proveedorId,
-        tokenInvitacion: token,
-        fechaRegistro: new Date().toISOString(),
-        verificado: true,
-      };
-      await createUserProfile(cuenta.uid, perfil);
+      // La base crea (o actualiza) el perfil de proveedor tras comprobar de nuevo la invitación.
+      const perfil = await vincularOCerrar(licitacionId, token);
       setUser(cuenta);
       setProfile(perfil);
     } catch (e: unknown) {
@@ -339,22 +340,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error('NO_INVITADO');
       }
 
-      if (storedProfile) {
-        setUser(user);
-        setProfile(storedProfile);
-        return;
-      }
-      const nuevoPerfil: UserProfile = {
-        uid: user.uid,
-        email: user.email || email,
-        role: 'proveedor',
-        displayName: invitacion.proveedorNombre,
-        proveedorId: invitacion.proveedorId,
-        tokenInvitacion: token,
-        fechaRegistro: new Date().toISOString(),
-        verificado: true,
-      };
-      await createUserProfile(user.uid, nuevoPerfil);
+      const nuevoPerfil = await vincularOCerrar(licitacionId, token);
       setUser(user);
       setProfile(nuevoPerfil);
     } catch (e: unknown) {

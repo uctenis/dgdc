@@ -5,9 +5,8 @@ import { type UserProfile } from '../../types';
 
 // ═══════════════════════════════════════════════════════════════════
 // USUARIOS / PERFILES AUTH
-// Firestore es la fuente del perfil (y del rol) mientras dure la migración: Supabase guarda solo una COPIA, que se
-// escribe después de Firestore y nunca se lee para decidir permisos. Las reglas de Supabase (migración 0013) solo
-// dejan escribir esa copia al personal UCT, así que para los proveedores la copia simplemente no se actualiza.
+// Personal UCT: Firestore es la fuente del perfil mientras dure la migración y Supabase guarda una copia.
+// Proveedores: su perfil vive solo en Supabase y lo crea la base al validar su invitación (portal_vincular, 0023).
 // ═══════════════════════════════════════════════════════════════════
 
 function copiarASupabase(perfil: UserProfile): void {
@@ -38,11 +37,34 @@ export async function createUserProfile(uid: string, data: Omit<UserProfile, 'ui
 }
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
-  const snap = await getDoc(doc(db, 'usuarios', uid));
-  if (!snap.exists()) return null;
-  const perfil = snap.data() as UserProfile;
-  copiarASupabase({ ...perfil, uid });
-  return perfil;
+  const snap = await getDoc(doc(db, 'usuarios', uid)).catch(() => null);
+  if (snap?.exists()) {
+    const perfil = snap.data() as UserProfile;
+    copiarASupabase({ ...perfil, uid });
+    return perfil;
+  }
+  // Los proveedores tienen su perfil solo en Supabase (lo crea vincularPerfilProveedor).
+  return getPerfilProveedorSupabase(uid);
+}
+
+async function getPerfilProveedorSupabase(uid: string): Promise<UserProfile | null> {
+  if (!SUPABASE_CONFIGURADO) return null;
+  const { data } = await supabase.from('usuarios').select('datos, role, proveedor_id, email').eq('uid', uid).maybeSingle();
+  if (!data || data.role !== 'proveedor') return null;
+  return { ...(data.datos as UserProfile), uid, role: 'proveedor', proveedorId: data.proveedor_id, email: data.email };
+}
+
+/**
+ * Vincula la cuenta de la sesión a la empresa de una invitación y devuelve su perfil de proveedor. La base comprueba
+ * el código del enlace y el correo verificado de la sesión (migración 0023); el proveedor no escribe su perfil.
+ */
+export async function vincularPerfilProveedor(licitacionId: string, token: string): Promise<UserProfile> {
+  const { data, error } = await supabase.rpc('portal_vincular', { p_lic: licitacionId, p_token: token });
+  if (error) {
+    const codigo = ['NO_INVITADO', 'INVALID_ROLE', 'CUENTA_INTERNA', 'SIN_SESION'].find(c => error.message.includes(c));
+    throw new Error(codigo || error.message);
+  }
+  return data as UserProfile;
 }
 
 export async function updateUserProfile(uid: string, data: Partial<UserProfile>): Promise<void> {

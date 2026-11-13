@@ -1,9 +1,10 @@
-import { collection, doc, updateDoc, getDoc, setDoc, onSnapshot, type Unsubscribe, db } from '../../lib/almacen';
+import { collection, doc, updateDoc, setDoc, onSnapshot, type Unsubscribe, db } from '../../lib/almacen';
 import { registrarCambio } from '../auditoriaService';
 import { REQUISITOS_INSCRIPCION } from '../../data/inscripcionProveedores';
 import { type InscripcionProveedor, type DocumentoProveedor } from '../../types';
 import { addProveedor, updateProveedor } from './conRegistro';
 import { generarTokenAcceso } from './invitados';
+import { supabase } from '../../lib/supabase';
 
 // ═══════════════════════════════════════════════════════════════════
 // INSCRIPCIÓN DE PROVEEDORES POR INVITACIÓN (inscripcionesProveedores/{código})
@@ -23,22 +24,22 @@ export async function crearInvitacionInscripcion(razonSocial: string, email: str
   return codigo;
 }
 
-/** Página de inscripción (sin sesión): lee solo SU inscripción, por el código del enlace. */
+/** Página de inscripción (sin sesión): lee solo SU inscripción, por el código del enlace (función de la base, 0023). */
 export async function getInscripcion(codigo: string): Promise<InscripcionProveedor | null> {
-  const snap = await getDoc(doc(db, 'inscripcionesProveedores', codigo));
-  return snap.exists() ? { id: snap.id, ...(snap.data() as Omit<InscripcionProveedor, 'id'>) } : null;
+  const { data, error } = await supabase.rpc('inscripcion_leer', { p_codigo: codigo });
+  if (error) throw new Error(error.message);
+  return data ? { ...(data as Omit<InscripcionProveedor, 'id'>), id: codigo } : null;
 }
 
-/** La empresa guarda su avance, o lo envía a revisión con `enviar`. */
+/** La empresa guarda su avance, o lo envía a revisión con `enviar` (solo mientras esté Invitada u Observada). */
 export async function guardarInscripcion(
   codigo: string,
   data: Pick<InscripcionProveedor, 'datos' | 'documentos' | 'sustentabilidad'>,
   enviar: boolean
 ): Promise<void> {
-  await updateDoc(doc(db, 'inscripcionesProveedores', codigo), {
-    ...data,
-    ...(enviar ? { estado: 'Enviada', fechaEnvio: new Date().toISOString() } : {}),
-  });
+  const cambios = Object.fromEntries(Object.entries(data).filter(([, v]) => v !== undefined));
+  const { error } = await supabase.rpc('inscripcion_guardar', { p_codigo: codigo, p_cambios: cambios, p_enviar: enviar });
+  if (error) throw new Error(error.message.includes('INSCRIPCION_CERRADA') ? 'La inscripción ya fue enviada y no se puede modificar.' : error.message);
 }
 
 export function subscribeToInscripciones(callback: (inscripciones: InscripcionProveedor[]) => void): Unsubscribe {
