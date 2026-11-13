@@ -22,3 +22,9 @@ export function comoTitulo(texto?: string | null): string {
     return minus.charAt(0).toUpperCase() + minus.slice(1);
   });
 }
+
+/** Si una unidad ya figura en la unidad usuaria de un recinto (que puede ser «A / B»), sin distinguir tildes ni mayúsculas. */
+export function mismaUnidad(unidad?: string | null, unidadRecinto?: string | null): boolean {
+  const n = (s: string) => s.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/\s+/g, ' ').trim();
+  return (unidadRecinto || '').split(' / ').some(u => n(u) === n(unidad || ''));
+}

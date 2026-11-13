@@ -130,7 +130,38 @@ export async function quitarMovimiento(id: string): Promise<void> {
 export async function aplicarMovimientos(ids: string[], usuario: string): Promise<number> {
   const { data, error } = await supabase.rpc('aplicar_movimientos', { p_ids: ids, p_usuario: usuario });
   fallo(error, 'No se pudieron aplicar los cambios');
+  // La unidad del recinto sigue a la de sus ocupantes; si falla, los movimientos ya quedaron aplicados igual.
+  await ajustarUnidadRecintos(ids).catch(() => {});
   return data as number;
+}
+
+const normal = (s?: string | null) => (s || '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').replace(/\s+/g, ' ').trim();
+
+/**
+ * Tras un cambio de unidad, el recinto de destino toma la unidad nueva cuando todos sus ocupantes quedan en ella. Si
+ * el recinto está a nombre de varias unidades («A / B»), solo se reemplaza la anterior. Un recinto compartido entre
+ * personas de distintas unidades no se toca.
+ */
+export async function ajustarUnidadRecintos(ids: string[]): Promise<number> {
+  const { data: movs } = await supabase.from('asignacion_movimientos').select('hacia_id, unidad_anterior, unidad_nueva').in('id', ids);
+  const conUnidad = ((movs || []) as Pick<Movimiento, 'hacia_id' | 'unidad_anterior' | 'unidad_nueva'>[]).filter(m => m.hacia_id && m.unidad_nueva);
+  if (!conUnidad.length) return 0;
+  const { data: recs } = await supabase.from('recintos').select('id, unidad_usuaria, ocupantes').in('id', [...new Set(conUnidad.map(m => m.hacia_id!))]);
+  let n = 0;
+  for (const r of (recs || []) as { id: string; unidad_usuaria: string | null; ocupantes: Ocupante[] | null }[]) {
+    const m = conUnidad.find(x => x.hacia_id === r.id)!;
+    const unidadesOcupantes = new Set((r.ocupantes || []).map(o => normal(o.unidad)).filter(Boolean));
+    if (unidadesOcupantes.size !== 1 || !unidadesOcupantes.has(normal(m.unidad_nueva))) continue;
+    const actuales = (r.unidad_usuaria || '').split(' / ').map(u => u.trim()).filter(Boolean);
+    if (actuales.some(u => normal(u) === normal(m.unidad_nueva))) continue;
+    // Con una sola unidad (o ninguna) el recinto pasa entero a la nueva; con varias, solo se cambia la anterior.
+    const nuevas = actuales.length <= 1 ? [m.unidad_nueva!] : actuales.map(u => (normal(u) === normal(m.unidad_anterior) ? m.unidad_nueva! : u));
+    const texto = [...new Set(nuevas)].join(' / ');
+    if (texto === r.unidad_usuaria) continue;
+    const { error } = await supabase.from('recintos').update({ unidad_usuaria: texto }).eq('id', r.id);
+    if (!error) n++;
+  }
+  return n;
 }
 
 /** Mueve o ubica personas de inmediato (sin propuesta): quedan en el historial. */

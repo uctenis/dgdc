@@ -5,8 +5,6 @@ import { LogoInicioDGDC, SelectorModulos } from '../components/SelectorModulos';
 import { RecintosPage } from '../components/RecintosPage';
 import { ConfigEspacios } from '../components/ConfigEspacios';
 import { AnalisisEspacios } from '../components/AnalisisEspacios';
-import { lazy, Suspense } from 'react';
-const AsistenteEspacios = lazy(() => import('../components/AsistenteEspacios').then(m => ({ default: m.AsistenteEspacios })));
 import { getCampusList } from '../data/campusData';
 import { useEffect, useState } from 'react';
 import { EVENTO_CONFIG_ACTUALIZADA } from '../services/configCompartida';
@@ -84,11 +82,6 @@ export function EspaciosApp() {
           : enAnalisis ? <AnalisisEspacios onAbrirRecinto={abrirRecinto} onCerrar={() => abrirSeccion(null)} />
           : <RecintosPage />}
       </main>
-      {/* Asistente: preguntas en palabras sobre superficies, recintos, unidades y ocupantes. */}
-      <Suspense fallback={null}>
-        <AsistenteEspacios onAbrirRecinto={abrirRecinto}
-          onAbrirAnalisis={c => setParametros(new URLSearchParams({ seccion: 'analisis', consulta: JSON.stringify(c) }))} />
-      </Suspense>
     </div>
   );
 }

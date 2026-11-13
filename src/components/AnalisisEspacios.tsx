@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   BarChart3, Loader2, X, Link2, Download, RefreshCw, Search, ChevronDown, Check, Sparkles, LayoutGrid, Table2, ExternalLink, AlertTriangle, PieChart, Copy, Users, DoorOpen,
@@ -15,6 +15,7 @@ import { formatoFecha } from '../utils/fechas';
 import { comoTitulo } from '../utils/texto';
 import { FichaRecinto } from './FichaRecinto';
 import { MoverPersonaModal } from './MoverPersonaModal';
+const AsistenteEspacios = lazy(() => import('./AsistenteEspacios').then(m => ({ default: m.AsistenteEspacios })));
 
 // Paleta categórica en orden fijo (validada para daltonismo); «Otros» en gris. Un solo azul para barras y la escala del
 // cruce. Los textos van siempre en tinta (slate), nunca en el color de la serie.
@@ -162,7 +163,11 @@ export function AnalisisEspacios({ onAbrirRecinto, onCerrar }: Props) {
         <button type="button" onClick={onCerrar} className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-300 font-bold text-slate-600 hover:bg-slate-50"><X className="w-3.5 h-3.5" /> Volver al Gestor</button>
       </div>
 
-      <PreguntasFrecuentes filas={base} filtros={consulta.f} nombreEdificio={nombreEdificio} nombreCampus={nombreCampus} onElegir={c => cambiar(c)} />
+      {/* Preguntar en palabras: el asistente responde con cifras y puede traer su consulta a esta misma página. */}
+      <Suspense fallback={<div className="h-[46px] rounded-2xl border border-teal-200 bg-teal-50/60" />}>
+        <AsistenteEspacios onAbrirRecinto={(edificio, recintoId) => onAbrirRecinto(edificio, recintoId)}
+          onAbrirAnalisis={c => cambiar({ f: c.f, ...(c.g ? { g: c.g } : {}), ...(c.m ? { m: c.m } : {}) })} />
+      </Suspense>
 
       {/* Filtros: una fila, sobre todo lo demás */}
       <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm flex flex-wrap items-center gap-2">
@@ -305,39 +310,6 @@ export function AnalisisEspacios({ onAbrirRecinto, onCerrar }: Props) {
   );
 }
 
-// ── Preguntas frecuentes: consultas armadas con un clic, según el campus o edificio en que se esté ──
-
-function PreguntasFrecuentes({ filas, filtros, nombreEdificio, nombreCampus, onElegir }: {
-  filas: FilaAnalisis[]; filtros: Filtros; nombreEdificio: (c: string) => string; nombreCampus: (c: string) => string; onElegir: (c: Partial<Consulta>) => void;
-}) {
-  const masFrecuente = (d: Dimension, lista = filas) => agrupar(lista, d, 'recintos')[0]?.clave;
-  const campus = filtros.campus?.[0] || (filtros.edificio?.[0] ? filas.find(f => f.edificio === filtros.edificio![0])?.campus : undefined) || masFrecuente('campus') || '';
-  const delCampus = filas.filter(f => f.campus === campus);
-  const edificio = filtros.edificio?.[0] || masFrecuente('edificio', delCampus) || '';
-  const tiposCon = (texto: RegExp) => [...new Set(filas.map(f => f.tipo).filter(t => texto.test(t)))];
-  const salas = tiposCon(/^SALA(?! (DE )?(BOMBA|ELE|SERVIDOR|MAQUINA|ESPERA|REUNION|LAVADO))/i);
-  const oficinas = tiposCon(/^OFICINA/i);
-  const todas: { texto: string; consulta: Partial<Consulta> }[] = [
-    { texto: `¿Cuántas salas tiene ${nombreCampus(campus)}?`, consulta: { f: { campus: [campus], tipo: salas }, g: 'edificio', m: 'recintos' } },
-    { texto: `¿Qué superficie total de salas tiene ${nombreEdificio(edificio)}?`, consulta: { f: { edificio: [edificio], tipo: salas }, g: 'piso', m: 'util' } },
-    { texto: `¿Cómo se reparten oficinas y salas en ${nombreEdificio(edificio)}?`, consulta: { f: { edificio: [edificio], tipo: [...oficinas, ...salas] }, g: 'tipo', m: 'util' } },
-    { texto: `¿Cuántos m² ocupa cada unidad en ${nombreCampus(campus)}?`, consulta: { f: { campus: [campus] }, g: 'unidad', m: 'util' } },
-    { texto: `¿Cuánta superficie tiene cada piso de ${nombreEdificio(edificio)}?`, consulta: { f: { edificio: [edificio] }, g: 'piso', m: 'util', cf: 'piso', cc: 'tipo' } },
-    { texto: '¿Qué personas tienen más de una oficina?', consulta: { f: { tipo: oficinas }, r: 'oficina' } },
-    { texto: '¿Qué campus tiene más superficie?', consulta: { f: {}, g: 'campus', m: 'util' } },
-  ];
-  const preguntas = todas.filter(p => !p.texto.includes('undefined'));
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="font-bold text-slate-500">Preguntas frecuentes:</span>
-      {preguntas.map(p => (
-        <button key={p.texto} type="button" onClick={() => onElegir(p.consulta)}
-          className="px-3 py-1.5 rounded-full border border-teal-200 bg-white text-teal-900 hover:bg-teal-50 hover:border-teal-400 transition">{p.texto}</button>
-      ))}
-    </div>
-  );
-}
-
 // ── Piezas ──
 
 /**
@@ -347,7 +319,7 @@ function PreguntasFrecuentes({ filas, filtros, nombreEdificio, nombreCampus, onE
 function CampoTexto({ valor, onCambiar }: { valor: string; onCambiar: (v: string) => void }) {
   const [texto, setTexto] = useState(valor);
   const enviado = useRef(valor);
-  // Si la consulta cambia desde afuera (limpiar filtros, preguntas frecuentes), el campo la sigue.
+  // Si la consulta cambia desde afuera (limpiar filtros, el asistente), el campo la sigue.
   useEffect(() => { if (valor !== enviado.current) { enviado.current = valor; setTexto(valor); } }, [valor]);
   useEffect(() => {
     if (texto === enviado.current) return;

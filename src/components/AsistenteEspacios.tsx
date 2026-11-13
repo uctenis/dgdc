@@ -1,5 +1,5 @@
-// Asistente de consultas del Gestor de Espacios: una ventana de chat donde se pregunta en palabras («¿cuántos m²
-// tienen las oficinas 301, 302 y 303 del CSF16?») y responde con cifras calculadas sobre los datos reales.
+// Asistente de consultas del Gestor de Espacios (en Análisis): una barra donde se pregunta en palabras («¿cuántos m²
+// tienen las oficinas 301, 302 y 303 del CSF16?») y una ventana de conversación que responde con cifras calculadas sobre los datos reales.
 import { useEffect, useRef, useState } from 'react';
 import { BarChart3, Loader2, Send, Sparkles, Trash2, X } from 'lucide-react';
 import { cargarDatosAnalisis } from '../services/analisisEspacios';
@@ -32,11 +32,6 @@ export function AsistenteEspacios({ onAbrirRecinto, onAbrirAnalisis }: {
   const [pensando, setPensando] = useState(false);
   const [etapa, setEtapa] = useState('');
   const [segundos, setSegundos] = useState(0);
-  // Los recintos se leen de antemano (al entrar al Gestor), para no esperar al preguntar.
-  useEffect(() => {
-    const t = window.setTimeout(() => { void cargarDatosAnalisis().catch(() => {}); }, 1500);
-    return () => window.clearTimeout(t);
-  }, []);
   useEffect(() => {
     if (!pensando) return;
     setSegundos(0);
@@ -76,16 +71,28 @@ export function AsistenteEspacios({ onAbrirRecinto, onAbrirAnalisis }: {
     } finally { setPensando(false); }
   };
 
-  if (!abierto) {
-    return (
-      <button type="button" onClick={() => setAbierto(true)} title="Pregunte en palabras: superficies, recintos, unidades, ocupantes…"
-        className="fixed bottom-5 right-5 z-[60] flex items-center gap-2 pl-4 pr-5 py-3 rounded-full bg-gradient-to-r from-teal-700 to-emerald-600 text-white font-bold shadow-2xl hover:scale-105 transition">
-        <Sparkles className="w-5 h-5" /> Preguntar
+  // Barra de Análisis: se escribe la pregunta ahí mismo y la respuesta se abre en la ventana de conversación.
+  const barra = (
+    <form onSubmit={e => { e.preventDefault(); if (texto.trim()) { setAbierto(true); void preguntar(texto); } else setAbierto(true); }}
+      className="flex items-center gap-2 rounded-2xl border border-teal-200 bg-gradient-to-r from-teal-50 to-white p-1.5 pl-3 shadow-sm focus-within:border-teal-400 focus-within:ring-2 focus-within:ring-teal-100">
+      <Sparkles className="w-4 h-4 shrink-0 text-teal-700" />
+      <input value={texto} onChange={e => setTexto(e.target.value)} disabled={pensando}
+        placeholder="Pregunte en palabras: «¿cuántas salas tiene el Campus San Francisco?», «superficie útil por piso del CJP01»…"
+        className="min-w-0 flex-1 bg-transparent py-1.5 text-sm text-slate-800 outline-none placeholder:text-slate-400" />
+      {mensajes.length > 0 && !abierto && (
+        <button type="button" onClick={() => setAbierto(true)} className="hidden sm:block shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-bold text-teal-800 hover:bg-teal-100">Ver conversación</button>
+      )}
+      <button type="submit" disabled={pensando}
+        className="flex shrink-0 items-center gap-1.5 rounded-xl bg-teal-700 px-3.5 py-2 text-xs font-bold text-white hover:bg-teal-800 disabled:opacity-50">
+        {pensando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} Preguntar
       </button>
-    );
-  }
+    </form>
+  );
 
-  return (
+  if (!abierto) return barra;
+
+  return (<>
+    {barra}
     <div className="fixed z-[60] inset-x-2 bottom-2 top-16 sm:inset-x-auto sm:right-5 sm:bottom-5 sm:top-auto sm:w-[460px] sm:h-[min(680px,calc(100vh-110px))] flex flex-col rounded-2xl bg-white border border-slate-200 shadow-2xl overflow-hidden">
       <header className="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-teal-800 to-emerald-700 text-white">
         <Sparkles className="w-5 h-5" />
@@ -130,7 +137,7 @@ export function AsistenteEspacios({ onAbrirRecinto, onAbrirAnalisis }: {
         <button type="submit" disabled={!texto.trim() || pensando} title="Enviar (Enter)" className="p-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white disabled:opacity-40"><Send className="w-4 h-4" /></button>
       </form>
     </div>
-  );
+  </>);
 }
 
 function Respuesta({ r, onAbrirRecinto, onAbrirAnalisis }: {

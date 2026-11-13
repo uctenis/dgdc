@@ -8,7 +8,7 @@ import { colorDeCategoria } from '../utils/geometriaPlano';
 import { tipoConfigurado } from '../data/espaciosConfig';
 import { alertasRecinto, codigoAnteriorRecinto } from '../utils/alertasRecinto';
 import { formatoFecha } from '../utils/fechas';
-import { comoTitulo } from '../utils/texto';
+import { comoTitulo, mismaUnidad } from '../utils/texto';
 import { resumenSuperficie, textoVigencia, vigenteEn } from '../utils/vigenciaRecinto';
 import { PlanoInteractivo } from './PlanoInteractivo';
 import { abrirArchivoDocumento } from '../services/recintos';
@@ -385,7 +385,9 @@ export function ExploradorEdificio({
                   {!!sel.ocupantes?.length && (
                     <Dato nombre={`Ocupantes (${sel.ocupantes.length})`} valor={
                       <span className="space-y-0.5 block">
-                        {sel.ocupantes.slice(0, 4).map((o, i) => <span key={i} className="block">{comoTitulo(o.nombre)}{o.cargo && <span className="text-slate-500"> · {o.cargo}</span>}</span>)}
+                        {sel.ocupantes.slice(0, 4).map((o, i) => <span key={i} className="block">{comoTitulo(o.nombre)}{o.cargo && <span className="text-slate-500"> · {o.cargo}</span>}
+                          {/* La unidad de la persona, si no es la del recinto (p. ej. tras un cambio de unidad). */}
+                          {o.unidad && !mismaUnidad(o.unidad, sel.unidad_usuaria) && <span className="block text-[11px] text-slate-500">{comoTitulo(o.unidad)}</span>}</span>)}
                         {sel.ocupantes.length > 4 && <span className="text-slate-500">y {sel.ocupantes.length - 4} más</span>}
                       </span>
                     } />

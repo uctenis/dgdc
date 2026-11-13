@@ -410,8 +410,22 @@
   to   { transform: scale(1); }
 }
 .inicio-aparecer { opacity: 0; animation: inicio-aparecer .7s cubic-bezier(.16, 1, .3, 1) forwards; }
-.inicio-foto { animation: inicio-acercar 14s cubic-bezier(.16, 1, .3, 1) forwards; }
+/* Ilustraciones de campus: acercamiento lento mientras están a la vista (dura más que su turno, para no detenerse
+   durante el fundido); la barra de avance se llena en lo que dura cada campus. */
+@keyframes inicio-deriva {
+  from { transform: scale(1.04) translate3d(0, 0, 0); }
+  to   { transform: scale(1.14) translate3d(-1.5%, -1%, 0); }
+}
+@keyframes inicio-avance { from { width: 0; } to { width: 100%; } }
+@keyframes inicio-rotulo {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.inicio-deriva { animation: inicio-deriva 10s linear forwards; will-change: transform; }
+.inicio-avance { animation-name: inicio-avance; animation-timing-function: linear; animation-fill-mode: forwards; }
+.inicio-rotulo { animation: inicio-rotulo .6s cubic-bezier(.16, 1, .3, 1) both; }
 @media (prefers-reduced-motion: reduce) {
   .inicio-aparecer { opacity: 1; animation: none; }
-  .inicio-foto { animation: none; }
+  .inicio-deriva, .inicio-rotulo { animation: none; }
+  .inicio-avance { animation: none; width: 0; }
 }

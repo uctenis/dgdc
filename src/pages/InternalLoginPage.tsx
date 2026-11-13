@@ -2,7 +2,30 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AlertCircle, ArrowUpRight, DoorOpen, FolderKanban, Loader2, LogOut, Lock, Users } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import fotoCampus from '../assets/inicio-campus.jpg';
+import ilusCJP from '../assets/campus/cjp.webp';
+import ilusCSF from '../assets/campus/csf.webp';
+import ilusCRC from '../assets/campus/crc.webp';
+import ilusCSL from '../assets/campus/csl.webp';
+import ilusCML from '../assets/campus/cml.webp';
+import ilusCEC from '../assets/campus/cec.webp';
+import ilusCSC from '../assets/campus/csc.webp';
+import ilusCSN from '../assets/campus/csn.webp';
+
+/**
+ * Ilustraciones de los campus que recorren el panel del inicio (versiones limpias, sin números ni títulos).
+ * `foco` es el punto de la ilustración que se mantiene a la vista cuando el panel la recorta.
+ */
+const CAMPUS_PORTADA = [
+  { sigla: 'CJP', nombre: 'Campus San Juan Pablo II', ciudad: 'Temuco', src: ilusCJP, foco: '42% 55%' },
+  { sigla: 'CSF', nombre: 'Campus San Francisco', ciudad: 'Temuco', src: ilusCSF, foco: '52% 45%' },
+  { sigla: 'CRC', nombre: 'Campus Dr. Luis Rivas del Canto', ciudad: 'Temuco', src: ilusCRC, foco: '45% 40%' },
+  { sigla: 'CSL', nombre: 'Campus Nuestra Señora de Lourdes', ciudad: 'Temuco', src: ilusCSL, foco: '38% 55%' },
+  { sigla: 'CML', nombre: 'Campus Mons. Alejandro Menchaca Lira', ciudad: 'Temuco', src: ilusCML, foco: '35% 60%' },
+  { sigla: 'CEC', nombre: 'Campus Educación Continua', ciudad: 'Temuco', src: ilusCEC, foco: '58% 45%' },
+  { sigla: 'CSC', nombre: 'Campus Mons. Sergio Contreras Navia', ciudad: 'Temuco', src: ilusCSC, foco: '50% 65%' },
+  { sigla: 'CSN', nombre: 'Campus San Nicolás', ciudad: 'Curacautín', src: ilusCSN, foco: '62% 45%' },
+] as const;
+const DURACION_CAMPUS = 7000;
 
 /** Módulos a los que se puede entrar desde el inicio. Comparten el mismo inicio de sesión. */
 const MODULOS = [
@@ -75,12 +98,37 @@ function MarcaDGDC({ className = 'h-10 w-10' }: { className?: string }) {
   );
 }
 
+const sinMovimiento = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+/** Recorrido por las ilustraciones de los campus: fundido entre una y otra, con un acercamiento lento. */
+function useCarruselCampus() {
+  const [actual, setActual] = useState(0);
+  const [anterior, setAnterior] = useState<number | null>(null);
+  const [todas, setTodas] = useState(false);   // las demás ilustraciones se cargan después de la primera
+  const [vuelta, setVuelta] = useState(0);     // reinicia la barra de avance al elegir un campus a mano
+  const ir = (i: number) => {
+    setActual(a => { if (a !== i) setAnterior(a); return i; });
+    setVuelta(v => v + 1);
+  };
+  useEffect(() => {
+    if (!todas || sinMovimiento()) return;
+    const t = setTimeout(() => {
+      setAnterior(actual);
+      setActual(a => (a + 1) % CAMPUS_PORTADA.length);
+    }, DURACION_CAMPUS);
+    return () => clearTimeout(t);
+  }, [actual, todas, vuelta]);
+  return { actual, anterior, todas, ir, cargada: () => setTodas(true), vuelta };
+}
+
 /** Inicio del sistema DGDC: formas de ingreso y elección de módulo (Licitaciones o Espacios). */
 export function InternalLoginPage() {
   const { user, profile, isInternalUser, loading, loginInternalWithGoogle, loginDevBypass, logout, error, clearError } = useAuth();
   const navigate = useNavigate();
   const volverA = (useLocation().state as { volverA?: string } | null)?.volverA;
   const [ingresando, setIngresando] = useState<string | null>(null);
+  const carrusel = useCarruselCampus();
+  const campus = CAMPUS_PORTADA[carrusel.actual];
   const conectado = !loading && !!user && isInternalUser;
   const nombre = profile?.displayName || user?.displayName || 'Usuario UCT';
   const iniciales = nombre.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]?.toUpperCase()).join('');
@@ -123,9 +171,23 @@ export function InternalLoginPage() {
     <main className="min-h-screen bg-[#f6f7f9] text-slate-900 lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
       {/* ── Panel institucional ───────────────────────────────────── */}
       <aside className="relative h-64 overflow-hidden bg-slate-950 sm:h-80 lg:sticky lg:top-0 lg:h-screen">
-        <img src={fotoCampus} alt="" className="inicio-foto absolute inset-0 h-full w-full object-cover object-center opacity-90" />
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/45 to-slate-950/20" />
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-950/50 to-transparent" />
+        {CAMPUS_PORTADA.map((c, i) => (i === 0 || carrusel.todas) && (
+          <img
+            key={c.sigla}
+            src={c.src}
+            alt=""
+            decoding="async"
+            onLoad={i === 0 ? carrusel.cargada : undefined}
+            style={{ objectPosition: c.foco }}
+            className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-[1600ms] ease-out ${
+              i === carrusel.actual ? 'opacity-100' : 'opacity-0'
+            } ${i === carrusel.actual || i === carrusel.anterior ? 'inicio-deriva' : ''}`}
+          />
+        ))}
+        {/* Sombras solo arriba (marca) y abajo (texto): el centro deja ver la ilustración con su color. */}
+        <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-slate-950/70 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-slate-950/90 via-slate-950/40 to-transparent lg:h-[72%] lg:from-slate-950 lg:via-slate-950/75" />
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-950/35 to-transparent" />
 
         <div className="relative flex h-full flex-col justify-between p-6 text-white sm:p-10 xl:p-14">
           <div className="inicio-aparecer flex items-center gap-3" style={retraso(50)}>
@@ -136,20 +198,51 @@ export function InternalLoginPage() {
             </div>
           </div>
 
-          <div className="hidden lg:block">
-            <p className="inicio-aparecer text-[11px] font-semibold uppercase tracking-[.28em] text-sky-200/80" style={retraso(150)}>
-              Plataforma de gestión
-            </p>
-            <h2 className="inicio-aparecer mt-4 max-w-md text-[2.6rem] font-semibold leading-[1.08] tracking-[-0.03em] xl:text-5xl" style={retraso(250)}>
-              Infraestructura universitaria, gestionada con rigor.
-            </h2>
-            <p className="inicio-aparecer mt-5 max-w-sm text-sm leading-relaxed text-white/65" style={retraso(350)}>
-              Un solo acceso para la cartera de proyectos, los procesos de licitación y el catastro de espacios de la Universidad.
-            </p>
-            <div className="inicio-aparecer mt-10 flex items-center gap-6 border-t border-white/15 pt-6 text-[11px] text-white/55" style={retraso(450)}>
-              <span>Procedimiento PS-FOR-DGDC0003</span>
-              <span className="h-3 w-px bg-white/20" />
-              <span>Acceso institucional @uct.cl</span>
+          <div>
+            <div className="hidden lg:block">
+              <p className="inicio-aparecer text-[11px] font-semibold uppercase tracking-[.28em] text-sky-200/80" style={retraso(150)}>
+                Plataforma de gestión
+              </p>
+              <h2 className="inicio-aparecer mt-4 max-w-md text-[2.6rem] font-semibold leading-[1.08] tracking-[-0.03em] xl:text-5xl" style={retraso(250)}>
+                Infraestructura universitaria, gestionada con rigor.
+              </h2>
+              <p className="inicio-aparecer mt-5 max-w-sm text-sm leading-relaxed text-white/65" style={retraso(350)}>
+                Un solo acceso para la cartera de proyectos, los procesos de licitación y el catastro de espacios de la Universidad.
+              </p>
+            </div>
+
+            {/* Campus a la vista y avance del recorrido */}
+            <div className="inicio-aparecer lg:mt-10 lg:border-t lg:border-white/15 lg:pt-6" style={retraso(450)}>
+              <p key={campus.sigla} className="inicio-rotulo flex items-baseline gap-2 text-sm" aria-live="polite">
+                <span className="rounded bg-white/15 px-1.5 py-0.5 font-mono text-[10px] font-semibold tracking-wider text-white/90 ring-1 ring-white/20 backdrop-blur-sm">{campus.sigla}</span>
+                <span className="truncate font-medium text-white">{campus.nombre}</span>
+                <span className="hidden shrink-0 text-white/50 sm:inline">· {campus.ciudad}</span>
+              </p>
+              <div className="mt-3 flex gap-1.5" role="tablist" aria-label="Campus de la Universidad">
+                {CAMPUS_PORTADA.map((c, i) => (
+                  <button
+                    key={c.sigla}
+                    type="button"
+                    role="tab"
+                    aria-selected={i === carrusel.actual}
+                    aria-label={c.nombre}
+                    title={c.nombre}
+                    onClick={() => carrusel.ir(i)}
+                    className="group relative h-4 flex-1 max-w-12"
+                  >
+                    <span className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 overflow-hidden rounded-full bg-white/20 transition group-hover:bg-white/35">
+                      {i === carrusel.actual && (
+                        <span
+                          key={carrusel.vuelta}
+                          className={`absolute inset-y-0 left-0 rounded-full bg-white ${carrusel.todas ? 'inicio-avance' : 'w-0'}`}
+                          style={{ animationDuration: `${DURACION_CAMPUS}ms` }}
+                        />
+                      )}
+                      {i < carrusel.actual && <span className="absolute inset-0 rounded-full bg-white/55" />}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>

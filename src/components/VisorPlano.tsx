@@ -10,7 +10,7 @@ import { ajustarPuntoOrtogonal, areaPoligono, areaRealM2, centroide, colorDeCate
 import { detectarRecintoEnPunto, predibujarRecintos } from '../utils/predibujoPlano';
 import { recortarContraVecinos } from '../utils/sinSuperposicion';
 import { CopiarContornos } from './CopiarContornos';
-import { comoTitulo } from '../utils/texto';
+import { comoTitulo, mismaUnidad } from '../utils/texto';
 import { getConfigEspacios, tipoConfigurado } from '../data/espaciosConfig';
 
 // Worker local, igual que en el resto del sistema (no depende de descargas externas).
@@ -1122,7 +1122,8 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
                   <dt className="text-slate-400 col-span-2 pt-1">Ocupantes ({sel.ocupantes.length})</dt>
                   <dd className="col-span-2 space-y-0.5">
                     {sel.ocupantes.map((o, i) => (
-                      <p key={i}><span className="font-semibold">{comoTitulo(o.nombre)}</span>{o.cargo && <span className="text-slate-500"> · {o.cargo}</span>}</p>
+                      <p key={i}><span className="font-semibold">{comoTitulo(o.nombre)}</span>{o.cargo && <span className="text-slate-500"> · {o.cargo}</span>}
+                        {o.unidad && !mismaUnidad(o.unidad, sel.unidad_usuaria) && <span className="block text-[11px] text-slate-500">{comoTitulo(o.unidad)}</span>}</p>
                     ))}
                   </dd>
                 </>)}
