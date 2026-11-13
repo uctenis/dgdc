@@ -5,7 +5,7 @@ import { BarChart3, Loader2, Send, Sparkles, Trash2, X } from 'lucide-react';
 import { cargarDatosAnalisis } from '../services/analisisEspacios';
 import { mensajeErrorIA, preguntarIA, isAIConfigured } from '../services/aiService';
 import { getCampusList } from '../data/campusData';
-import { DIMENSIONES, MEDIDAS, formatoMedida, type Filtros, type Dimension, type Medida } from '../utils/analisisEspacios';
+import { DIMENSIONES, MEDIDAS, formatoMedida, valorMedida, type Filtros, type Dimension, type Medida } from '../utils/analisisEspacios';
 import { armarPrompt, catalogo, ejecutarPlan, leerPlan, type PlanConsulta, type ResultadoConsulta } from '../utils/consultaIA';
 import { comoTitulo } from '../utils/texto';
 import { interpretarLocal } from '../utils/interpreteLocal';
@@ -176,7 +176,7 @@ function Respuesta({ r, onAbrirRecinto, onAbrirAnalisis }: {
               <thead><tr className="text-slate-400 text-left"><th className="font-bold py-1">{DIMENSIONES.find(d => d.id === plan.agrupar)!.nombre}</th><th className="font-bold text-right">{medida.corto}</th><th className="font-bold text-right">recintos</th></tr></thead>
               <tbody className="divide-y divide-slate-100">
                 {r.grupos.slice(0, 20).map(g => (
-                  <tr key={g.clave}><td className="py-1 pr-2">{comoTitulo(g.clave)}</td><td className="text-right font-bold text-slate-800">{formatoMedida(g[plan.medida], plan.medida)}</td><td className="text-right text-slate-500">{g.recintos}</td></tr>
+                  <tr key={g.clave}><td className="py-1 pr-2">{comoTitulo(g.clave)}</td><td className="text-right font-bold text-slate-800">{formatoMedida(valorMedida(g, plan.medida), plan.medida)}</td><td className="text-right text-slate-500">{g.recintos}</td></tr>
                 ))}
               </tbody>
             </table>

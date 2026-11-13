@@ -11,6 +11,7 @@ import { detectarRecintoEnPunto, predibujarRecintos } from '../utils/predibujoPl
 import { recortarContraVecinos } from '../utils/sinSuperposicion';
 import { CopiarContornos } from './CopiarContornos';
 import { comoTitulo, mismaUnidad } from '../utils/texto';
+import { textoM2PorPersona } from '../utils/densidad';
 import { getConfigEspacios, tipoConfigurado } from '../data/espaciosConfig';
 
 // Worker local, igual que en el resto del sistema (no depende de descargas externas).
@@ -1128,6 +1129,9 @@ export function VisorPlano({ documento, pisos = [], recintos, destacado, onEdita
                   </dd>
                 </>)}
                 <dt className="text-slate-400">m² registrado</dt><dd className="font-bold">{m2(sel.superficie_m2)}</dd>
+                {textoM2PorPersona(sel.superficie_m2, sel.ocupantes?.length || 0) && (<>
+                  <dt className="text-slate-400">Por persona</dt><dd>{textoM2PorPersona(sel.superficie_m2, sel.ocupantes?.length || 0)}</dd>
+                </>)}
                 <dt className="text-slate-400">m² OGUC</dt><dd>{m2(sel.superficie_oguc_m2)}</dd>
                 {(() => {
                   const med = medida(sel.id);

@@ -7,6 +7,7 @@ import type { Ocupante, Piso, Recinto } from '../types/recintos';
 import { alertasRecinto, codigoAnteriorRecinto, observacionesSinNotas } from '../utils/alertasRecinto';
 import { formatoFecha } from '../utils/fechas';
 import { comoTitulo } from '../utils/texto';
+import { textoM2PorPersona } from '../utils/densidad';
 import { colorDeCategoria } from '../utils/geometriaPlano';
 import { tipoConfigurado } from '../data/espaciosConfig';
 import { buscarEnNomina, useNomina } from '../services/nomina';
@@ -110,6 +111,7 @@ export function FichaRecinto({ recinto: r, piso, campus, edificio, onClose, onEd
           ['Superficie útil', m2(r.superficie_m2)],
           ['Superficie OGUC', m2(r.superficie_oguc_m2)],
           ['Capacidad', r.capacidad != null ? `${r.capacidad} personas` : '—'],
+          ['Superficie por persona', textoM2PorPersona(r.superficie_m2, ocupantes.length)],
         ])}
         {grupo('Vigencia', [
           ['Tenencia', r.tenencia && r.tenencia !== 'Propia' ? r.tenencia : null],

@@ -9,6 +9,7 @@ import { tipoConfigurado } from '../data/espaciosConfig';
 import { alertasRecinto, codigoAnteriorRecinto } from '../utils/alertasRecinto';
 import { formatoFecha } from '../utils/fechas';
 import { comoTitulo, mismaUnidad } from '../utils/texto';
+import { textoM2PorPersona } from '../utils/densidad';
 import { resumenSuperficie, textoVigencia, vigenteEn } from '../utils/vigenciaRecinto';
 import { PlanoInteractivo } from './PlanoInteractivo';
 import { abrirArchivoDocumento } from '../services/recintos';
@@ -382,6 +383,7 @@ export function ExploradorEdificio({
                   {sel.tenencia && sel.tenencia !== 'Propia' && <Dato nombre="Tenencia" valor={sel.tenencia} />}
                   {sel.fecha_alta && <Dato nombre="Opera desde" valor={`${formatoFecha(sel.fecha_alta)}${sel.motivo_alta ? ` · ${sel.motivo_alta}` : ''}`} />}
                   {sel.fecha_baja && <Dato nombre="De baja desde" valor={`${formatoFecha(sel.fecha_baja)}${sel.motivo_baja ? ` · ${sel.motivo_baja}` : ''}`} />}
+                  {textoM2PorPersona(sel.superficie_m2, sel.ocupantes?.length || 0) && <Dato nombre="Por persona" valor={textoM2PorPersona(sel.superficie_m2, sel.ocupantes?.length || 0)} />}
                   {!!sel.ocupantes?.length && (
                     <Dato nombre={`Ocupantes (${sel.ocupantes.length})`} valor={
                       <span className="space-y-0.5 block">

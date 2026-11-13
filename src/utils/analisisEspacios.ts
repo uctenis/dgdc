@@ -29,7 +29,7 @@ export interface FilaAnalisis {
 }
 
 export type Dimension = 'campus' | 'edificio' | 'piso' | 'tipo' | 'uso' | 'unidad' | 'clase' | 'estado' | 'tenencia';
-export type Medida = 'util' | 'oguc' | 'recintos' | 'capacidad' | 'ocupantes';
+export type Medida = 'util' | 'oguc' | 'recintos' | 'capacidad' | 'ocupantes' | 'porPersona';
 
 export const DIMENSIONES: { id: Dimension; nombre: string; plural: string }[] = [
   { id: 'campus', nombre: 'Campus', plural: 'campus' },
@@ -48,6 +48,7 @@ export const MEDIDAS: { id: Medida; nombre: string; corto: string }[] = [
   { id: 'recintos', nombre: 'Cantidad de recintos', corto: 'recintos' },
   { id: 'capacidad', nombre: 'Capacidad (personas)', corto: 'personas' },
   { id: 'ocupantes', nombre: 'Ocupantes registrados', corto: 'ocupantes' },
+  { id: 'porPersona', nombre: 'Superficie por persona (recintos ocupados)', corto: 'm²/persona' },
 ];
 
 export type Filtros = Partial<Record<Dimension, string[]>> & { texto?: string };
@@ -88,7 +89,8 @@ export function filtrar(filas: FilaAnalisis[], filtros: Filtros, ignorar?: Dimen
   });
 }
 
-export interface Totales { recintos: number; util: number; oguc: number; capacidad: number; ocupantes: number; edificios: number; pisos: number }
+/** `utilOcupado`: superficie útil de los recintos con ocupantes (base de los m² por persona). */
+export interface Totales { recintos: number; util: number; oguc: number; capacidad: number; ocupantes: number; utilOcupado: number; edificios: number; pisos: number }
 
 export function totales(filas: FilaAnalisis[]): Totales {
   return {
@@ -97,12 +99,14 @@ export function totales(filas: FilaAnalisis[]): Totales {
     oguc: filas.reduce((s, f) => s + f.oguc, 0),
     capacidad: filas.reduce((s, f) => s + f.capacidad, 0),
     ocupantes: filas.reduce((s, f) => s + f.ocupantes.length, 0),
+    utilOcupado: filas.reduce((s, f) => s + (f.ocupantes.length ? f.util : 0), 0),
     edificios: new Set(filas.map(f => f.edificio)).size,
     pisos: new Set(filas.map(f => `${f.edificio}|${f.piso}`)).size,
   };
 }
 
-export const valorMedida = (t: Pick<Totales, 'recintos' | 'util' | 'oguc' | 'capacidad' | 'ocupantes'>, m: Medida) => t[m];
+export const valorMedida = (t: Pick<Totales, 'recintos' | 'util' | 'oguc' | 'capacidad' | 'ocupantes' | 'utilOcupado'>, m: Medida): number =>
+  m === 'porPersona' ? (t.ocupantes ? t.utilOcupado / t.ocupantes : 0) : t[m];
 
 export interface Grupo extends Omit<Totales, 'edificios' | 'pisos'> { clave: string }
 
@@ -113,8 +117,8 @@ export interface Grupo extends Omit<Totales, 'edificios' | 'pisos'> { clave: str
 export function agrupar(filas: FilaAnalisis[], d: Dimension, m: Medida = 'util'): Grupo[] {
   const mapa = new Map<string, Grupo>();
   for (const f of filas) for (const clave of valoresDe(f, d)) {
-    const g = mapa.get(clave) || { clave, recintos: 0, util: 0, oguc: 0, capacidad: 0, ocupantes: 0 };
-    g.recintos++; g.util += f.util; g.oguc += f.oguc; g.capacidad += f.capacidad; g.ocupantes += f.ocupantes.length;
+    const g = mapa.get(clave) || { clave, recintos: 0, util: 0, oguc: 0, capacidad: 0, ocupantes: 0, utilOcupado: 0 };
+    g.recintos++; g.util += f.util; g.oguc += f.oguc; g.capacidad += f.capacidad; g.ocupantes += f.ocupantes.length; g.utilOcupado += f.ocupantes.length ? f.util : 0;
     mapa.set(clave, g);
   }
   const grupos = [...mapa.values()];
@@ -135,8 +139,8 @@ export function cruzar(filas: FilaAnalisis[], df: Dimension, dc: Dimension, m: M
   const columna = (v: string) => (visibles.has(v) ? v : 'Otros');
   const celdas = new Map<string, Grupo>();
   const sumar = (mapa: Map<string, Grupo>, clave: string, f: FilaAnalisis) => {
-    const g = mapa.get(clave) || { clave, recintos: 0, util: 0, oguc: 0, capacidad: 0, ocupantes: 0 };
-    g.recintos++; g.util += f.util; g.oguc += f.oguc; g.capacidad += f.capacidad; g.ocupantes += f.ocupantes.length;
+    const g = mapa.get(clave) || { clave, recintos: 0, util: 0, oguc: 0, capacidad: 0, ocupantes: 0, utilOcupado: 0 };
+    g.recintos++; g.util += f.util; g.oguc += f.oguc; g.capacidad += f.capacidad; g.ocupantes += f.ocupantes.length; g.utilOcupado += f.ocupantes.length ? f.util : 0;
     mapa.set(clave, g);
   };
   const totalFila = new Map<string, Grupo>(), totalColumna = new Map<string, Grupo>();
@@ -281,6 +285,7 @@ const numero = (n: number, decimales = 0) => n.toLocaleString('es-CL', { maximum
 export const formatoM2 = (n: number) => `${numero(n, n < 100 ? 1 : 0)} m²`;
 export function formatoMedida(n: number, m: Medida): string {
   if (m === 'util' || m === 'oguc') return formatoM2(n);
+  if (m === 'porPersona') return `${numero(n, 1)} m²/persona`;
   return `${numero(n)} ${MEDIDAS.find(x => x.id === m)!.corto}`;
 }
 

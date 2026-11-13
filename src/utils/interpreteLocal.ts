@@ -137,7 +137,11 @@ export function interpretarLocal(pregunta: string, filas: FilaAnalisis[], nombre
   });
   // Medida.
   const tiene = (...ws: string[]) => ws.some(w => q.includes(w));
-  const medida: Medida = tiene('oguc') ? 'oguc'
+  // «m² por persona», «superficie por funcionario», «densidad»: superficie útil de los recintos ocupados por ocupante.
+  const porPersona = tiene('densidad') || q.some((w, i) => w === 'por' && ['persona', 'funcionario', 'ocupante', 'cabeza'].includes(q[i + 1]));
+  if (porPersona) q.forEach((w, i) => { if (['persona', 'funcionario', 'ocupante', 'cabeza', 'densidad'].includes(w)) usadas.add(i); });
+  const medida: Medida = porPersona ? 'porPersona'
+    : tiene('oguc') ? 'oguc'
     : tiene('capacidad', 'aforo', 'cupo', 'cupos') ? 'capacidad'
     : tiene('persona', 'personas', 'ocupante', 'ocupantes', 'funcionario', 'funcionarios', 'gente') ? 'ocupantes'
     : tiene('superficie', 'superficies', 'metros', 'm2', 'area', 'util', 'utiles') ? 'util'
@@ -156,7 +160,7 @@ export function interpretarLocal(pregunta: string, filas: FilaAnalisis[], nombre
   if (filtros.piso?.length) partes.push(`en ${filtros.piso.join(', ')}`);
   if (filtros.edificio?.length) partes.push(`del ${filtros.edificio.join(', ')}`);
   if (filtros.campus?.length) partes.push(`campus ${filtros.campus.join(', ')}`);
-  const nombreMedida = { util: 'Superficie útil', oguc: 'Superficie OGUC', recintos: 'Cantidad de recintos', capacidad: 'Capacidad', ocupantes: 'Personas' }[medida];
+  const nombreMedida = { util: 'Superficie útil', oguc: 'Superficie OGUC', recintos: 'Cantidad de recintos', capacidad: 'Capacidad', ocupantes: 'Personas', porPersona: 'Superficie por persona' }[medida];
   return {
     interpretacion: `${nombreMedida}: ${partes.join(' ')}${agrupar ? `, por ${agrupar}` : ''}.`,
     filtros, agrupar, medida, listar, noAplica: null,

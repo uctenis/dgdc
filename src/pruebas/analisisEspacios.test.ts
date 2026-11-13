@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agrupar, cruzar, filtrar, fraseRespuesta, totales, type FilaAnalisis } from '../utils/analisisEspacios';
+import { agrupar, cruzar, filtrar, formatoMedida, fraseRespuesta, totales, valorMedida, type FilaAnalisis } from '../utils/analisisEspacios';
 
 const fila = (codigo: string, extra: Partial<FilaAnalisis>): FilaAnalisis => ({
   id: codigo, campus: 'CJP', campusNombre: 'Campus San Juan Pablo II', edificio: 'CJP08', edificioNombre: 'Edificio 8', piso: 'Piso 3', pisoOrden: 3,
@@ -15,6 +15,14 @@ const FILAS = [
 ];
 
 describe('cruces de información del Gestor de Espacios', () => {
+  it('m² por persona: superficie útil de los recintos ocupados entre sus ocupantes', () => {
+    const t = totales(FILAS);
+    // Solo CJP08_310 (12 m², 1 ocupante) tiene ocupantes: las salas vacías no cuentan.
+    expect(valorMedida(t, 'porPersona')).toBe(12);
+    expect(formatoMedida(12, 'porPersona')).toBe('12 m²/persona');
+    expect(valorMedida(agrupar(FILAS, 'piso').find(g => g.clave === 'Piso 2')!, 'porPersona')).toBe(0);
+  });
+
   it('suma lo que cumple todos los filtros: salas del piso 3 de CJP08', () => {
     const r = filtrar(FILAS, { edificio: ['CJP08'], piso: ['Piso 3'], tipo: ['SALA CATEDRA'] });
     expect(totales(r)).toMatchObject({ recintos: 2, util: 110, oguc: 121, capacidad: 80, edificios: 1, pisos: 1 });
