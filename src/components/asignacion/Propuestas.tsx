@@ -1,10 +1,13 @@
 // Propuestas de cambio: se arman movimientos (personas, una unidad completa o dos recintos que se intercambian), se
-// revisa cómo queda cada recinto antes y después, y se aplican todos juntos (o se descartan).
+// revisa cómo queda cada recinto antes y después, y pasan por el control de cambios (0025): Borrador → En revisión →
+// Aprobada → Aplicada, con bitácora y exportación a Excel para analizarlas.
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeftRight, ArrowRight, Building, CheckCircle2, ClipboardList, FilePlus2, Loader2, Play, Trash2, Undo2, Users, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeftRight, ArrowRight, BadgeCheck, Building, CheckCircle2, ClipboardList, FileDown, FilePlus2, History, Loader2, Play, Send, Trash2, Undo2, Users, X } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { exportarPropuestaExcel, indicadoresPropuesta } from '../../services/exportarPropuesta';
 import {
-  actualizarPropuesta, agregarMovimientos, aplicarPropuesta, crearPropuesta, eliminarPropuesta, listarMovimientosDePropuesta, quitarMovimiento,
-  type Movimiento, type Propuesta, type ResumenPropuesta,
+  agregarMovimientos, aplicarPropuesta, cambiarEstadoPropuesta, crearPropuesta, eliminarPropuesta, listarEventosPropuesta, listarMovimientosDePropuesta,
+  quitarMovimiento, resumenDeSimulacion, type EventoPropuesta, type Movimiento, type Propuesta, type ResumenPropuesta,
 } from '../../services/asignacion';
 import type { Ocupante } from '../../types/recintos';
 import { clavePersona } from '../../utils/analisisEspacios';
@@ -14,8 +17,12 @@ import { formatoFecha } from '../../utils/fechas';
 import { BuscadorRecinto, Ocupacion, RecintoElegido, campoClase, m2, nombreEdificio, normalizar, textoPersona, useAsignacion } from './comun';
 
 const COLOR_ESTADO: Record<Propuesta['estado'], string> = {
-  Borrador: 'bg-amber-100 text-amber-800', Aplicada: 'bg-emerald-100 text-emerald-800', Descartada: 'bg-slate-200 text-slate-600',
+  Borrador: 'bg-amber-100 text-amber-800', 'En revisión': 'bg-sky-100 text-sky-800', Aprobada: 'bg-violet-100 text-violet-800',
+  Aplicada: 'bg-emerald-100 text-emerald-800', Descartada: 'bg-slate-200 text-slate-600',
 };
+
+/** Clave de comparación de un antes/después: qué personas hay en cada recinto. */
+const huella = (filas: ResumenPropuesta) => JSON.stringify(filas.map(f => [f.codigo, f.antes.map(o => clavePersona(o.nombre)).sort()]).sort());
 
 export function Propuestas({ propuestas, abiertaId, onAbrir, onCambio }: {
   propuestas: Propuesta[]; abiertaId: string | null; onAbrir: (id: string | null) => void; onCambio: () => Promise<void>;
@@ -74,7 +81,10 @@ export function Propuestas({ propuestas, abiertaId, onAbrir, onCambio }: {
 type Herramienta = 'personas' | 'unidad' | 'intercambio';
 
 function DetallePropuesta({ propuesta, onCambio, onCerrar }: { propuesta: Propuesta; onCambio: () => Promise<void>; onCerrar: () => void }) {
-  const { porId, codigos, usuario, recargar, avisar } = useAsignacion();
+  const { porId, codigos, usuario, recargar, avisar, nombresEdificio } = useAsignacion();
+  const { isAdmin } = useAuth();
+  const [eventos, setEventos] = useState<EventoPropuesta[]>([]);
+  const [exportando, setExportando] = useState(false);
   const [movimientos, setMovimientos] = useState<Movimiento[]>([]);
   const [cargando, setCargando] = useState(true);
   const [herramienta, setHerramienta] = useState<Herramienta>('personas');
@@ -82,13 +92,18 @@ function DetallePropuesta({ propuesta, onCambio, onCerrar }: { propuesta: Propue
   const editable = propuesta.estado === 'Borrador';
 
   const cargar = async () => {
+    void listarEventosPropuesta(propuesta.id).then(setEventos);
     try { setMovimientos(await listarMovimientosDePropuesta(propuesta.id)); }
     catch (e) { avisar(e instanceof Error ? e.message : String(e), 'error'); }
     finally { setCargando(false); }
   };
-  useEffect(() => { void cargar(); }, [propuesta.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void cargar(); }, [propuesta.id, propuesta.estado]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const simulacion = useMemo(() => simularMovimientos(porId, movimientos), [porId, movimientos]);
+  const filasActuales = useMemo(() => resumenDeSimulacion(simulacion), [simulacion]);
+  // Si después de aprobarla alguien cambió los recintos, el «antes» ya no es el que se aprobó.
+  const cambioDesdeAprobacion = propuesta.estado === 'Aprobada' && !!propuesta.resumen_aprobado && huella(propuesta.resumen_aprobado) !== huella(filasActuales);
+  const indicadores = indicadoresPropuesta(propuesta.estado === 'Aplicada' && propuesta.resumen ? propuesta.resumen : filasActuales);
   const agregar = async (nuevos: { persona: Ocupante; desde_id: string | null; hacia_id: string | null; conservar_origen?: boolean; unidad_nueva?: string | null }[]) => {
     try {
       const guardados = await agregarMovimientos(propuesta.id, nuevos, codigos, movimientos.length);
@@ -102,7 +117,8 @@ function DetallePropuesta({ propuesta, onCambio, onCerrar }: { propuesta: Propue
   };
   const aplicar = async () => {
     if (!movimientos.length) return;
-    if (!confirm(`¿Aplicar la propuesta «${propuesta.nombre}»?\n\nSe harán ${movimientos.length} cambio(s) en ${simulacion.length} recinto(s). Quedará en el historial.`)) return;
+    const aviso = cambioDesdeAprobacion ? '\n\n¡Atención! Los recintos cambiaron después de la aprobación: revise el antes y después.' : '';
+    if (!confirm(`¿Aplicar la propuesta aprobada «${propuesta.nombre}»?\n\nSe harán ${movimientos.length} cambio(s) en ${simulacion.length} recinto(s). Quedará en el historial.${aviso}`)) return;
     setAplicando(true);
     try {
       await aplicarPropuesta(propuesta, movimientos, simulacion, usuario);
@@ -111,9 +127,27 @@ function DetallePropuesta({ propuesta, onCambio, onCerrar }: { propuesta: Propue
     } catch (e) { avisar(e instanceof Error ? e.message : String(e), 'error'); }
     finally { setAplicando(false); }
   };
-  const cambiarEstado = async (estado: Propuesta['estado']) => {
-    try { await actualizarPropuesta(propuesta.id, { estado }); await onCambio(); }
-    catch (e) { avisar(e instanceof Error ? e.message : String(e), 'error'); }
+  const cambiarEstado = async (estado: Propuesta['estado'], pedirComentario?: string, obligatorio = false) => {
+    let comentario = '';
+    if (pedirComentario) {
+      const r = prompt(pedirComentario);
+      if (r === null) return;
+      comentario = r.trim();
+      if (obligatorio && !comentario) { avisar('Escriba un comentario para continuar.', 'error'); return; }
+    }
+    try {
+      await cambiarEstadoPropuesta(propuesta.id, estado, comentario, estado === 'Aprobada' ? filasActuales : undefined);
+      await onCambio();
+      avisar(`Propuesta: ${estado}.`);
+    } catch (e) { avisar(e instanceof Error ? e.message.replace(/^.*?: /, '') : String(e), 'error'); }
+  };
+  const exportar = async () => {
+    setExportando(true);
+    try {
+      await exportarPropuestaExcel({ propuesta, movimientos, eventos, nombresEdificio,
+        filas: propuesta.estado === 'Aplicada' && propuesta.resumen ? propuesta.resumen : filasActuales });
+    } catch (e) { avisar(e instanceof Error ? e.message : String(e), 'error'); }
+    finally { setExportando(false); }
   };
   const borrar = async () => {
     if (!confirm(`¿Eliminar la propuesta «${propuesta.nombre}» y sus ${movimientos.length} cambio(s)? No afecta a los recintos.`)) return;
@@ -135,19 +169,76 @@ function DetallePropuesta({ propuesta, onCambio, onCerrar }: { propuesta: Propue
           </div>
           <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${COLOR_ESTADO[propuesta.estado]}`}>{propuesta.estado}</span>
         </div>
-        {editable && (
-          <div className="mt-3 flex flex-wrap gap-2">
+        {/* Pasos del control de cambios */}
+        <ol className="mt-3 flex flex-wrap items-center gap-1 text-[11px] font-bold">
+          {(['Borrador', 'En revisión', 'Aprobada', 'Aplicada'] as const).map((e, i, todos) => {
+            const actual = todos.indexOf(propuesta.estado as typeof todos[number]);
+            return (
+              <li key={e} className="flex items-center gap-1">
+                <span className={`px-2 py-0.5 rounded-full ${e === propuesta.estado ? COLOR_ESTADO[e] + ' ring-1 ring-current' : i < actual ? 'text-slate-500' : 'text-slate-300'}`}>{i + 1}. {e}</span>
+                {i < todos.length - 1 && <ArrowRight className="w-3 h-3 text-slate-300" />}
+              </li>
+            );
+          })}
+        </ol>
+
+        {cambioDesdeAprobacion && (
+          <p className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <AlertTriangle className="w-4 h-4 shrink-0" /> Los recintos de esta propuesta cambiaron después de aprobarla: el «antes» ya no es el aprobado. Revise el antes y después antes de aplicar (o vuelva a borrador para ajustarla).
+          </p>
+        )}
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          {propuesta.estado === 'Borrador' && (<>
+            <button type="button" onClick={() => void cambiarEstado('En revisión', 'Comentario para quien revisa (opcional):')} disabled={!movimientos.length}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-sky-700 hover:bg-sky-800 text-white font-bold text-sm disabled:opacity-50">
+              <Send className="w-4 h-4" /> Enviar a revisión
+            </button>
+            <button type="button" onClick={() => void cambiarEstado('Descartada', 'Motivo del descarte (opcional):')} className="px-3 py-2 rounded-xl border border-slate-300 text-sm font-bold text-slate-700 hover:bg-slate-50">Descartar</button>
+          </>)}
+          {propuesta.estado === 'En revisión' && (isAdmin ? (<>
+            <button type="button" onClick={() => void cambiarEstado('Aprobada', 'Comentario de la aprobación (opcional):')}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-700 hover:bg-violet-800 text-white font-bold text-sm">
+              <BadgeCheck className="w-4 h-4" /> Aprobar
+            </button>
+            <button type="button" onClick={() => void cambiarEstado('Borrador', '¿Qué debe corregirse?', true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-300 text-sm font-bold text-slate-700 hover:bg-slate-50">
+              <Undo2 className="w-4 h-4" /> Devolver con observaciones
+            </button>
+          </>) : <span className="self-center text-sm text-slate-500">Esperando la aprobación del administrador del sistema.</span>)}
+          {propuesta.estado === 'Aprobada' && (<>
             <button type="button" onClick={() => void aplicar()} disabled={!movimientos.length || aplicando}
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm disabled:opacity-50">
-              {aplicando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />} Aplicar propuesta
+              {aplicando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />} Aplicar en los recintos
             </button>
-            <button type="button" onClick={() => void cambiarEstado('Descartada')} className="px-3 py-2 rounded-xl border border-slate-300 text-sm font-bold text-slate-700 hover:bg-slate-50">Descartar</button>
-            <button type="button" onClick={() => void borrar()} className="ml-auto flex items-center gap-1 px-3 py-2 rounded-xl text-sm font-bold text-rose-700 hover:bg-rose-50"><Trash2 className="w-4 h-4" /> Eliminar</button>
-          </div>
-        )}
-        {propuesta.estado === 'Descartada' && (
-          <button type="button" onClick={() => void cambiarEstado('Borrador')} className="mt-3 flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-300 text-sm font-bold text-slate-700 hover:bg-slate-50">
-            <Undo2 className="w-4 h-4" /> Volver a borrador</button>
+            <button type="button" onClick={() => void cambiarEstado('Borrador', 'Motivo para volver a borrador:', true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-300 text-sm font-bold text-slate-700 hover:bg-slate-50">
+              <Undo2 className="w-4 h-4" /> Volver a borrador
+            </button>
+          </>)}
+          {propuesta.estado === 'Descartada' && (
+            <button type="button" onClick={() => void cambiarEstado('Borrador')} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-300 text-sm font-bold text-slate-700 hover:bg-slate-50">
+              <Undo2 className="w-4 h-4" /> Volver a borrador</button>
+          )}
+          <button type="button" onClick={() => void exportar()} disabled={exportando || !movimientos.length} title="Resumen, cambios, recintos antes y después, efecto por unidad y bitácora"
+            className="ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl border border-emerald-300 text-sm font-bold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50">
+            {exportando ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />} Exportar a Excel
+          </button>
+          {editable && <button type="button" onClick={() => void borrar()} className="flex items-center gap-1 px-3 py-2 rounded-xl text-sm font-bold text-rose-700 hover:bg-rose-50"><Trash2 className="w-4 h-4" /> Eliminar</button>}
+        </div>
+
+        {/* Indicadores de los recintos afectados */}
+        {indicadores.recintos > 0 && (
+          <dl className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            {[
+              ['Recintos afectados', String(indicadores.recintos)],
+              ['Personas (antes → después)', `${indicadores.personasAntes} → ${indicadores.personasDespues}`],
+              ['m²/persona (antes → después)', `${indicadores.m2PersonaAntes ?? '—'} → ${indicadores.m2PersonaDespues ?? '—'}`],
+              ['Quedan vacíos · pasan a ocuparse', `${indicadores.recintosVacios} · ${indicadores.recintosNuevos}`],
+            ].map(([k, v]) => (
+              <div key={k} className="rounded-xl bg-slate-50 px-3 py-2"><dt className="text-[10px] font-bold uppercase text-slate-400">{k}</dt><dd className="font-black text-slate-800 text-sm">{v}</dd></div>
+            ))}
+          </dl>
         )}
       </div>
 
@@ -193,6 +284,22 @@ function DetallePropuesta({ propuesta, onCambio, onCerrar }: { propuesta: Propue
           </ul>
         )}
       </div>
+
+      {eventos.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+          <h3 className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 font-extrabold text-slate-900"><History className="w-5 h-5 text-violet-700" /> Bitácora</h3>
+          <ol className="divide-y divide-slate-100 text-sm">
+            {eventos.map(e => (
+              <li key={e.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2">
+                <span className="text-[11px] text-slate-400 w-36 shrink-0">{new Date(e.en).toLocaleString('es-CL', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                <span className="font-bold text-slate-800">{e.estado_anterior ? `${e.estado_anterior} → ` : ''}{e.estado_nuevo}</span>
+                <span className="text-xs text-slate-500">{(e.por || '').split('@')[0]}</span>
+                {e.comentario && <span className="basis-full sm:basis-auto text-xs text-slate-600 italic">«{e.comentario}»</span>}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
 
       <AntesDespues filas={propuesta.estado === 'Aplicada' && propuesta.resumen ? propuesta.resumen
         : simulacion.map(s => ({ codigo: s.recinto.codigo, nombre: s.recinto.nombre, edificio_codigo: s.recinto.edificio_codigo, superficie_m2: s.recinto.superficie_m2 ?? null, antes: s.antes, despues: s.despues, recinto: s.recinto }))}

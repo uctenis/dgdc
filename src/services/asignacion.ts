@@ -7,13 +7,24 @@ export interface Propuesta {
   id: string;
   nombre: string;
   descripcion: string | null;
-  estado: 'Borrador' | 'Aplicada' | 'Descartada';
+  /** Control de cambios (0025): Borrador → En revisión → Aprobada → Aplicada (o Descartada). */
+  estado: 'Borrador' | 'En revisión' | 'Aprobada' | 'Aplicada' | 'Descartada';
   resumen: ResumenPropuesta | null;
   creado_por: string | null;
   creado_en: string;
   aplicado_por: string | null;
   aplicado_en: string | null;
+  enviado_por?: string | null;
+  enviado_en?: string | null;
+  aprobado_por?: string | null;
+  aprobado_en?: string | null;
+  /** Antes y después que se aprobaron (para avisar si los recintos cambiaron antes de aplicarla). */
+  resumen_aprobado?: ResumenPropuesta | null;
+  observaciones?: string | null;
 }
+
+/** Paso en la bitácora de una propuesta. */
+export interface EventoPropuesta { id: string; estado_anterior: string | null; estado_nuevo: string; comentario: string | null; por: string | null; en: string }
 
 /** Antes y después de cada recinto, guardado al aplicar una propuesta. */
 export type ResumenPropuesta = { codigo: string; nombre: string; edificio_codigo: string; superficie_m2: number | null; antes: Ocupante[]; despues: Ocupante[] }[];
@@ -69,9 +80,22 @@ export async function crearPropuesta(nombre: string, descripcion: string, usuari
   return data as Propuesta;
 }
 
-export async function actualizarPropuesta(id: string, cambios: Partial<Pick<Propuesta, 'nombre' | 'descripcion' | 'estado'>>): Promise<void> {
+export async function actualizarPropuesta(id: string, cambios: Partial<Pick<Propuesta, 'nombre' | 'descripcion' | 'estado' | 'observaciones' | 'resumen_aprobado'>>): Promise<void> {
   const { error } = await supabase.from('asignacion_propuestas').update(cambios).eq('id', id);
   fallo(error, 'No se pudo guardar la propuesta');
+}
+
+/** Cambia el estado de una propuesta con un comentario (queda en la bitácora; la base valida el paso). */
+export async function cambiarEstadoPropuesta(id: string, estado: Propuesta['estado'], comentario = '', resumenAprobado?: ResumenPropuesta): Promise<void> {
+  const { error } = await supabase.from('asignacion_propuestas')
+    .update({ estado, observaciones: comentario.trim() || null, ...(resumenAprobado ? { resumen_aprobado: resumenAprobado } : {}) }).eq('id', id);
+  fallo(error, 'No se pudo cambiar el estado de la propuesta');
+}
+
+export async function listarEventosPropuesta(id: string): Promise<EventoPropuesta[]> {
+  const { data, error } = await supabase.from('asignacion_propuesta_eventos').select('*').eq('propuesta_id', id).order('en');
+  if (error) return [];   // sin la migración 0025 no hay bitácora
+  return data as EventoPropuesta[];
 }
 
 export async function eliminarPropuesta(id: string): Promise<void> {
@@ -170,13 +194,16 @@ export async function moverAhora(movimientos: NuevoMovimiento[], codigos: Map<st
   return aplicarMovimientos(guardados.map(m => m.id), usuario);
 }
 
+/** Antes y después de cada recinto afectado, tal como se guarda en la propuesta. */
+export const resumenDeSimulacion = (simulacion: EstadoRecinto[]): ResumenPropuesta => simulacion.map(s => ({
+  codigo: s.recinto.codigo, nombre: s.recinto.nombre, edificio_codigo: s.recinto.edificio_codigo, superficie_m2: s.recinto.superficie_m2 ?? null,
+  antes: s.antes, despues: s.despues,
+}));
+
 /** Aplica una propuesta: guarda su antes y después, aplica sus movimientos y la deja como «Aplicada». */
 export async function aplicarPropuesta(propuesta: Propuesta, movimientos: Movimiento[], simulacion: EstadoRecinto[], usuario: string): Promise<void> {
-  const resumen: ResumenPropuesta = simulacion.map(s => ({
-    codigo: s.recinto.codigo, nombre: s.recinto.nombre, edificio_codigo: s.recinto.edificio_codigo, superficie_m2: s.recinto.superficie_m2 ?? null,
-    antes: s.antes, despues: s.despues,
-  }));
+  const resumen = resumenDeSimulacion(simulacion);
   await aplicarMovimientos(movimientos.filter(m => m.estado === 'Propuesto').map(m => m.id), usuario);
-  const { error } = await supabase.from('asignacion_propuestas').update({ estado: 'Aplicada', resumen, aplicado_por: usuario, aplicado_en: new Date().toISOString() }).eq('id', propuesta.id);
+  const { error } = await supabase.from('asignacion_propuestas').update({ estado: 'Aplicada', observaciones: null, resumen, aplicado_por: usuario, aplicado_en: new Date().toISOString() }).eq('id', propuesta.id);
   fallo(error, 'Los cambios se aplicaron, pero no se pudo marcar la propuesta como aplicada');
 }
