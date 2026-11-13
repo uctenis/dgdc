@@ -228,7 +228,7 @@ export function InternalLoginPage() {
           <div>
             <div className="hidden lg:block">
               <h2 className="inicio-aparecer max-w-md font-serif-inicio text-[2.1rem] leading-[1.1] tracking-[-0.01em] text-slate-900 xl:text-[2.4rem]" style={retraso(250)}>
-                Infraestructura universitaria, gestionada con rigor.
+                Los campus de la UCT, en un solo lugar.
               </h2>
               <p className="inicio-aparecer mt-3 max-w-sm text-sm leading-relaxed text-slate-500" style={retraso(350)}>
                 Un solo acceso para la cartera de proyectos, los procesos de licitación y el catastro de espacios de la Universidad.
